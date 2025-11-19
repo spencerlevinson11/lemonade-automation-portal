@@ -25,7 +25,12 @@ SECRET_KEY = 'django-insecure-eeiz5us(*8&lft%af71vcj77b^v6$e%lu!()#n+d87^vlzl=f(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    "lemonade-automation-portal.onrender.com",
+]
+
 
 
 # Application definition
