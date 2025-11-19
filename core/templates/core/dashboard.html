@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Lemonade Stand Automation Portal</title>
+</head>
+<body>
+    <!-- DEBUG: DASHBOARD TEMPLATE V3 -->
+    <p style="color: purple; font-weight: bold;">
+        DEBUG: If you see this line, you are using the new dashboard template.
+    </p>
+
+    <p>
+        Logged in as: {{ request.user.username }}
+        |
+        <a href="{% url 'logout' %}">Logout</a>
+    </p>
+
+    {% if is_admin %}
+        <p style="color: darkgreen; font-weight: bold;">
+            Admin view: You are seeing automations for <em>ALL companies</em>.
+        </p>
+    {% else %}
+        {% if company %}
+            <p style="color: blue; font-weight: bold;">
+                You are viewing:
+                <strong>{{ company.name }}</strong>
+                (Owner: {{ company.owner.username }})
+            </p>
+        {% else %}
+            <p style="color: red; font-weight: bold;">
+                No company is linked to your account yet. Please contact Spencer.
+            </p>
+        {% endif %}
+    {% endif %}
+
+    <!-- Flash messages from views (success / error when running automations) -->
+    {% if messages %}
+        <ul style="list-style: none; padding: 0;">
+            {% for message in messages %}
+                <li style="margin-bottom: 6px; font-weight: bold;">
+                    {{ message }}
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <h1>Welcome to the Lemonade Stand Automation Portal</h1>
+    <p>
+        This will become the control center for all your clients' automations.
+    </p>
+
+    <h2>Automations</h2>
+
+    {% if automations %}
+        <table border="1" cellpadding="6" cellspacing="0">
+            <thead>
+                <tr>
+                    <th>Automation</th>
+                    <th>Company</th>
+                    <th>Active?</th>
+                    <th>Last Run</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for automation in automations %}
+                    <tr>
+                        <td>{{ automation.name }}</td>
+                        <td>{{ automation.company.name }}</td>
+                        <td>{{ automation.is_active }}</td>
+                        <td>
+                            {% if automation.last_run_at %}
+                                {{ automation.last_run_at }}
+                            {% else %}
+                                Never
+                            {% endif %}
+                        </td>
+                        <td>{{ automation.created_at }}</td>
+                        <td>
+                            <a href="{% url 'run_automation' automation.id %}"
+                               style="
+                                   display: inline-block;
+                                   padding: 4px 8px;
+                                   background-color: #4CAF50;
+                                   color: white;
+                                   text-decoration: none;
+                                   border-radius: 4px;
+                                   font-size: 0.9em;
+                               ">
+                                Run now
+                            </a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No automations have been set up yet.</p>
+    {% endif %}
+
+    <p style="margin-top: 20px;">
+        If you see the DEBUG line above and either an Admin-view or company banner,
+        per-client view is wired up. 🎉
+    </p>
+</body>
+</html>
