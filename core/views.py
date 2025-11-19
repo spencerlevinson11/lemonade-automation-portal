@@ -3,7 +3,9 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from django.contrib import messages
 from django.core.mail import send_mail
+from .bol_generation import generate_bol_from_templates
 from django.utils import timezone
+from django.http import FileResponse, HttpResponseForbidden
 
 from .models import Automation, Company
 
@@ -100,3 +102,20 @@ def custom_logout(request):
     """
     logout(request)
     return redirect("login")
+
+@login_required
+def run_automation(request, pk):
+    automation = get_object_or_404(Automation, pk=pk)
+
+    if not (request.user.is_superuser or automation.company.owner == request.user):
+        return HttpResponseForbidden("You are not allowed to run this automation.")
+
+    output_path = generate_bol_from_templates()
+
+    messages.success(request, f"Ran automation: {automation.name}")
+    return FileResponse(
+        open(output_path, "rb"),
+        as_attachment=True,
+        filename=output_path.name,
+    )
+
