@@ -1,0 +1,23 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{{ title }} | Automation Portal{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" type="text/css" href="{% static 'admin/custom.css' %}">
+{% endblock %}
+
+{% block branding %}
+<h1 id="site-name">
+    <a href="{% url 'admin:index' %}">
+        ⚡ Automation Portal <span style="opacity: 0.7; font-weight: 400;">admin</span>
+    </a>
+</h1>
+{% endblock %}
+
+{% block nav-global %}
+<div style="margin-right: 1rem; font-size: 12px; color: #e5e7eb; opacity: 0.8;">
+    First task is completely free.
+</div>
+{% endblock %}
