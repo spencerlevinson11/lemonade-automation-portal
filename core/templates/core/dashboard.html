@@ -1,108 +1,566 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <title>Your Automation Portal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        :root {
+            --bg-main: #020617;
+            --bg-surface: #020819;
+            --bg-card: #0b1120;
+            --accent: #facc15;
+            --accent-strong: #fbbf24;
+            --accent-soft: rgba(250, 204, 21, 0.18);
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+            --border-subtle: #1f2937;
+            --border-strong: #111827;
+            --danger: #f97373;
+            --info: #38bdf8;
+            --success: #4ade80;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: var(--text-main);
+            background:
+                radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%),
+                radial-gradient(circle at bottom, #000000 0, #020617 55%);
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: stretch;
+            padding: 24px;
+        }
+
+        .page {
+            width: 100%;
+            max-width: 1080px;
+            background: radial-gradient(circle at top left, rgba(250, 204, 21, 0.10), transparent 55%) var(--bg-surface);
+            border-radius: 22px;
+            border: 1px solid rgba(15, 23, 42, 0.95);
+            box-shadow:
+                0 28px 70px rgba(0, 0, 0, 0.9),
+                0 0 0 1px rgba(15, 23, 42, 1);
+            overflow: hidden;
+        }
+
+        .page-inner {
+            padding: 18px 22px 22px;
+        }
+
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .brand-logo {
+            width: 30px;
+            height: 30px;
+            border-radius: 999px;
+            background: radial-gradient(circle at 30% 20%, #fef9c3, #facc15);
+            box-shadow:
+                0 0 14px rgba(250, 204, 21, 0.9),
+                0 0 32px rgba(250, 204, 21, 0.6);
+            position: relative;
+        }
+
+        .brand-logo::after {
+            content: "";
+            position: absolute;
+            inset: 7px;
+            border-radius: inherit;
+            border: 2px solid rgba(0,0,0,0.2);
+        }
+
+        .brand-text-main {
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .brand-text-sub {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .user-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(148, 163, 184, 0.4);
+        }
+
+        .user-pill span.dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            background: var(--success);
+            box-shadow: 0 0 10px rgba(74, 222, 128, 0.9);
+        }
+
+        .user-pill a {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .user-pill a:hover {
+            text-decoration: underline;
+        }
+
+        .debug-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 9px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            background: rgba(76, 29, 149, 0.4);
+            color: #e9d5ff;
+            border: 1px dashed rgba(167, 139, 250, 0.6);
+            margin-bottom: 10px;
+        }
+
+        .debug-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            background: #a855f7;
+        }
+
+        .status-banner {
+            border-radius: 12px;
+            padding: 10px 12px;
+            font-size: 0.82rem;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .status-icon {
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .status-admin {
+            background: rgba(250, 204, 21, 0.08);
+            border: 1px solid rgba(250, 204, 21, 0.5);
+        }
+
+        .status-company {
+            background: rgba(56, 189, 248, 0.08);
+            border: 1px solid rgba(56, 189, 248, 0.5);
+        }
+
+        .status-warning {
+            background: rgba(248, 113, 113, 0.08);
+            border: 1px solid rgba(248, 113, 113, 0.5);
+        }
+
+        .status-title {
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .status-body {
+            color: var(--text-muted);
+        }
+
+        .status-body strong {
+            color: var(--accent);
+        }
+
+        .main-header {
+            margin: 14px 0 10px;
+        }
+
+        .main-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin: 0 0 4px;
+        }
+
+        .main-subtitle {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        .main-subtitle span {
+            color: var(--accent);
+            font-weight: 500;
+        }
+
+        .messages {
+            margin-top: 12px;
+            margin-bottom: 10px;
+        }
+
+        .message-item {
+            border-radius: 10px;
+            padding: 7px 9px;
+            font-size: 0.82rem;
+            margin-bottom: 6px;
+            background: rgba(34, 197, 94, 0.09);
+            border: 1px solid rgba(34, 197, 94, 0.5);
+        }
+
+        .automations-card {
+            margin-top: 18px;
+            padding: 14px 14px 12px;
+            border-radius: 16px;
+            background: radial-gradient(circle at top right, rgba(250, 204, 21, 0.12), transparent 55%) var(--bg-card);
+            border: 1px solid var(--border-strong);
+        }
+
+        .automations-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .automations-title {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .automations-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .table-wrapper {
+            margin-top: 8px;
+            border-radius: 12px;
+            border: 1px solid rgba(31, 41, 55, 0.9);
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+
+        thead {
+            background: rgba(15, 23, 42, 0.96);
+        }
+
+        th, td {
+            padding: 8px 10px;
+            text-align: left;
+            border-bottom: 1px solid rgba(31, 41, 55, 0.85);
+            vertical-align: middle;
+        }
+
+        th {
+            font-weight: 500;
+            color: #e5e7eb;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+
+        tbody tr:nth-child(even) {
+            background: rgba(15, 23, 42, 0.85);
+        }
+
+        tbody tr:nth-child(odd) {
+            background: rgba(15, 23, 42, 0.7);
+        }
+
+        tbody tr:hover {
+            background: rgba(30, 64, 175, 0.5);
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .pill-active {
+            background: rgba(34, 197, 94, 0.12);
+            color: #bbf7d0;
+            border: 1px solid rgba(34, 197, 94, 0.7);
+        }
+
+        .pill-inactive {
+            background: rgba(148, 163, 184, 0.18);
+            color: #e5e7eb;
+            border: 1px solid rgba(148, 163, 184, 0.7);
+        }
+
+        .run-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 9px;
+            border-radius: 999px;
+            border: none;
+            text-decoration: none;
+            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+            color: #111827;
+            font-size: 0.78rem;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            box-shadow:
+                0 10px 24px rgba(250, 204, 21, 0.45),
+                0 0 0 1px rgba(253, 224, 71, 0.8);
+        }
+
+        .run-btn span.icon {
+            font-size: 0.9rem;
+        }
+
+        .run-btn:hover {
+            filter: brightness(1.05);
+        }
+
+        .run-btn:active {
+            transform: translateY(0.5px);
+            box-shadow:
+                0 6px 18px rgba(250, 204, 21, 0.35),
+                0 0 0 1px rgba(253, 224, 71, 0.9);
+        }
+
+        .empty-state {
+            margin-top: 10px;
+            padding: 12px 12px;
+            border-radius: 12px;
+            border: 1px dashed rgba(148, 163, 184, 0.6);
+            background: rgba(15, 23, 42, 0.96);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state strong {
+            color: var(--accent);
+        }
+
+        .footer-note {
+            margin-top: 16px;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .footer-note span.highlight {
+            color: var(--accent);
+            font-weight: 500;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+
+            .page-inner {
+                padding: 14px 14px 16px;
+            }
+
+            .top-bar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .automations-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .table-wrapper {
+                overflow-x: auto;
+            }
+        }
+    </style>
 </head>
 <body>
-    <!-- DEBUG: DASHBOARD TEMPLATE V3 -->
-    <p style="color: purple; font-weight: bold;">
-        DEBUG: If you see this line, you are using the new dashboard template.
-    </p>
+    <div class="page">
+        <div class="page-inner">
+            <div class="top-bar">
+                <div class="brand">
+                    <div class="brand-logo"></div>
+                    <div>
+                        <div class="brand-text-main">Automation Portal</div>
+                        <div class="brand-text-sub">Control center for your client workflows</div>
+                    </div>
+                </div>
 
-    <p>
-        Logged in as: {{ request.user.username }}
-        |
-        <a href="{% url 'logout' %}">Logout</a>
-    </p>
+                <div class="user-pill">
+                    <span class="dot"></span>
+                    <span>Logged in as <strong>{{ request.user.username }}</strong></span>
+                    <span style="opacity: 0.4;">•</span>
+                    <a href="{% url 'logout' %}">Logout</a>
+                </div>
+            </div>
 
-    {% if is_admin %}
-        <p style="color: darkgreen; font-weight: bold;">
-            Admin view: You are seeing automations for <em>ALL companies</em>.
-        </p>
-    {% else %}
-        {% if company %}
-            <p style="color: blue; font-weight: bold;">
-                You are viewing:
-                <strong>{{ company.name }}</strong>
-                (Owner: {{ company.owner.username }})
-            </p>
-        {% else %}
-            <p style="color: red; font-weight: bold;">
-                No company is linked to your account yet. Please contact Spencer.
-            </p>
-        {% endif %}
-    {% endif %}
+            <!-- DEBUG indicator (kept, but styled) -->
+            <div class="debug-badge">
+                <span class="debug-dot"></span>
+                <span>DEBUG: If you see this line, you are using the new dashboard template.</span>
+            </div>
 
-    <!-- Flash messages from views (success / error when running automations) -->
-    {% if messages %}
-        <ul style="list-style: none; padding: 0;">
-            {% for message in messages %}
-                <li style="margin-bottom: 6px; font-weight: bold;">
-                    {{ message }}
-                </li>
-            {% endfor %}
-        </ul>
-    {% endif %}
+            <!-- Status banner: admin / company / no company -->
+            {% if is_admin %}
+                <div class="status-banner status-admin">
+                    <div class="status-icon">👑</div>
+                    <div>
+                        <div class="status-title">Admin view</div>
+                        <div class="status-body">
+                            You are seeing automations for <strong>all companies</strong>.
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                {% if company %}
+                    <div class="status-banner status-company">
+                        <div class="status-icon">🏷️</div>
+                        <div>
+                            <div class="status-title">Company view</div>
+                            <div class="status-body">
+                                You are viewing <strong>{{ company.name }}</strong>
+                                <span style="opacity: 0.75;">(Owner: {{ company.owner.username }})</span>
+                            </div>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="status-banner status-warning">
+                        <div class="status-icon">⚠️</div>
+                        <div>
+                            <div class="status-title">No company linked</div>
+                            <div class="status-body">
+                                No company is linked to your account yet. Please contact Spencer.
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+            {% endif %}
 
-    <h1>Welcome to the Lemonade Stand Automation Portal</h1>
-    <p>
-        This will become the control center for all your clients' automations.
-    </p>
+            <header class="main-header">
+                <h1 class="main-title">Welcome to your automation dashboard</h1>
+                <p class="main-subtitle">
+                    Trigger and monitor <span>bespoke automations</span> built for your business.
+                </p>
+            </header>
 
-    <h2>Automations</h2>
+            <!-- Flash messages -->
+            {% if messages %}
+                <div class="messages">
+                    {% for message in messages %}
+                        <div class="message-item">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
 
-    {% if automations %}
-        <table border="1" cellpadding="6" cellspacing="0">
-            <thead>
-                <tr>
-                    <th>Automation</th>
-                    <th>Company</th>
-                    <th>Active?</th>
-                    <th>Last Run</th>
-                    <th>Created</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for automation in automations %}
-                    <tr>
-                        <td>{{ automation.name }}</td>
-                        <td>{{ automation.company.name }}</td>
-                        <td>{{ automation.is_active }}</td>
-                        <td>
-                            {% if automation.last_run_at %}
-                                {{ automation.last_run_at }}
-                            {% else %}
-                                Never
-                            {% endif %}
-                        </td>
-                        <td>{{ automation.created_at }}</td>
-                        <td>
-                            <a href="{% url 'run_automation' automation.id %}"
-                               style="
-                                   display: inline-block;
-                                   padding: 4px 8px;
-                                   background-color: #4CAF50;
-                                   color: white;
-                                   text-decoration: none;
-                                   border-radius: 4px;
-                                   font-size: 0.9em;
-                               ">
-                                Run now
-                            </a>
-                        </td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% else %}
-        <p>No automations have been set up yet.</p>
-    {% endif %}
+            <section class="automations-card">
+                <div class="automations-header">
+                    <div>
+                        <div class="automations-title">Automations</div>
+                        <div class="automations-meta">
+                            Run and monitor the workflows configured for your account.
+                        </div>
+                    </div>
+                </div>
 
-    <p style="margin-top: 20px;">
-        If you see the DEBUG line above and either an Admin-view or company banner,
-        per-client view is wired up. 🎉
-    </p>
+                {% if automations %}
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Automation</th>
+                                    <th>Company</th>
+                                    <th>Active</th>
+                                    <th>Last run</th>
+                                    <th>Created</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for automation in automations %}
+                                    <tr>
+                                        <td>{{ automation.name }}</td>
+                                        <td>{{ automation.company.name }}</td>
+                                        <td>
+                                            {% if automation.is_active %}
+                                                <span class="pill pill-active">Active</span>
+                                            {% else %}
+                                                <span class="pill pill-inactive">Paused</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if automation.last_run_at %}
+                                                {{ automation.last_run_at }}
+                                            {% else %}
+                                                Never
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ automation.created_at }}</td>
+                                        <td style="text-align: right;">
+                                            <a href="{% url 'run_automation' automation.id %}" class="run-btn">
+                                                <span class="icon">▶</span>
+                                                <span>Run now</span>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <strong>No automations have been set up yet.</strong>
+                        <br>
+                        Once your first task is configured, it will appear here with run history and status.
+                    </div>
+                {% endif %}
+            </section>
+
+            <div class="footer-note">
+                <span>If you see the debug badge above plus the status banner, per-company view is wired up. 🎉</span>
+                <span class="highlight">Remember: your first automated task is completely free.</span>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
