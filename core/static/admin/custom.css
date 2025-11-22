@@ -1,0 +1,120 @@
+:root {
+    --admin-bg: #020617;
+    --admin-surface: #020819;
+    --admin-surface-alt: #0b1120;
+    --admin-accent: #facc15;
+    --admin-accent-strong: #fbbf24;
+    --admin-text-main: #e5e7eb;
+    --admin-text-muted: #9ca3af;
+    --admin-border-subtle: #1f2937;
+}
+
+/* Overall background */
+body.dashboard, body.app-auth, body {
+    background:
+        radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%),
+        radial-gradient(circle at bottom, #000000 0, #020617 55%) !important;
+    color: var(--admin-text-main);
+}
+
+/* Header bar */
+#header {
+    background: radial-gradient(circle at top left, rgba(250, 204, 21, 0.18), transparent 60%) #020617 !important;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.9);
+    color: var(--admin-text-main);
+}
+
+#header a:link,
+#header a:visited {
+    color: var(--admin-text-main);
+}
+
+/* Branding text */
+#branding h1, #branding h1 a {
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+}
+
+/* Module backgrounds */
+.module, .app-auth .module, .app-model .module {
+    background: radial-gradient(circle at top right, rgba(250, 204, 21, 0.1), transparent 55%) #020819;
+    border: 1px solid rgba(15, 23, 42, 0.95);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.8);
+    border-radius: 12px;
+}
+
+/* Tables in admin */
+#changelist-form .results, .change-form form, .inline-group {
+    background-color: #020819;
+}
+
+#changelist table, .change-list table {
+    background-color: #020819;
+}
+
+#changelist table thead th {
+    background-color: #020617;
+    color: #e5e7eb;
+    border-bottom: 1px solid var(--admin-border-subtle);
+}
+
+#changelist table tbody tr:nth-child(odd) {
+    background-color: rgba(15, 23, 42, 0.9);
+}
+
+#changelist table tbody tr:nth-child(even) {
+    background-color: rgba(15, 23, 42, 0.7);
+}
+
+#changelist table tbody tr:hover {
+    background: rgba(30, 64, 175, 0.5);
+}
+
+/* Links & accents */
+a, a:link, a:visited {
+    color: var(--admin-accent-strong);
+}
+
+a:hover {
+    color: #fef9c3;
+}
+
+/* Buttons (Save, Save and continue, etc.) */
+.submit-row input.default,
+.submit-row input[type=submit],
+.submit-row input[type=button] {
+    background: linear-gradient(135deg, var(--admin-accent), var(--admin-accent-strong));
+    border-radius: 999px;
+    border: 1px solid rgba(253, 224, 71, 0.9);
+    color: #111827;
+    box-shadow: 0 10px 24px rgba(250, 204, 21, 0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 11px;
+}
+
+/* Default background for action buttons */
+.button.default, .deletelink, .addlink, .changelink {
+    border-radius: 999px;
+}
+
+/* Forms / inputs */
+input, select, textarea {
+    background-color: #020617;
+    border: 1px solid var(--admin-border-subtle);
+    color: var(--admin-text-main);
+}
+
+input:focus, select:focus, textarea:focus {
+    border-color: var(--admin-accent-strong);
+    box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.18);
+}
+
+/* Footer */
+#footer {
+    background: transparent;
+    border-top: none;
+    color: var(--admin-text-muted);
+}
