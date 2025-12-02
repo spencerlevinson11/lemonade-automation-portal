@@ -80,52 +80,32 @@ def normalize(name: str) -> str:
     return ALIASES.get(n, n)
 
 
-# --- Core helpers (ported from your script) ---
+# Map form field names -> canonical bucket names
+BUCKET_FIELD_MAP = {
+    "b_10_wide_standard_classic": "10 Wide Standard Classic",
+    "b_10_ltr_conical_next_gen": "10 ltr conical Next Gen",
+    "b_10_ltr_conical_black": "10 ltr conical black",
+    "b_10_ltr_wide_ng_eco": "10 ltr wide NG eco",
+    "b_13_ltr_conical_black": "13 ltr conical black",
+    "b_13_ltr_conical_next_gen": "13 ltr conical Next Gen",
+    "b_5_liter_vase": "5 liter vase",
+    "b_7_liter_vase": "7 liter vase #",
+    "b_5_liter_round": "5 liter round",
+    "b_10_liter_wide_classic_hq": "10 liter wide classic HQ#",
+    "b_amalia_white_buckets": "Amalia White Buckets",
+    "b_amalia_black_buckets": "Amalia Black Buckets",
+    "b_amalia_white_lids": "Amalia White Lids",
+    "b_amalia_black_lids": "Amalia Black Lids",
+    "b_maxima_green_buckets": "Maxima Green Buckets",
+    "b_maxima_buckets_white": "Maxima Buckets White",
+    "b_maxima_black_buckets": "Maxima Black Buckets",
+    "b_maxima_green_lids": "Maxima Green Lids",
+    "b_maxima_lids_white": "Maxima Lids White",
+    "b_maxima_black_lids": "Maxima Black Lids",
+}
 
-def parse_bucket_lines(bucket_lines: str):
-    """
-    Parse a textarea like:
-        10 ltr conical Next Gen: 12
-        Maxima Black Buckets: 3
-    into a buckets dict {normalized_name: pallets_int}.
-    """
-    buckets = {}
-    if not bucket_lines:
-        return buckets
 
-    for raw in bucket_lines.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-
-        name = None
-        qty_str = None
-
-        if ":" in line:
-            name_part, qty_part = line.split(":", 1)
-            name = name_part.strip()
-            qty_str = qty_part.strip()
-        else:
-            parts = line.rsplit(" ", 1)
-            if len(parts) == 2:
-                name, qty_str = parts[0].strip(), parts[1].strip()
-
-        if not name or not qty_str:
-            continue
-
-        try:
-            qty = int(qty_str)
-        except ValueError:
-            continue
-
-        if qty <= 0:
-            continue
-
-        key = normalize(name)
-        buckets[key] = buckets.get(key, 0) + qty
-
-    return buckets
-
+# --- Core helpers (same as before) ---
 
 def pair_and_leftover(buckets, pairs):
     paired, leftovers = [], []
@@ -234,9 +214,10 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
         ws["A24"].value = cap
         ws["A24"].alignment = Alignment(horizontal="right")
 
-        last_data = row - 1
         total_row = row
-        total_pieces_value = sum(qty * PER_PALLET.get(name, 0) for name, qty in counts.items())
+        total_pieces_value = sum(
+            qty * PER_PALLET.get(name, 0) for name, qty in counts.items()
+        )
 
         ws[f"G{total_row}"].value = total_pieces_value
         ws[f"G{total_row}"].alignment = Alignment(horizontal="right")
@@ -247,7 +228,7 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
         if delete_start <= 22:
             ws.delete_rows(delete_start, 22 - delete_start + 1)
 
-        filepath = OUTPUT_DIR / f"{sheet_name}.xlsx"
+        filepath = OUTPUT_DIR / f"{sheet_name}.xlsx}"
         wb.save(filepath)
         saved_files.append(filepath)
 
@@ -264,7 +245,6 @@ except ImportError:
 
 def create_outlook_draft(files, subject_base, to_addrs, cc_addrs, bcc_addrs, html_body):
     if win32 is None:
-        # Running on a system without Outlook/pywin32
         print("win32com not available; skipping Outlook draft creation.")
         return
 
@@ -305,8 +285,13 @@ def generate_rpc_from_form(data):
         data.get("addr_line5", "").strip(),
     ]
 
-    bucket_lines = data.get("bucket_lines", "")
-    buckets = parse_bucket_lines(bucket_lines)
+    # Build buckets dict from the bucket bank fields
+    buckets = {}
+    for field_name, bucket_name in BUCKET_FIELD_MAP.items():
+        qty = data.get(field_name)
+        if qty and qty > 0:
+            key = normalize(bucket_name)
+            buckets[key] = buckets.get(key, 0) + qty
 
     # No custom pallet-size map for now; everything defaults to "large"
     size_map = {}
