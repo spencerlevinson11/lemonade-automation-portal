@@ -2,15 +2,16 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from django.contrib import messages
+from django.core.mail import send_mail
 from django.utils import timezone
 from django.http import FileResponse, HttpResponseForbidden
 from django.views.decorators.http import require_http_methods
 
-from .models import Automation, Company
 from .bol_generation import generate_bol_from_templates, generate_bol_from_form
 from .forms import BOLForm
 from .rpcforms import RpcOrderForm
 from .rpc_generation import generate_rpc_from_form
+from .models import Automation, Company
 
 
 @login_required
@@ -45,37 +46,46 @@ def dashboard(request):
     return render(request, "core/dashboard.html", context)
 
 
+def custom_logout(request):
+    """
+    Simple logout view that allows GET requests.
+    Logs the user out, then redirects to the login page.
+    """
+    logout(request)
+    return redirect("login")
+
+
 @require_http_methods(["GET", "POST"])
 @login_required
 def run_automation(request, pk):
     """
-    Run a single automation.
+    Run an automation.
 
-    - If the automation is "Retriever RPC Order", show the RPC form,
-      generate the RPC Excel, and (optionally) Outlook drafts.
-    - Otherwise, treat it as a BOL automation:
-      show the BOL form, generate the BOL workbook, and download it.
+    - If the automation is named "Retriever RPC Order", we show the RPC form,
+      generate an RPC Excel workbook, and (locally on Windows) try to create
+      Outlook drafts.
+    - Otherwise, we treat it as a BOL generator automation.
     """
-    automation = get_object_or_404(
-        Automation.objects.select_related("company"),
-        pk=pk,
-    )
+
+    automation = get_object_or_404(Automation.objects.select_related("company"), pk=pk)
 
     # Permission check: only superuser or the company owner
     if not (request.user.is_superuser or automation.company.owner == request.user):
         return HttpResponseForbidden("You are not allowed to run this automation.")
 
-        if automation.name.strip().lower() == "retriever rpc order":
+    # --- Branch: Retriever RPC Order ----------------------------------------
+    if automation.name.strip().lower() == "retriever rpc order":
         if request.method == "POST":
             form = RpcOrderForm(request.POST)
             if form.is_valid():
+                # generate_rpc_from_form now returns (files, outlook_status)
                 files, outlook_status = generate_rpc_from_form(form.cleaned_data)
 
                 # Record last run time on the automation
                 automation.last_run_at = timezone.now()
                 automation.save(update_fields=["last_run_at"])
 
-                # For now, return the first generated file (if multiple)
+                # Use the first generated file as the download
                 first_file = files[0]
 
                 status_text = outlook_status or "No Outlook status returned."
@@ -101,19 +111,8 @@ def run_automation(request, pk):
             },
         )
 
-        else:
-            form = RpcOrderForm()
+    # --- Default branch: treat as BOL generator -----------------------------
 
-        return render(
-            request,
-            "core/rpc_order_form.html",
-            {
-                "automation": automation,
-                "form": form,
-            },
-        )
-
-    # ---- Branch 2: default = BOL automation ----
     if request.method == "POST":
         form = BOLForm(request.POST)
         if form.is_valid():
@@ -123,10 +122,7 @@ def run_automation(request, pk):
             automation.last_run_at = timezone.now()
             automation.save(update_fields=["last_run_at"])
 
-            messages.success(
-                request,
-                f"Generated BOL for {automation.company.name}",
-            )
+            messages.success(request, f"Generated BOL for {automation.company.name}")
 
             return FileResponse(
                 open(output_path, "rb"),
@@ -134,7 +130,6 @@ def run_automation(request, pk):
                 filename=output_path.name,
             )
     else:
-        # Empty BOL form on first load
         form = BOLForm()
 
     return render(
@@ -145,12 +140,3 @@ def run_automation(request, pk):
             "form": form,
         },
     )
-
-
-def custom_logout(request):
-    """
-    Simple logout view that allows GET requests.
-    Logs the user out, then redirects to the login page.
-    """
-    logout(request)
-    return redirect("login")
