@@ -165,7 +165,7 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
     """
     Write one or more RPC sheets based on the containers.
 
-    address_lines is already in the desired order:
+    address_lines is in desired order:
         [company, street, city/state, extra1, extra2, ...]
     """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -183,14 +183,16 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
         ws["A6"].value = datetime.today().strftime("%A, %B %d, %Y")
         ws["A7"].value = f"Customer PO# {po}"
 
-        # --- NLD / Delivery (use D20 / D21 to avoid stomping address block) ---
-        ws["D20"].value = f"NLD {nld_text} or asap"
-        ws["D21"].value = f"Delivery {delivery_text}"
+        # --- Put NLD / Delivery above the address block in D16–D17 ---
+        ws["D16"].value = f"NLD {nld_text} or asap"
+        ws["D17"].value = f"Delivery {delivery_text}"
 
-        # --- Overwrite the entire address block (D24–D28) ---
-        for cell in ("D24", "D25", "D26", "D27", "D28"):
+        # --- Completely clear both the old address area and yellow box ---
+        for cell in ("D18", "D19", "D20", "D21", "D22", "D23",
+                     "D24", "D25", "D26", "D27", "D28"):
             ws[cell].value = None
 
+        # --- Write address ONLY into the yellow box: D24–D28 ---
         row = 24
         for line in address_lines:
             line = (line or "").strip()
@@ -307,7 +309,6 @@ def generate_rpc_from_form(data):
         data.get("addr_line4", "").strip(),
         data.get("addr_line5", "").strip(),
     ]
-    # Keep only non-empty in this order
     address_lines = [line for line in address_lines_raw if line]
 
     # Build buckets dict from the bucket bank fields
@@ -379,7 +380,6 @@ Bensenville, IL, 60106<br>
             "pv@denkersbv.nl;evdd@denkersbv.nl;digdos@denkersbv.nl",
             "stan@retrieverpackaging.com;jaime@retriever.pro",
             "spencer@retriever.pro",
-            html2,
         )
 
     return files
