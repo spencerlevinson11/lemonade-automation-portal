@@ -263,17 +263,27 @@ def create_outlook_draft(files, subject_base, to_addrs, cc_addrs, bcc_addrs, htm
         print("win32com not available; skipping Outlook draft creation.")
         return
 
-    outlook = win32.Dispatch("Outlook.Application")
-    mail = outlook.CreateItem(0)
-    mail.Subject = f"New Order RPC#{subject_base}"
-    mail.To = to_addrs
-    mail.CC = cc_addrs
-    mail.BCC = bcc_addrs
-    mail.HTMLBody = html_body
-    for f in files:
-        mail.Attachments.Add(str(f))
-    mail.Save()
-    print(f"Draft saved: New Order RPC#{subject_base}")
+    try:
+        print("Attempting to create Outlook draft via COM...")
+        outlook = win32.Dispatch("Outlook.Application")
+        ns = outlook.GetNamespace("MAPI")
+        default_store = ns.DefaultStore.DisplayName
+        print(f"Connected to Outlook store: {default_store}")
+
+        mail = outlook.CreateItem(0)
+        mail.Subject = f"New Order RPC#{subject_base}"
+        mail.To = to_addrs
+        mail.CC = cc_addrs
+        mail.BCC = bcc_addrs
+        mail.HTMLBody = html_body
+        for f in files:
+            mail.Attachments.Add(str(f))
+
+        mail.Save()
+        print(f"Draft saved: New Order RPC#{subject_base} in folder: {mail.Parent.Name}")
+    except Exception as e:
+        print("Error while creating Outlook draft:", e)
+
 
 
 # --- Main entry point used by Django view ---
