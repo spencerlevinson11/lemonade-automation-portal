@@ -105,7 +105,7 @@ BUCKET_FIELD_MAP = {
 }
 
 
-# --- Core helpers ---
+# --- Core helpers (same as your original script) ---
 
 def pair_and_leftover(buckets, pairs):
     paired, leftovers = [], []
@@ -151,7 +151,7 @@ def pack_into_containers(pallets):
 
 def format_date_info(date_val):
     """
-    Format a date (datetime.date/datetime) as 'Month DD, YYYY - week WW'.
+    Format a date (datetime/date) as 'Month DD, YYYY - week WW'.
     Falls back to plain string if not a date-like value.
     """
     if isinstance(date_val, (datetime, date)):
@@ -163,10 +163,11 @@ def format_date_info(date_val):
 
 def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_lines):
     """
-    Write one or more RPC sheets based on the containers.
+    Mirrors your original write_rpc layout:
 
-    address_lines is in desired order:
-        [company, street, city/state, extra1, extra2, ...]
+    - NLD in D25
+    - Delivery in D27
+    - Address block in D30–D34 (yellow box)
     """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     saved_files = []
@@ -183,33 +184,27 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
         ws["A6"].value = datetime.today().strftime("%A, %B %d, %Y")
         ws["A7"].value = f"Customer PO# {po}"
 
-        # --- Put NLD / Delivery above the address block in D16–D17 ---
-        ws["D16"].value = f"NLD {nld_text} or asap"
-        ws["D17"].value = f"Delivery {delivery_text}"
+        # --- NLD / Delivery exactly as original ---
+        ws["D25"].value = f"NLD {nld_text} or asap"
+        ws["D27"].value = f"Delivery {delivery_text}"
 
-        # --- Completely clear both the old address area and yellow box ---
-        for cell in ("D18", "D19", "D20", "D21", "D22", "D23",
-                     "D24", "D25", "D26", "D27", "D28"):
-            ws[cell].value = None
+        # --- Clear the entire yellow address box (D30–D34) and overwrite ---
+        for row in range(30, 35):
+            ws[f"D{row}"].value = None
 
-        # --- Write address ONLY into the yellow box: D24–D28 ---
-        row = 24
-        for line in address_lines:
-            line = (line or "").strip()
-            if not line:
-                continue
-            if row > 28:  # cap at 5 lines
+        for i, line in enumerate(address_lines):
+            if i >= 5:  # max 5 lines
                 break
-            ws[f"D{row}"].value = line
-            ws[f"D{row}"].alignment = Alignment(horizontal="left")
-            row += 1
+            ws[f"D{30 + i}"].value = line
+            ws[f"D{30 + i}"].alignment = Alignment(horizontal="left")
 
-        # Clear any old template totals/labels
+        # ---- Clear any old template totals/labels so nothing reappears ----
         for cell in ("G16", "G23", "H16", "H23"):
             ws[cell].value = None
 
         counts = Counter(p["Bucket Type"] for p in cont)
 
+        # ---- Item lines ----------------------------------------------------
         row = 14
         for name, qty in counts.items():
             ws[f"A{row}"].value = qty
@@ -227,6 +222,7 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
                 )
             row += 1
 
+        # ---- Summary rows (same idea as original) -------------------------
         ws["A23"].value = sum(counts.values())
         ws["A23"].alignment = Alignment(horizontal="right")
         ws["A24"].value = cap
@@ -242,6 +238,7 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
         ws[f"H{total_row}"].value = "Total pieces"
         ws[f"H{total_row}"].alignment = Alignment(horizontal="left")
 
+        # Collapse blank rows between grand total and the "pallets" area
         delete_start = total_row + 1
         if delete_start <= 22:
             ws.delete_rows(delete_start, 22 - delete_start + 1)
@@ -295,19 +292,19 @@ def generate_rpc_from_form(data):
     city_state = data.get("city_state", "").strip()
     denkers = data.get("denkers", False)
 
-    # Build ordered address lines:
-    #  1) company
-    #  2) street (addr_line1)
-    #  3) city/state (form field)
-    #  4–7) any extra address lines the user filled in
+    # Build ordered address lines just like your generator sheet had:
+    #   D30: company
+    #   D31: street
+    #   D32: city/state
+    #   D33–D34: any extra lines (e.g. "Attn: Spencer ...")
     address_lines_raw = [
         company,
-        data.get("addr_line1", "").strip(),
+        (data.get("addr_line1", "") or "").strip(),
         city_state,
-        data.get("addr_line2", "").strip(),
-        data.get("addr_line3", "").strip(),
-        data.get("addr_line4", "").strip(),
-        data.get("addr_line5", "").strip(),
+        (data.get("addr_line2", "") or "").strip(),
+        (data.get("addr_line3", "") or "").strip(),
+        (data.get("addr_line4", "") or "").strip(),
+        (data.get("addr_line5", "") or "").strip(),
     ]
     address_lines = [line for line in address_lines_raw if line]
 
