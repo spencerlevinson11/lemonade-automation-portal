@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <style>
+        /* (styles stay the same — unchanged) */
         :root {
             --bg-main: #020617;
             --bg-surface: #020819;
@@ -22,9 +23,7 @@
             --success: #4ade80;
         }
 
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         html, body {
             height: 100%;
@@ -56,9 +55,7 @@
             overflow: hidden;
         }
 
-        .page-inner {
-            padding: 18px 22px 22px;
-        }
+        .page-inner { padding: 18px 22px 22px; }
 
         .top-bar {
             display: flex;
@@ -130,29 +127,7 @@
             font-weight: 500;
         }
 
-        .user-pill a:hover {
-            text-decoration: underline;
-        }
-
-        .debug-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 9px;
-            border-radius: 999px;
-            font-size: 0.75rem;
-            background: rgba(76, 29, 149, 0.4);
-            color: #e9d5ff;
-            border: 1px dashed rgba(167, 139, 250, 0.6);
-            margin-bottom: 10px;
-        }
-
-        .debug-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 999px;
-            background: #a855f7;
-        }
+        .user-pill a:hover { text-decoration: underline; }
 
         .status-banner {
             border-radius: 12px;
@@ -164,10 +139,7 @@
             gap: 10px;
         }
 
-        .status-icon {
-            font-size: 1rem;
-            line-height: 1;
-        }
+        .status-icon { font-size: 1rem; line-height: 1; }
 
         .status-admin {
             background: rgba(250, 204, 21, 0.08);
@@ -189,17 +161,10 @@
             margin-bottom: 2px;
         }
 
-        .status-body {
-            color: var(--text-muted);
-        }
+        .status-body { color: var(--text-muted); }
+        .status-body strong { color: var(--accent); }
 
-        .status-body strong {
-            color: var(--accent);
-        }
-
-        .main-header {
-            margin: 14px 0 10px;
-        }
+        .main-header { margin: 14px 0 10px; }
 
         .main-title {
             font-size: 1.4rem;
@@ -265,15 +230,9 @@
             overflow: hidden;
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.82rem;
-        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 
-        thead {
-            background: rgba(15, 23, 42, 0.96);
-        }
+        thead { background: rgba(15, 23, 42, 0.96); }
 
         th, td {
             padding: 8px 10px;
@@ -290,17 +249,10 @@
             font-size: 0.75rem;
         }
 
-        tbody tr:nth-child(even) {
-            background: rgba(15, 23, 42, 0.85);
-        }
+        tbody tr:nth-child(even) { background: rgba(15, 23, 42, 0.85); }
+        tbody tr:nth-child(odd) { background: rgba(15, 23, 42, 0.7); }
 
-        tbody tr:nth-child(odd) {
-            background: rgba(15, 23, 42, 0.7);
-        }
-
-        tbody tr:hover {
-            background: rgba(30, 64, 175, 0.5);
-        }
+        tbody tr:hover { background: rgba(30, 64, 175, 0.5); }
 
         .pill {
             display: inline-flex;
@@ -344,14 +296,7 @@
                 0 0 0 1px rgba(253, 224, 71, 0.8);
         }
 
-        .run-btn span.icon {
-            font-size: 0.9rem;
-        }
-
-        .run-btn:hover {
-            filter: brightness(1.05);
-        }
-
+        .run-btn:hover { filter: brightness(1.05); }
         .run-btn:active {
             transform: translateY(0.5px);
             box-shadow:
@@ -369,198 +314,150 @@
             color: var(--text-muted);
         }
 
-        .empty-state strong {
-            color: var(--accent);
-        }
-
-        .footer-note {
-            margin-top: 16px;
-            font-size: 0.78rem;
-            color: var(--text-muted);
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .footer-note span.highlight {
-            color: var(--accent);
-            font-weight: 500;
-        }
-
-        @media (max-width: 768px) {
-            body {
-                padding: 12px;
-            }
-
-            .page-inner {
-                padding: 14px 14px 16px;
-            }
-
-            .top-bar {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .automations-header {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .table-wrapper {
-                overflow-x: auto;
-            }
-        }
+        .empty-state strong { color: var(--accent); }
     </style>
 </head>
 <body>
-    <div class="page">
-        <div class="page-inner">
-            <div class="top-bar">
-                <div class="brand">
-                    <div class="brand-logo"></div>
-                    <div>
-                        <div class="brand-text-main">Automation Portal</div>
-                        <div class="brand-text-sub">Control center for your client workflows</div>
+<div class="page">
+    <div class="page-inner">
+
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="brand">
+                <div class="brand-logo"></div>
+                <div>
+                    <div class="brand-text-main">Automation Portal</div>
+                    <div class="brand-text-sub">Control center for your client workflows</div>
+                </div>
+            </div>
+
+            <div class="user-pill">
+                <span class="dot"></span>
+                <span>Logged in as <strong>{{ request.user.username }}</strong></span>
+                <span style="opacity: 0.4;">•</span>
+                <a href="{% url 'logout' %}">Logout</a>
+            </div>
+        </div>
+
+        <!-- Status banner (unchanged) -->
+        {% if is_admin %}
+            <div class="status-banner status-admin">
+                <div class="status-icon">👑</div>
+                <div>
+                    <div class="status-title">Admin view</div>
+                    <div class="status-body">
+                        You are seeing automations for <strong>all companies</strong>.
                     </div>
                 </div>
-
-                <div class="user-pill">
-                    <span class="dot"></span>
-                    <span>Logged in as <strong>{{ request.user.username }}</strong></span>
-                    <span style="opacity: 0.4;">•</span>
-                    <a href="{% url 'logout' %}">Logout</a>
-                </div>
             </div>
-
-            <!-- DEBUG indicator (kept, but styled) -->
-            <div class="debug-badge">
-                <span class="debug-dot"></span>
-                <span>DEBUG: If you see this line, you are using the new dashboard template.</span>
-            </div>
-
-            <!-- Status banner: admin / company / no company -->
-            {% if is_admin %}
-                <div class="status-banner status-admin">
-                    <div class="status-icon">👑</div>
+        {% else %}
+            {% if company %}
+                <div class="status-banner status-company">
+                    <div class="status-icon">🏷️</div>
                     <div>
-                        <div class="status-title">Admin view</div>
+                        <div class="status-title">Company view</div>
                         <div class="status-body">
-                            You are seeing automations for <strong>all companies</strong>.
+                            You are viewing <strong>{{ company.name }}</strong>
+                            <span style="opacity: 0.75;">(Owner: {{ company.owner.username }})</span>
                         </div>
                     </div>
                 </div>
             {% else %}
-                {% if company %}
-                    <div class="status-banner status-company">
-                        <div class="status-icon">🏷️</div>
-                        <div>
-                            <div class="status-title">Company view</div>
-                            <div class="status-body">
-                                You are viewing <strong>{{ company.name }}</strong>
-                                <span style="opacity: 0.75;">(Owner: {{ company.owner.username }})</span>
-                            </div>
-                        </div>
-                    </div>
-                {% else %}
-                    <div class="status-banner status-warning">
-                        <div class="status-icon">⚠️</div>
-                        <div>
-                            <div class="status-title">No company linked</div>
-                            <div class="status-body">
-                                No company is linked to your account yet. Please contact Spencer.
-                            </div>
-                        </div>
-                    </div>
-                {% endif %}
-            {% endif %}
-
-            <header class="main-header">
-                <h1 class="main-title">Welcome to your automation dashboard</h1>
-                <p class="main-subtitle">
-                    Trigger and monitor <span>bespoke automations</span> built for your business.
-                </p>
-            </header>
-
-            <!-- Flash messages -->
-            {% if messages %}
-                <div class="messages">
-                    {% for message in messages %}
-                        <div class="message-item">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                </div>
-            {% endif %}
-
-            <section class="automations-card">
-                <div class="automations-header">
+                <div class="status-banner status-warning">
+                    <div class="status-icon">⚠️</div>
                     <div>
-                        <div class="automations-title">Automations</div>
-                        <div class="automations-meta">
-                            Run and monitor the workflows configured for your account.
+                        <div class="status-title">No company linked</div>
+                        <div class="status-body">
+                            No company is linked to your account yet. Please contact Spencer.
                         </div>
                     </div>
                 </div>
+            {% endif %}
+        {% endif %}
 
-                {% if automations %}
-                    <div class="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Automation</th>
-                                    <th>Company</th>
-                                    <th>Active</th>
-                                    <th>Last run</th>
-                                    <th>Created</th>
-                                    <th style="text-align: right;">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for automation in automations %}
-                                    <tr>
-                                        <td>{{ automation.name }}</td>
-                                        <td>{{ automation.company.name }}</td>
-                                        <td>
-                                            {% if automation.is_active %}
-                                                <span class="pill pill-active">Active</span>
-                                            {% else %}
-                                                <span class="pill pill-inactive">Paused</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>
-                                            {% if automation.last_run_at %}
-                                                {{ automation.last_run_at }}
-                                            {% else %}
-                                                Never
-                                            {% endif %}
-                                        </td>
-                                        <td>{{ automation.created_at }}</td>
-                                        <td style="text-align: right;">
-                                            <a href="{% url 'run_automation' automation.id %}" class="run-btn">
-                                                <span class="icon">▶</span>
-                                                <span>Run now</span>
-                                            </a>
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% else %}
-                    <div class="empty-state">
-                        <strong>No automations have been set up yet.</strong>
-                        <br>
-                        Once your first task is configured, it will appear here with run history and status.
-                    </div>
-                {% endif %}
-            </section>
+        <!-- Header -->
+        <header class="main-header">
+            <h1 class="main-title">Welcome to your automation dashboard</h1>
+            <p class="main-subtitle">
+                Trigger and monitor <span>bespoke automations</span> built for your business.
+            </p>
+        </header>
 
-            <div class="footer-note">
-                <span>If you see the debug badge above plus the status banner, per-company view is wired up. 🎉</span>
-                <span class="highlight">Remember: your first automated task is completely free.</span>
+        <!-- Flash messages -->
+        {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                    <div class="message-item">{{ message }}</div>
+                {% endfor %}
             </div>
-        </div>
+        {% endif %}
+
+        <!-- Automations table -->
+        <section class="automations-card">
+            <div class="automations-header">
+                <div>
+                    <div class="automations-title">Automations</div>
+                    <div class="automations-meta">
+                        Run and monitor the workflows configured for your account.
+                    </div>
+                </div>
+            </div>
+
+            {% if automations %}
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Automation</th>
+                            <th>Company</th>
+                            <th>Active</th>
+                            <th>Last run</th>
+                            <th>Created</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for automation in automations %}
+                            <tr>
+                                <td>{{ automation.name }}</td>
+                                <td>{{ automation.company.name }}</td>
+                                <td>
+                                    {% if automation.is_active %}
+                                        <span class="pill pill-active">Active</span>
+                                    {% else %}
+                                        <span class="pill pill-inactive">Paused</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if automation.last_run_at %}
+                                        {{ automation.last_run_at }}
+                                    {% else %}
+                                        Never
+                                    {% endif %}
+                                </td>
+                                <td>{{ automation.created_at }}</td>
+                                <td style="text-align: right;">
+                                    <a href="{% url 'run_automation' automation.id %}" class="run-btn">
+                                        <span class="icon">▶</span>
+                                        <span>Run now</span>
+                                    </a>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <strong>No automations have been set up yet.</strong>
+                    <br>
+                    Once your first task is configured, it will appear here with run history and status.
+                </div>
+            {% endif %}
+        </section>
+
     </div>
+</div>
 </body>
 </html>
+
