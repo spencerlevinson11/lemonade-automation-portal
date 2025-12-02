@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>RPC Order — {{ automation.name }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        :root {
+            --bg-main: #020617;
+            --bg-card: #0b1120;
+            --accent: #facc15;
+            --accent-soft: rgba(250, 204, 21, 0.18);
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+            --border-subtle: #1f2937;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+            background: radial-gradient(circle at top, #0b1120 0, #020617 55%, #000 100%);
+            color: var(--text-main);
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 32px 16px;
+        }
+
+        .shell {
+            width: 100%;
+            max-width: 900px;
+        }
+
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .title {
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .card {
+            background: rgba(15, 23, 42, 0.98);
+            border-radius: 18px;
+            border: 1px solid var(--border-subtle);
+            padding: 20px 22px;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+        }
+
+        .section-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-top: 20px;
+            margin-bottom: 8px;
+        }
+
+        .field-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .field {
+            margin-bottom: 12px;
+        }
+
+        .field label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-bottom: 4px;
+            color: var(--text-muted);
+        }
+
+        .field input[type="text"],
+        .field input[type="date"],
+        .field textarea {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 9px;
+            border: 1px solid var(--border-subtle);
+            background: #020617;
+            color: var(--text-main);
+            font-size: 0.9rem;
+        }
+
+        .field textarea {
+            resize: vertical;
+        }
+
+        .help-text {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .btn-row {
+            margin-top: 18px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .btn {
+            border-radius: 999px;
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            border: 1px solid transparent;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border-color: var(--border-subtle);
+            color: var(--text-muted);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-soft), var(--accent));
+            color: #000;
+            font-weight: 600;
+        }
+
+        .messages {
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+            color: var(--accent);
+        }
+
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.78rem;
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <div class="top-bar">
+        <div>
+            <div class="title">RPC Order — {{ automation.company.name }}</div>
+            <div class="subtitle">
+                Fill in the order details below. The portal will generate the RPC workbook and draft your Outlook emails.
+            </div>
+        </div>
+        <a href="{% url 'dashboard' %}" class="btn btn-secondary">← Back to dashboard</a>
+    </div>
+
+    <div class="card">
+        {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                    {{ message }}<br>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="section-title">Order header</div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="{{ form.po.id_for_label }}">{{ form.po.label }}</label>
+                    {{ form.po }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.rpc_info.id_for_label }}">{{ form.rpc_info.label }}</label>
+                    {{ form.rpc_info }}
+                </div>
+            </div>
+
+            <div class="field-row">
+                <div class="field">
+                    <label for="{{ form.nld.id_for_label }}">{{ form.nld.label }}</label>
+                    {{ form.nld }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.delivery.id_for_label }}">{{ form.delivery.label }}</label>
+                    {{ form.delivery }}
+                </div>
+            </div>
+
+            <div class="section-title">Ship-to & company</div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="{{ form.company.id_for_label }}">{{ form.company.label }}</label>
+                    {{ form.company }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.city_state.id_for_label }}">{{ form.city_state.label }}</label>
+                    {{ form.city_state }}
+                </div>
+            </div>
+
+            <div class="field-row">
+                <div class="field">
+                    <label for="{{ form.addr_line1.id_for_label }}">{{ form.addr_line1.label }}</label>
+                    {{ form.addr_line1 }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.addr_line2.id_for_label }}">{{ form.addr_line2.label }}</label>
+                    {{ form.addr_line2 }}
+                </div>
+            </div>
+
+            <div class="field-row">
+                <div class="field">
+                    <label for="{{ form.addr_line3.id_for_label }}">{{ form.addr_line3.label }}</label>
+                    {{ form.addr_line3 }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.addr_line4.id_for_label }}">{{ form.addr_line4.label }}</label>
+                    {{ form.addr_line4 }}
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="{{ form.addr_line5.id_for_label }}">{{ form.addr_line5.label }}</label>
+                {{ form.addr_line5 }}
+            </div>
+
+            <div class="field">
+                <label class="checkbox-label">
+                    {{ form.denkers }} {{ form.denkers.label }}
+                </label>
+            </div>
+
+            <div class="section-title">Buckets & pallets</div>
+            <div class="field">
+                <label for="{{ form.bucket_lines.id_for_label }}">{{ form.bucket_lines.label }}</label>
+                {{ form.bucket_lines }}
+                <div class="help-text">
+                    {{ form.bucket_lines.help_text|safe }}
+                </div>
+            </div>
+
+            <div class="btn-row">
+                <a href="{% url 'dashboard' %}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">
+                    Generate RPC & drafts
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+</body>
+</html>
