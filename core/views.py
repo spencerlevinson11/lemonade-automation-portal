@@ -3,7 +3,8 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from django.contrib import messages
 from django.core.mail import send_mail
-from .bol_generation import generate_bol_from_templates
+from .bol_generation import generate_bol_from_templates, generate_bol_from_form
+from .forms import BOLForm
 from django.utils import timezone
 from django.http import FileResponse, HttpResponseForbidden
 
@@ -103,19 +104,51 @@ def custom_logout(request):
     logout(request)
     return redirect("login")
 
+from django.views.decorators.http import require_http_methods
+# (put this with your other imports if you like)
+
+
+@require_http_methods(["GET", "POST"])
 @login_required
 def run_automation(request, pk):
+    """
+    For now, this treats the automation as a "Generate BOL" automation.
+
+    - GET: display a BOL form (fields matching BOL INFORMATION SHEET)
+    - POST: validate the form, generate a filled-out BOL Excel, and download it
+    """
     automation = get_object_or_404(Automation, pk=pk)
 
+    # Permission check: only superuser or the company owner
     if not (request.user.is_superuser or automation.company.owner == request.user):
         return HttpResponseForbidden("You are not allowed to run this automation.")
 
-    output_path = generate_bol_from_templates()
+    if request.method == "POST":
+        form = BOLForm(request.POST)
+        if form.is_valid():
+            output_path = generate_bol_from_form(form.cleaned_data)
 
-    messages.success(request, f"Ran automation: {automation.name}")
-    return FileResponse(
-        open(output_path, "rb"),
-        as_attachment=True,
-        filename=output_path.name,
+            # Record last run time on the automation
+            automation.last_run_at = timezone.now()
+            automation.save(update_fields=["last_run_at"])
+
+            messages.success(request, f"Generated BOL for {automation.company.name}")
+
+            return FileResponse(
+                open(output_path, "rb"),
+                as_attachment=True,
+                filename=output_path.name,
+            )
+    else:
+        # Empty form on first load
+        form = BOLForm()
+
+    return render(
+        request,
+        "core/run_bol.html",
+        {
+            "automation": automation,
+            "form": form,
+        },
     )
 
