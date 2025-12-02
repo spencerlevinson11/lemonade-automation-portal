@@ -147,5 +147,22 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Email settings — print emails to the console for development.
 # This lets us see exactly what would be sent without needing SMTP.
 
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-DEFAULT_FROM_EMAIL = "Lemonade Stand Portal <no-reply@lemonadestand.local>"
+# Email settings — use real SMTP so the portal can send emails.
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+
+# Outgoing SMTP server (from your Outlook account settings)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "netsol-smtp-oxcs.hostingplatform.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() == "true"
+
+# Auth for SMTP – never hard-code the password, pull from env vars.
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "spencer@retriever.pro")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
+
+# Default "from" address used when from_email=None
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DEFAULT_FROM_EMAIL",
+    "Spencer <spencer@retriever.pro>",
+)
+
