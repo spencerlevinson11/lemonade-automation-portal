@@ -158,7 +158,7 @@ EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() == "true"
 
 # Auth for SMTP – never hard-code the password, pull from env vars.
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "spencer@retriever.pro")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "aY4trb2000#")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
 
 # Default "from" address used when from_email=None
 DEFAULT_FROM_EMAIL = os.environ.get(
