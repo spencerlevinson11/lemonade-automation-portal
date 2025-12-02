@@ -1,0 +1,375 @@
+from pathlib import Path
+from collections import Counter
+from datetime import datetime, date
+
+from django.conf import settings
+from openpyxl import load_workbook
+from openpyxl.styles import Alignment
+
+# --- CONFIGURATION ---
+
+TEMPLATE_PATH = Path(settings.BASE_DIR) / "rpc_templates" / "RPC_template_Bensenville.xlsx"
+OUTPUT_DIR = Path(settings.BASE_DIR) / "generated_rpcs"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+STACKABLE_PAIRS = [
+    ("Amalia White Buckets", "Amalia White Lids"),
+    ("Amalia Black Buckets", "Amalia Black Lids"),
+    ("Maxima Black Buckets", "Maxima Black Lids"),
+    ("Maxima Buckets White", "Maxima Lids White"),
+    ("Maxima Green Buckets", "Maxima Green Lids"),
+]
+
+PER_PALLET = {
+    "10 Wide Standard Classic": 2800,
+    "10 ltr conical Next Gen":  4050,
+    "10 ltr conical black":     3960,
+    "10 ltr wide NG eco":       2842,
+    "13 ltr conical black":     2660,
+    "13 ltr conical Next Gen":  2730,
+    "5 liter vase":             6210,
+    "7 liter vase #":             3240,
+    "5 liter round":            3900,
+    "10 liter wide classic HQ#": 2800,
+    "Amalia White Buckets":     960,
+    "Amalia Black Buckets":     960,
+    "Amalia White Lids":        960,
+    "Amalia Black Lids":        960,
+    "Maxima Green Buckets":     720,
+    "Maxima Buckets White":     720,
+    "Maxima Black Buckets":     720,
+    "Maxima Green Lids":        720,
+    "Maxima Lids White":        720,
+    "Maxima Black Lids":        720,
+}
+
+ARTICLE_MAP = {
+    "10 ltr wide NG eco":        500103,
+    "10 ltr conical black":      500103,
+    "10 ltr conical Next Gen":   500107,
+    "13 ltr conical Next Gen":   500131,
+    "13 ltr conical black":      500130,
+    "10 Wide Standard Classic":  500100,
+    "10 liter classic hq":       500110,
+    "5 liter vase":              500050,
+    "7 liter vase #":              500071,
+    "5 liter round":             500500,
+    "10 liter wide classic HQ#": 500110,
+    "Amalia White Buckets":      500370,
+    "Amalia White Lids":         500380,
+    "Amalia Black Buckets":      500371,
+    "Amalia Black Lids":         500381,
+    "Maxima White Buckets":      500350,
+    "Maxima Buckets White":      500350,
+    "Maxima Lids White":         500360,
+    "Maxima Black Buckets":      500351,
+    "Maxima Black Lids":         500361,
+    "Maxima Green Buckets":      500390,
+    "Maxima Green Lids":         500391,
+}
+
+# Aliases + normalization
+ALIASES = {
+    "Maxima White Buckets": "Maxima Buckets White",
+    "Maxima White Lids":    "Maxima Lids White",
+}
+
+
+def normalize(name: str) -> str:
+    n = (name or "").strip()
+    return ALIASES.get(n, n)
+
+
+# --- Core helpers (ported from your script) ---
+
+def parse_bucket_lines(bucket_lines: str):
+    """
+    Parse a textarea like:
+        10 ltr conical Next Gen: 12
+        Maxima Black Buckets: 3
+    into a buckets dict {normalized_name: pallets_int}.
+    """
+    buckets = {}
+    if not bucket_lines:
+        return buckets
+
+    for raw in bucket_lines.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+
+        name = None
+        qty_str = None
+
+        if ":" in line:
+            name_part, qty_part = line.split(":", 1)
+            name = name_part.strip()
+            qty_str = qty_part.strip()
+        else:
+            parts = line.rsplit(" ", 1)
+            if len(parts) == 2:
+                name, qty_str = parts[0].strip(), parts[1].strip()
+
+        if not name or not qty_str:
+            continue
+
+        try:
+            qty = int(qty_str)
+        except ValueError:
+            continue
+
+        if qty <= 0:
+            continue
+
+        key = normalize(name)
+        buckets[key] = buckets.get(key, 0) + qty
+
+    return buckets
+
+
+def pair_and_leftover(buckets, pairs):
+    paired, leftovers = [], []
+    for bkt, lid in pairs:
+        nb, nl = buckets.get(bkt, 0), buckets.get(lid, 0)
+        n_pairs = min(nb, nl)
+        paired.extend([(bkt, True)] * n_pairs)
+        paired.extend([(lid, True)] * n_pairs)
+        buckets[bkt] = nb - n_pairs
+        buckets[lid] = nl - n_pairs
+    leftovers = [(n, False) for n, cnt in buckets.items() for _ in range(cnt)]
+    return paired, leftovers
+
+
+def stack_lids_three_high(paired, leftovers, buckets, pairs):
+    lids = []
+    for _, lid in pairs:
+        cnt = buckets.get(lid, 0)
+        lids += [lid] * cnt
+        buckets[lid] = 0
+    if lids:
+        pad = (3 - len(lids) % 3) % 3
+        lids += [lids[0]] * pad
+    for lid in lids:
+        paired.append((lid, True))
+    leftovers[:] = [(n, s) for n, s in leftovers if n not in lids]
+    return paired, leftovers
+
+
+def build_pallet_list(paired, leftovers, size_map):
+    return [
+        {"Bucket Type": n, "Pallet Size": size_map.get(n, "large"), "Stacked": s}
+        for n, s in paired + leftovers
+    ]
+
+
+def pack_into_containers(pallets):
+    # One container with everything; cap shows total items
+    containers = [pallets]
+    cap = len(pallets)
+    return containers, cap
+
+
+def format_date_info(date_val):
+    """
+    Format a date (datetime.date/datetime) as 'Month DD, YYYY - week WW'.
+    Falls back to plain string if not a date-like value.
+    """
+    if isinstance(date_val, (datetime, date)):
+        fmt = date_val.strftime("%B %d, %Y")
+        week = date_val.isocalendar()[1]
+        return f"{fmt} - week {week}"
+    return str(date_val).strip() if date_val else "asap"
+
+
+def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_lines):
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    saved_files = []
+    nld_text = format_date_info(nld_val)
+    delivery_text = format_date_info(delivery_val)
+
+    for idx, cont in enumerate(containers, start=1):
+        wb = load_workbook(TEMPLATE_PATH)
+        ws = wb.active
+
+        sheet_name = f"RPC#{rpc_info}" if rpc_info else f"RPC{idx}"
+        wb.worksheets[0].title = sheet_name
+        ws["A1"].value = f"RPC Order #{rpc_info}" if rpc_info else f"RPC Order #{idx}"
+        ws["A6"].value = datetime.today().strftime("%A, %B %d, %Y")
+        ws["A7"].value = f"Customer PO# {po}"
+        ws["D25"].value = f"NLD {nld_text} or asap"
+        ws["D27"].value = f"Delivery {delivery_text}"
+
+        # Address
+        for i, line in enumerate(address_lines):
+            if not line:
+                continue
+            ws[f"D{30 + i}"].value = line
+            ws[f"D{30 + i}"].alignment = Alignment(horizontal="left")
+
+        # Clear old template totals/labels
+        for cell in ("G16", "G23", "H16", "H23"):
+            ws[cell].value = None
+
+        counts = Counter(p["Bucket Type"] for p in cont)
+
+        row = 14
+        for name, qty in counts.items():
+            ws[f"A{row}"].value = qty
+            ws[f"A{row}"].alignment = Alignment(horizontal="right")
+            ws[f"B{row}"].value = "100 x 120"
+            ws[f"C{row}"].value = PER_PALLET.get(name, "")
+            ws[f"D{row}"].value = name
+            ws[f"E{row}"].value = "White" if "White" in name else "Zwart"
+            ws[f"F{row}"].value = ARTICLE_MAP.get(name, "")
+            ws[f"G{row}"].value = qty * PER_PALLET.get(name, 0)
+
+            for col in "ABCDEFG":
+                ws[f"{col}{row}"].alignment = Alignment(
+                    horizontal="right" if col == "A" else "center"
+                )
+            row += 1
+
+        ws["A23"].value = sum(counts.values())
+        ws["A23"].alignment = Alignment(horizontal="right")
+        ws["A24"].value = cap
+        ws["A24"].alignment = Alignment(horizontal="right")
+
+        last_data = row - 1
+        total_row = row
+        total_pieces_value = sum(qty * PER_PALLET.get(name, 0) for name, qty in counts.items())
+
+        ws[f"G{total_row}"].value = total_pieces_value
+        ws[f"G{total_row}"].alignment = Alignment(horizontal="right")
+        ws[f"H{total_row}"].value = "Total pieces"
+        ws[f"H{total_row}"].alignment = Alignment(horizontal="left")
+
+        delete_start = total_row + 1
+        if delete_start <= 22:
+            ws.delete_rows(delete_start, 22 - delete_start + 1)
+
+        filepath = OUTPUT_DIR / f"{sheet_name}.xlsx"
+        wb.save(filepath)
+        saved_files.append(filepath)
+
+    return saved_files
+
+
+# --- Optional Outlook draft creation (Windows only) ---
+
+try:
+    import win32com.client as win32  # type: ignore
+except ImportError:
+    win32 = None
+
+
+def create_outlook_draft(files, subject_base, to_addrs, cc_addrs, bcc_addrs, html_body):
+    if win32 is None:
+        # Running on a system without Outlook/pywin32
+        print("win32com not available; skipping Outlook draft creation.")
+        return
+
+    outlook = win32.Dispatch("Outlook.Application")
+    mail = outlook.CreateItem(0)
+    mail.Subject = f"New Order RPC#{subject_base}"
+    mail.To = to_addrs
+    mail.CC = cc_addrs
+    mail.BCC = bcc_addrs
+    mail.HTMLBody = html_body
+    for f in files:
+        mail.Attachments.Add(str(f))
+    mail.Save()
+    print(f"Draft saved: New Order RPC#{subject_base}")
+
+
+# --- Main entry point used by Django view ---
+
+def generate_rpc_from_form(data):
+    """
+    data is RpcOrderForm.cleaned_data
+    Returns list of Path objects for generated RPC workbooks.
+    Also triggers Outlook drafts (if available).
+    """
+    po = data.get("po", "").strip()
+    rpc_info = data.get("rpc_info", "").strip()
+    nld = data.get("nld")
+    delivery = data.get("delivery")
+    company = data.get("company", "").strip()
+    city_state = data.get("city_state", "").strip()
+    denkers = data.get("denkers", False)
+
+    address_lines = [
+        data.get("addr_line1", "").strip(),
+        data.get("addr_line2", "").strip(),
+        data.get("addr_line3", "").strip(),
+        data.get("addr_line4", "").strip(),
+        data.get("addr_line5", "").strip(),
+    ]
+
+    bucket_lines = data.get("bucket_lines", "")
+    buckets = parse_bucket_lines(bucket_lines)
+
+    # No custom pallet-size map for now; everything defaults to "large"
+    size_map = {}
+
+    paired, leftovers = pair_and_leftover(buckets, STACKABLE_PAIRS)
+    paired, leftovers = stack_lids_three_high(paired, leftovers, buckets, STACKABLE_PAIRS)
+    pallets, cap = pack_into_containers(build_pallet_list(paired, leftovers, size_map))
+    files = write_rpc(pallets, cap, po, rpc_info, nld, delivery, address_lines)
+
+    # Create Outlook drafts like your original script (if possible)
+    pickup = f"NLD {format_date_info(nld)} or asap"
+    html1 = f"""
+<p>Hi Annemiek and team,</p>
+<p>New Order RPC#{rpc_info}</p>
+<p>Can you kindly accept this order for {company} in {city_state}?</p>
+<p>Please advise if the pickup date is right for you:</p>
+<p><span style="background-color:yellow"><b>{pickup}</b></span></p>
+<p>Kindly confirm and we will release to the forwarder.</p>
+<p>Thank you!</p>
+
+<p>Kind regards,<br>
+Spencer Levinson<br>
+Retriever Packaging Company LLC<br>
+618 Supreme Drive<br>
+Bensenville, IL, 60106<br>
+708-800-6730</p>
+"""
+    create_outlook_draft(
+        files,
+        rpc_info,
+        "Annemiek.Naber@naberplastics.com;Orders@naberplastics.com",
+        "jaime@retriever.pro;stan@retrieverpackaging.com",
+        "spencer@retriever.pro",
+        html1,
+    )
+
+    if denkers:
+        pickup2 = f'<span style="background-color:yellow"><b>{pickup}</b></span>'
+        html2 = f"""
+<p>Hi Paul and Esther,</p>
+<p>New Order RPC#{rpc_info}</p>
+<p>Please make arrangements for RPC#{rpc_info}.</p>
+<p>Please communicate with Annemiek and Maud for the most convenient pickup date,</p>
+<p>{pickup2}</p>
+<p>Please book with the similar schedule below</p>
+<p>Vessel name<br>ETD:<br>ETA:</p>
+<p>When you can kindly reply with the booking confirmation.</p>
+<p>Kindly confirm. Thanks!</p>
+
+<p>Kind regards,<br>
+Spencer Levinson<br>
+Retriever Packaging Company LLC<br>
+618 Supreme Drive<br>
+Bensenville, IL, 60106<br>
+708-800-6730</p>
+"""
+        create_outlook_draft(
+            files,
+            rpc_info,
+            "pv@denkersbv.nl;evdd@denkersbv.nl;digdos@denkersbv.nl",
+            "stan@retrieverpackaging.com;jaime@retriever.pro",
+            "spencer@retriever.pro",
+            html2,
+        )
+
+    return files
