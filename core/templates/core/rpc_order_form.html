@@ -32,7 +32,7 @@
 
         .shell {
             width: 100%;
-            max-width: 900px;
+            max-width: 1000px;
         }
 
         .top-bar {
@@ -40,6 +40,7 @@
             align-items: center;
             justify-content: space-between;
             margin-bottom: 20px;
+            gap: 12px;
         }
 
         .title {
@@ -87,6 +88,7 @@
 
         .field input[type="text"],
         .field input[type="date"],
+        .field input[type="number"],
         .field textarea {
             width: 100%;
             padding: 8px 10px;
@@ -152,6 +154,19 @@
         code {
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
             font-size: 0.78rem;
+        }
+
+        .bucket-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px 14px;
+        }
+
+        @media (max-width: 720px) {
+            .field-row,
+            .bucket-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -248,11 +263,99 @@
             </div>
 
             <div class="section-title">Buckets & pallets</div>
-            <div class="field">
-                <label for="{{ form.bucket_lines.id_for_label }}">{{ form.bucket_lines.label }}</label>
-                {{ form.bucket_lines }}
-                <div class="help-text">
-                    {{ form.bucket_lines.help_text|safe }}
+            <p class="help-text">
+                Enter the number of pallets for each bucket type. Leave blank or 0 if not included in this order.
+            </p>
+
+            <div class="bucket-grid">
+                <div class="field">
+                    <label for="{{ form.b_10_wide_standard_classic.id_for_label }}">{{ form.b_10_wide_standard_classic.label }}</label>
+                    {{ form.b_10_wide_standard_classic }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.b_10_ltr_conical_next_gen.id_for_label }}">{{ form.b_10_ltr_conical_next_gen.label }}</label>
+                    {{ form.b_10_ltr_conical_next_gen }}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.b_10_ltr_conical_black.id_for_label }}">{{ form.b_10_ltr_conical_black.label }}</label>
+                    {{ form.b_10_ltr_conical_black }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.b_10_ltr_wide_ng_eco.id_for_label }}">{{ form.b_10_ltr_wide_ng_eco.label }}</label>
+                    {{ form.b_10_ltr_wide_ng_eco }}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.b_13_ltr_conical_black.id_for_label }}">{{ form.b_13_ltr_conical_black.label }}</label>
+                    {{ form.b_13_ltr_conical_black }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.b_13_ltr_conical_next_gen.id_for_label }}">{{ form.b_13_ltr_conical_next_gen.label }}</label>
+                    {{ form.b_13_ltr_conical_next_gen }}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.b_5_liter_vase.id_for_label }}">{{ form.b_5_liter_vase.label }}</label>
+                    {{ form.b_5_liter_vase }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.b_7_liter_vase.id_for_label }}">{{ form.b_7_liter_vase.label }}</label>
+                    {{ form.b_7_liter_vase }}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.b_5_liter_round.id_for_label }}">{{ form.b_5_liter_round.label }}</label>
+                    {{ form.b_5_liter_round }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.b_10_liter_wide_classic_hq.id_for_label }}">{{ form.b_10_liter_wide_classic_hq.label }}</label>
+                    {{ form.b_10_liter_wide_classic_hq }}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.b_amalia_white_buckets.id_for_label }}">{{ form.b_amalia_white_buckets.label }}</label>
+                    {{ form.b_amalia_white_buckets }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.b_amalia_black_buckets.id_for_label }}">{{ form.b_amalia_black_buckets.label }}</label>
+                    {{ form.b_amalia_black_buckets }}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.b_amalia_white_lids.id_for_label }}">{{ form.b_amalia_white_lids.label }}</label>
+                    {{ form.b_amalia_white_lids }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.b_amalia_black_lids.id_for_label }}">{{ form.b_amalia_black_lids.label }}</label>
+                    {{ form.b_amalia_black_lids }}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.b_maxima_green_buckets.id_for_label }}">{{ form.b_maxima_green_buckets.label }}</label>
+                    {{ form.b_maxima_green_buckets }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.b_maxima_buckets_white.id_for_label }}">{{ form.b_maxima_buckets_white.label }}</label>
+                    {{ form.b_maxima_buckets_white }}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.b_maxima_black_buckets.id_for_label }}">{{ form.b_maxima_black_buckets.label }}</label>
+                    {{ form.b_maxima_black_buckets }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.b_maxima_green_lids.id_for_label }}">{{ form.b_maxima_green_lids.label }}</label>
+                    {{ form.b_maxima_green_lids }}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.b_maxima_lids_white.id_for_label }}">{{ form.b_maxima_lids_white.label }}</label>
+                    {{ form.b_maxima_lids_white }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.b_maxima_black_lids.id_for_label }}">{{ form.b_maxima_black_lids.label }}</label>
+                    {{ form.b_maxima_black_lids }}
                 </div>
             </div>
 
