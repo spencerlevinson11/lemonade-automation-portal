@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Generate BOL - {{ automation.name }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        :root {
+            --bg-main: #020617;
+            --bg-card: #0b1120;
+            --accent: #facc15;
+            --accent-soft: rgba(250, 204, 21, 0.18);
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+            --border-subtle: #1f2937;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 24px;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                         "Inter", "Segoe UI", sans-serif;
+            background: radial-gradient(circle at top, #020617 0, #020617 40%, #020617 100%);
+            color: var(--text-main);
+        }
+
+        .page {
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 18px;
+        }
+
+        .header h1 {
+            margin: 0 0 4px;
+            font-size: 1.4rem;
+        }
+
+        .header p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .card {
+            background: var(--bg-card);
+            border-radius: 18px;
+            border: 1px solid var(--border-subtle);
+            padding: 18px 18px 20px;
+        }
+
+        .section-title {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 12px 16px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="date"] {
+            border-radius: 10px;
+            border: 1px solid var(--border-subtle);
+            background: #020617;
+            color: var(--text-main);
+            padding: 7px 9px;
+            font-size: 0.88rem;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        input[type="date"]:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.4);
+        }
+
+        .help-text {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .actions {
+            grid-column: 1 / -1;
+            margin-top: 10px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .btn {
+            border-radius: 999px;
+            padding: 8px 16px;
+            border: 1px solid transparent;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border-color: var(--border-subtle);
+            color: var(--text-muted);
+        }
+
+        .btn-primary {
+            background: linear-gradient(to right, #facc15, #fbbf24);
+            color: #0b1120;
+            font-weight: 600;
+        }
+
+        .messages {
+            margin-bottom: 10px;
+        }
+
+        .message-item {
+            border-radius: 10px;
+            padding: 7px 9px;
+            font-size: 0.82rem;
+            margin-bottom: 6px;
+            background: rgba(34, 197, 94, 0.09);
+            border: 1px solid rgba(34, 197, 94, 0.5);
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="header">
+        <h1>Generate Bill of Lading</h1>
+        <p>You are running: <strong>{{ automation.name }}</strong> for
+            <strong>{{ automation.company.name }}</strong></p>
+    </div>
+
+    <div class="card">
+        {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                    <div class="message-item">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <div class="section-title">BOL Information Sheet</div>
+
+        <form method="post">
+            {% csrf_token %}
+
+            {# Render each form field individually so we control layout #}
+            {% for field in form %}
+                <div class="field">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}
+                        <div class="help-text">{{ field.help_text }}</div>
+                    {% endif %}
+                    {% for error in field.errors %}
+                        <div class="help-text" style="color:#f97373;">{{ error }}</div>
+                    {% endfor %}
+                </div>
+            {% endfor %}
+
+            <div class="actions">
+                <a href="{% url 'dashboard' %}" class="btn btn-secondary">Back to dashboard</a>
+                <button type="submit" class="btn btn-primary">
+                    Generate BOL
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+</body>
+</html>
