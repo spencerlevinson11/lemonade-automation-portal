@@ -28,7 +28,7 @@ PER_PALLET = {
     "13 ltr conical black":     2660,
     "13 ltr conical Next Gen":  2730,
     "5 liter vase":             6210,
-    "7 liter vase #":             3240,
+    "7 liter vase #":           3240,
     "5 liter round":            3900,
     "10 liter wide classic HQ#": 2800,
     "Amalia White Buckets":     960,
@@ -52,7 +52,7 @@ ARTICLE_MAP = {
     "10 Wide Standard Classic":  500100,
     "10 liter classic hq":       500110,
     "5 liter vase":              500050,
-    "7 liter vase #":              500071,
+    "7 liter vase #":            500071,
     "5 liter round":             500500,
     "10 liter wide classic HQ#": 500110,
     "Amalia White Buckets":      500370,
@@ -105,7 +105,7 @@ BUCKET_FIELD_MAP = {
 }
 
 
-# --- Core helpers (same as before) ---
+# --- Core helpers ---
 
 def pair_and_leftover(buckets, pairs):
     paired, leftovers = [], []
@@ -162,6 +162,12 @@ def format_date_info(date_val):
 
 
 def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_lines):
+    """
+    Write one or more RPC sheets based on the containers.
+
+    address_lines is already in the desired order:
+        [company, street, city/state, extra1, extra2, ...]
+    """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     saved_files = []
     nld_text = format_date_info(nld_val)
@@ -176,17 +182,27 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
         ws["A1"].value = f"RPC Order #{rpc_info}" if rpc_info else f"RPC Order #{idx}"
         ws["A6"].value = datetime.today().strftime("%A, %B %d, %Y")
         ws["A7"].value = f"Customer PO# {po}"
-        ws["D25"].value = f"NLD {nld_text} or asap"
-        ws["D27"].value = f"Delivery {delivery_text}"
 
-        # Address
-        for i, line in enumerate(address_lines):
+        # --- NLD / Delivery (use D20 / D21 to avoid stomping address block) ---
+        ws["D20"].value = f"NLD {nld_text} or asap"
+        ws["D21"].value = f"Delivery {delivery_text}"
+
+        # --- Overwrite the entire address block (D24–D28) ---
+        for cell in ("D24", "D25", "D26", "D27", "D28"):
+            ws[cell].value = None
+
+        row = 24
+        for line in address_lines:
+            line = (line or "").strip()
             if not line:
                 continue
-            ws[f"D{30 + i}"].value = line
-            ws[f"D{30 + i}"].alignment = Alignment(horizontal="left")
+            if row > 28:  # cap at 5 lines
+                break
+            ws[f"D{row}"].value = line
+            ws[f"D{row}"].alignment = Alignment(horizontal="left")
+            row += 1
 
-        # Clear old template totals/labels
+        # Clear any old template totals/labels
         for cell in ("G16", "G23", "H16", "H23"):
             ws[cell].value = None
 
@@ -277,13 +293,22 @@ def generate_rpc_from_form(data):
     city_state = data.get("city_state", "").strip()
     denkers = data.get("denkers", False)
 
-    address_lines = [
+    # Build ordered address lines:
+    #  1) company
+    #  2) street (addr_line1)
+    #  3) city/state (form field)
+    #  4–7) any extra address lines the user filled in
+    address_lines_raw = [
+        company,
         data.get("addr_line1", "").strip(),
+        city_state,
         data.get("addr_line2", "").strip(),
         data.get("addr_line3", "").strip(),
         data.get("addr_line4", "").strip(),
         data.get("addr_line5", "").strip(),
     ]
+    # Keep only non-empty in this order
+    address_lines = [line for line in address_lines_raw if line]
 
     # Build buckets dict from the bucket bank fields
     buckets = {}
