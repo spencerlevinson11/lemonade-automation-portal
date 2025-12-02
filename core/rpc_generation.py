@@ -259,17 +259,15 @@ except ImportError:
 
 
 def create_outlook_draft(files, subject_base, to_addrs, cc_addrs, bcc_addrs, html_body):
+    """
+    Try to create an Outlook draft. Returns (success: bool, message: str)
+    so the caller can surface what actually happened.
+    """
     if win32 is None:
-        print("win32com not available; skipping Outlook draft creation.")
-        return
+        return False, "Outlook/pywin32 not available on this machine."
 
     try:
-        print("Attempting to create Outlook draft via COM...")
         outlook = win32.Dispatch("Outlook.Application")
-        ns = outlook.GetNamespace("MAPI")
-        default_store = ns.DefaultStore.DisplayName
-        print(f"Connected to Outlook store: {default_store}")
-
         mail = outlook.CreateItem(0)
         mail.Subject = f"New Order RPC#{subject_base}"
         mail.To = to_addrs
@@ -278,12 +276,12 @@ def create_outlook_draft(files, subject_base, to_addrs, cc_addrs, bcc_addrs, htm
         mail.HTMLBody = html_body
         for f in files:
             mail.Attachments.Add(str(f))
-
         mail.Save()
-        print(f"Draft saved: New Order RPC#{subject_base} in folder: {mail.Parent.Name}")
+        # If you want to be fancy, you can inspect mail.Parent.Name (Drafts, etc.)
+        return True, "Outlook draft(s) created successfully."
     except Exception as e:
-        print("Error while creating Outlook draft:", e)
-
+        # Bubble up the error so you can see it in the browser
+        return False, f"Error creating Outlook draft: {e}"
 
 
 # --- Main entry point used by Django view ---
@@ -291,8 +289,10 @@ def create_outlook_draft(files, subject_base, to_addrs, cc_addrs, bcc_addrs, htm
 def generate_rpc_from_form(data):
     """
     data is RpcOrderForm.cleaned_data
-    Returns list of Path objects for generated RPC workbooks.
-    Also triggers Outlook drafts (if available).
+    Returns (files, outlook_status_message).
+
+    files: list[Path] for generated RPC workbooks.
+    outlook_status_message: string describing what happened with Outlook drafts.
     """
     po = data.get("po", "").strip()
     rpc_info = data.get("rpc_info", "").strip()
@@ -334,7 +334,7 @@ def generate_rpc_from_form(data):
     pallets, cap = pack_into_containers(build_pallet_list(paired, leftovers, size_map))
     files = write_rpc(pallets, cap, po, rpc_info, nld, delivery, address_lines)
 
-    # Create Outlook drafts like your original script (if possible)
+    # --- Outlook drafts like your original script (if possible) ---
     pickup = f"NLD {format_date_info(nld)} or asap"
     html1 = f"""
 <p>Hi Annemiek and team,</p>
@@ -352,7 +352,7 @@ Retriever Packaging Company LLC<br>
 Bensenville, IL, 60106<br>
 708-800-6730</p>
 """
-    create_outlook_draft(
+    ok1, msg1 = create_outlook_draft(
         files,
         rpc_info,
         "Annemiek.Naber@naberplastics.com;Orders@naberplastics.com",
@@ -360,6 +360,8 @@ Bensenville, IL, 60106<br>
         "spencer@retriever.pro",
         html1,
     )
+
+    msg_parts = [msg1]
 
     if denkers:
         pickup2 = f'<span style="background-color:yellow"><b>{pickup}</b></span>'
@@ -381,12 +383,17 @@ Retriever Packaging Company LLC<br>
 Bensenville, IL, 60106<br>
 708-800-6730</p>
 """
-        create_outlook_draft(
+        ok2, msg2 = create_outlook_draft(
             files,
             rpc_info,
             "pv@denkersbv.nl;evdd@denkersbv.nl;digdos@denkersbv.nl",
             "stan@retrieverpackaging.com;jaime@retriever.pro",
             "spencer@retriever.pro",
+            html2,
         )
+        msg_parts.append(msg2)
 
-    return files
+    # Combine messages (drop empties)
+    outlook_status = " / ".join(m for m in msg_parts if m)
+
+    return files, outlook_status
