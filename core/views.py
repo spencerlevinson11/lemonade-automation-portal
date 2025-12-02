@@ -65,12 +65,11 @@ def run_automation(request, pk):
     if not (request.user.is_superuser or automation.company.owner == request.user):
         return HttpResponseForbidden("You are not allowed to run this automation.")
 
-    # ---- Branch 1: Retriever RPC automation ----
-    if automation.name.strip().lower() == "retriever rpc order":
+        if automation.name.strip().lower() == "retriever rpc order":
         if request.method == "POST":
             form = RpcOrderForm(request.POST)
             if form.is_valid():
-                files = generate_rpc_from_form(form.cleaned_data)
+                files, outlook_status = generate_rpc_from_form(form.cleaned_data)
 
                 # Record last run time on the automation
                 automation.last_run_at = timezone.now()
@@ -79,10 +78,10 @@ def run_automation(request, pk):
                 # For now, return the first generated file (if multiple)
                 first_file = files[0]
 
+                status_text = outlook_status or "No Outlook status returned."
                 messages.success(
                     request,
-                    "RPC generated. Outlook drafts were created if Outlook/pywin32 "
-                    "is available on this machine.",
+                    f"RPC generated. {status_text}",
                 )
 
                 return FileResponse(
@@ -90,6 +89,18 @@ def run_automation(request, pk):
                     as_attachment=True,
                     filename=first_file.name,
                 )
+        else:
+            form = RpcOrderForm()
+
+        return render(
+            request,
+            "core/rpc_order_form.html",
+            {
+                "automation": automation,
+                "form": form,
+            },
+        )
+
         else:
             form = RpcOrderForm()
 
