@@ -228,7 +228,7 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
         if delete_start <= 22:
             ws.delete_rows(delete_start, 22 - delete_start + 1)
 
-        filepath = OUTPUT_DIR / f"{sheet_name}.xlsx}"
+        filepath = OUTPUT_DIR / f"{sheet_name}.xlsx"
         wb.save(filepath)
         saved_files.append(filepath)
 
