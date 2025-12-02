@@ -3,6 +3,7 @@ from collections import Counter
 from datetime import datetime, date
 
 from django.conf import settings
+from django.core.mail import EmailMessage
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 
@@ -105,7 +106,7 @@ BUCKET_FIELD_MAP = {
 }
 
 
-# --- Core helpers (same as your original script) ---
+# --- Core helpers (same logic as your original script) ---
 
 def pair_and_leftover(buckets, pairs):
     paired, leftovers = [], []
@@ -222,7 +223,7 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
                 )
             row += 1
 
-        # ---- Summary rows (same idea as original) -------------------------
+        # ---- Summary rows --------------------------------------------------
         ws["A23"].value = sum(counts.values())
         ws["A23"].alignment = Alignment(horizontal="right")
         ws["A24"].value = cap
@@ -250,49 +251,16 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
     return saved_files
 
 
-# --- Optional Outlook draft creation (Windows only) ---
-
-try:
-    import win32com.client as win32  # type: ignore
-except ImportError:
-    win32 = None
-
-
-def create_outlook_draft(files, subject_base, to_addrs, cc_addrs, bcc_addrs, html_body):
-    """
-    Try to create an Outlook draft. Returns (success: bool, message: str)
-    so the caller can surface what actually happened.
-    """
-    if win32 is None:
-        return False, "Outlook/pywin32 not available on this machine."
-
-    try:
-        outlook = win32.Dispatch("Outlook.Application")
-        mail = outlook.CreateItem(0)
-        mail.Subject = f"New Order RPC#{subject_base}"
-        mail.To = to_addrs
-        mail.CC = cc_addrs
-        mail.BCC = bcc_addrs
-        mail.HTMLBody = html_body
-        for f in files:
-            mail.Attachments.Add(str(f))
-        mail.Save()
-        # If you want to be fancy, you can inspect mail.Parent.Name (Drafts, etc.)
-        return True, "Outlook draft(s) created successfully."
-    except Exception as e:
-        # Bubble up the error so you can see it in the browser
-        return False, f"Error creating Outlook draft: {e}"
-
-
 # --- Main entry point used by Django view ---
+
 
 def generate_rpc_from_form(data):
     """
     data is RpcOrderForm.cleaned_data
-    Returns (files, outlook_status_message).
+    Returns (files, email_status_message).
 
     files: list[Path] for generated RPC workbooks.
-    outlook_status_message: string describing what happened with Outlook drafts.
+    email_status_message: string describing what happened with the emails.
     """
     po = data.get("po", "").strip()
     rpc_info = data.get("rpc_info", "").strip()
@@ -334,8 +302,12 @@ def generate_rpc_from_form(data):
     pallets, cap = pack_into_containers(build_pallet_list(paired, leftovers, size_map))
     files = write_rpc(pallets, cap, po, rpc_info, nld, delivery, address_lines)
 
-    # --- Outlook drafts like your original script (if possible) ---
+    # --- Send emails via Django, but ONLY to Spencer -----------------------
+    status_parts = []
+
     pickup = f"NLD {format_date_info(nld)} or asap"
+
+    # Email 1: the "Naber" order email, but sent only to Spencer
     html1 = f"""
 <p>Hi Annemiek and team,</p>
 <p>New Order RPC#{rpc_info}</p>
@@ -352,17 +324,23 @@ Retriever Packaging Company LLC<br>
 Bensenville, IL, 60106<br>
 708-800-6730</p>
 """
-    ok1, msg1 = create_outlook_draft(
-        files,
-        rpc_info,
-        "Annemiek.Naber@naberplastics.com;Orders@naberplastics.com",
-        "jaime@retriever.pro;stan@retrieverpackaging.com",
-        "spencer@retriever.pro",
-        html1,
-    )
 
-    msg_parts = [msg1]
+    try:
+        msg1 = EmailMessage(
+            subject=f"[FORWARD TO NABER] New Order RPC#{rpc_info}",
+            body=html1,
+            from_email=None,  # uses DEFAULT_FROM_EMAIL
+            to=["spencer@retriever.pro"],  # ONLY Spencer, never Naber directly
+        )
+        msg1.content_subtype = "html"
+        for f in files:
+            msg1.attach_file(str(f))
+        msg1.send(fail_silently=False)
+        status_parts.append("Order email sent to spencer@retriever.pro.")
+    except Exception as e:
+        status_parts.append(f"Error sending order email: {e}")
 
+    # Email 2: Denkers email, also ONLY to Spencer
     if denkers:
         pickup2 = f'<span style="background-color:yellow"><b>{pickup}</b></span>'
         html2 = f"""
@@ -383,17 +361,21 @@ Retriever Packaging Company LLC<br>
 Bensenville, IL, 60106<br>
 708-800-6730</p>
 """
-        ok2, msg2 = create_outlook_draft(
-            files,
-            rpc_info,
-            "pv@denkersbv.nl;evdd@denkersbv.nl;digdos@denkersbv.nl",
-            "stan@retrieverpackaging.com;jaime@retriever.pro",
-            "spencer@retriever.pro",
-            html2,
-        )
-        msg_parts.append(msg2)
+        try:
+            msg2 = EmailMessage(
+                subject=f"[FORWARD TO DENKERS] New Order RPC#{rpc_info}",
+                body=html2,
+                from_email=None,
+                to=["spencer@retriever.pro"],  # ONLY Spencer
+            )
+            msg2.content_subtype = "html"
+            for f in files:
+                msg2.attach_file(str(f))
+            msg2.send(fail_silently=False)
+            status_parts.append("Denkers email sent to spencer@retriever.pro.")
+        except Exception as e:
+            status_parts.append(f"Error sending Denkers email: {e}")
 
-    # Combine messages (drop empties)
-    outlook_status = " / ".join(m for m in msg_parts if m)
+    email_status = " ".join(status_parts) if status_parts else "No email was sent."
 
-    return files, outlook_status
+    return files, email_status
