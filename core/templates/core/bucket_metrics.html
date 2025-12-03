@@ -1,83 +1,214 @@
-{% extends "core/base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Bucket Metrics - {{ automation_name }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
-{% block content %}
-<div class="max-w-5xl mx-auto text-slate-100">
-  <h1 class="text-2xl font-semibold mb-4">
-    {{ automation_name }}
-  </h1>
+    <style>
+        :root {
+            --bg-main: #020617;
+            --bg-card: #0b1120;
+            --accent: #facc15;
+            --accent-soft: rgba(250, 204, 21, 0.18);
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+            --border-subtle: #1f2937;
+        }
 
-  <!-- Upload form -->
-  <form method="post" enctype="multipart/form-data" class="mb-6 p-4 rounded-xl border border-slate-700 bg-slate-900/60">
-    {% csrf_token %}
+        * { box-sizing: border-box; }
 
-    <label class="block mb-2 text-sm text-slate-300">
-      Upload the Prognosis spreadsheet (.xlsx) – only the "Master List" sheet is used
-    </label>
+        body {
+            margin: 0;
+            padding: 24px;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
+            color: var(--text-main);
+        }
 
-    <input
-      type="file"
-      name="file"
-      accept=".xlsx,.xls"
-      required
-      class="block w-full text-sm text-slate-200 mb-4"
-    />
+        .page {
+            max-width: 1080px;
+            margin: 0 auto;
+        }
 
-    <button
-      type="submit"
-      class="px-4 py-2 rounded-xl bg-yellow-400 text-slate-900 font-semibold hover:bg-yellow-300 transition"
-    >
-      Run metrics
-    </button>
+        .card {
+            background: var(--bg-card);
+            border-radius: 18px;
+            border: 1px solid var(--border-subtle);
+            padding: 20px 20px 24px;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.55);
+        }
 
-    {% if error %}
-      <p class="mt-2 text-sm text-red-400">
-        {{ error }}
-      </p>
-    {% endif %}
-  </form>
+        h1 {
+            font-size: 1.6rem;
+            margin: 0 0 8px;
+        }
 
-  {% if results_available %}
-    <!-- Top customers -->
-    <div class="mb-8">
-      <h2 class="text-xl font-semibold mb-2">Top customers by total buckets</h2>
-      <div class="overflow-x-auto bg-slate-900/60 rounded-xl p-3 border border-slate-800">
-        {{ top_customers_table|safe }}
-      </div>
+        h2 {
+            font-size: 1.2rem;
+            margin: 0 0 8px;
+        }
+
+        p.subtitle {
+            margin: 0 0 20px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        input[type="file"] {
+            display: block;
+            width: 100%;
+            margin-bottom: 12px;
+            font-size: 0.9rem;
+            color: var(--text-main);
+        }
+
+        button {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--accent);
+            color: #111827;
+            padding: 8px 16px;
+            border-radius: 999px;
+            border: none;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #fbbf24;
+        }
+
+        .error {
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: #fecaca;
+        }
+
+        .section {
+            margin-top: 24px;
+        }
+
+        .section-card {
+            border-radius: 14px;
+            border: 1px solid var(--border-subtle);
+            background: rgba(15, 23, 42, 0.9);
+            padding: 12px;
+            overflow-x: auto;
+        }
+
+        .section p.helper {
+            margin: 0 0 8px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        /* Tables coming from pandas.to_html */
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 0.8rem;
+        }
+
+        th, td {
+            padding: 6px 8px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+            text-align: left;
+        }
+
+        th {
+            font-weight: 600;
+            background: rgba(15, 23, 42, 0.9);
+        }
+
+        tr:nth-child(even) td {
+            background: rgba(15, 23, 42, 0.6);
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="card">
+        <h1>{{ automation_name }}</h1>
+        <p class="subtitle">
+            Upload your Prognosis spreadsheet (.xlsx). Only the "Master List" sheet is used.
+        </p>
+
+        <!-- Upload form -->
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            <label>
+                Spreadsheet file
+            </label>
+
+            <input
+                type="file"
+                name="file"
+                accept=".xlsx,.xls"
+                required
+            />
+
+            <button type="submit">
+                Run metrics
+            </button>
+
+            {% if error %}
+                <div class="error">
+                    {{ error }}
+                </div>
+            {% endif %}
+        </form>
+
+        {% if results_available %}
+            <!-- Top customers -->
+            <div class="section">
+                <h2>Top customers by total buckets</h2>
+                <div class="section-card">
+                    {{ top_customers_table|safe }}
+                </div>
+            </div>
+
+            <!-- Buckets per customer per month -->
+            <div class="section">
+                <h2>Buckets per customer per month</h2>
+                <div class="section-card">
+                    {{ per_customer_month_table|safe }}
+                </div>
+            </div>
+
+            <!-- Buckets per item per customer per location -->
+            <div class="section">
+                <h2>Buckets of each type per customer per location</h2>
+                <p class="helper">
+                    One row = customer × city × bucket type
+                </p>
+                <div class="section-card">
+                    {{ per_customer_city_item_table|safe }}
+                </div>
+            </div>
+
+            <!-- Buckets per item per customer per location per month -->
+            <div class="section">
+                <h2>Buckets of each type per customer per location per month</h2>
+                <p class="helper">
+                    One row = customer × city × month × bucket type
+                </p>
+                <div class="section-card">
+                    {{ per_customer_city_item_month_table|safe }}
+                </div>
+            </div>
+        {% endif %}
     </div>
-
-    <!-- Buckets per customer per month -->
-    <div class="mb-8">
-      <h2 class="text-xl font-semibold mb-2">Buckets per customer per month</h2>
-      <div class="overflow-x-auto bg-slate-900/60 rounded-xl p-3 border border-slate-800">
-        {{ per_customer_month_table|safe }}
-      </div>
-    </div>
-
-    <!-- Buckets per item per customer per location -->
-    <div class="mb-8">
-      <h2 class="text-xl font-semibold mb-2">
-        Buckets of each type per customer per location
-      </h2>
-      <p class="text-sm text-slate-400 mb-2">
-        One row = customer × city × bucket type
-      </p>
-      <div class="overflow-x-auto bg-slate-900/60 rounded-xl p-3 border border-slate-800">
-        {{ per_customer_city_item_table|safe }}
-      </div>
-    </div>
-
-    <!-- Buckets per item per customer per location per month -->
-    <div class="mb-8">
-      <h2 class="text-xl font-semibold mb-2">
-        Buckets of each type per customer per location per month
-      </h2>
-      <p class="text-sm text-slate-400 mb-2">
-        One row = customer × city × month × bucket type
-      </p>
-      <div class="overflow-x-auto bg-slate-900/60 rounded-xl p-3 border border-slate-800">
-        {{ per_customer_city_item_month_table|safe }}
-      </div>
-    </div>
-  {% endif %}
 </div>
-{% endblock %}
+</body>
+</html>
