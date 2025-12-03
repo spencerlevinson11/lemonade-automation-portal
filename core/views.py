@@ -65,6 +65,8 @@ def run_automation(request, pk):
     - If the automation is named "Retriever RPC Order", we show the RPC form,
       generate an RPC Excel workbook, and (locally on Windows) try to create
       Outlook drafts.
+    - If the automation is named "Bucket Metrics - Prognosis Spreadsheet",
+      we redirect to the upload-and-metrics view.
     - Otherwise, we treat it as a BOL generator automation.
     """
 
@@ -74,8 +76,10 @@ def run_automation(request, pk):
     if not (request.user.is_superuser or automation.company.owner == request.user):
         return HttpResponseForbidden("You are not allowed to run this automation.")
 
+    name_normalized = automation.name.strip().lower()
+
     # --- Branch: Retriever RPC Order ----------------------------------------
-    if automation.name.strip().lower() == "retriever rpc order":
+    if name_normalized == "retriever rpc order":
         if request.method == "POST":
             form = RpcOrderForm(request.POST)
             if form.is_valid():
@@ -111,6 +115,11 @@ def run_automation(request, pk):
                 "form": form,
             },
         )
+
+    # --- Branch: Bucket Metrics – Prognosis Spreadsheet ---------------------
+    elif name_normalized == "bucket metrics - prognosis spreadsheet":
+        # Send the user to the upload UI for this automation
+        return redirect("bucket_metrics")
 
     # --- Default branch: treat as BOL generator -----------------------------
 
