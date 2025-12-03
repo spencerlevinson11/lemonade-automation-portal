@@ -10,4 +10,6 @@ psycopg2-binary==2.9.11
 sqlparse==0.5.3
 tzdata==2025.2
 xlwings==0.33.16
+pandas>=2.2.0
+
 
