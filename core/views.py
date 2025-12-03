@@ -65,8 +65,8 @@ def run_automation(request, pk):
     - If the automation is named "Retriever RPC Order", we show the RPC form,
       generate an RPC Excel workbook, and (locally on Windows) try to create
       Outlook drafts.
-    - If the automation is named "Bucket Metrics - Prognosis Spreadsheet",
-      we redirect to the upload-and-metrics view.
+    - If the automation name contains "Bucket Metrics", we redirect to the
+      upload-and-metrics view.
     - Otherwise, we treat it as a BOL generator automation.
     """
 
@@ -116,8 +116,8 @@ def run_automation(request, pk):
             },
         )
 
-    # --- Branch: Bucket Metrics – Prognosis Spreadsheet ---------------------
-    elif name_normalized == "bucket metrics - prognosis spreadsheet":
+    # --- Branch: Bucket Metrics – any automation whose name contains it -----
+    elif "bucket metrics" in name_normalized:
         # Send the user to the upload UI for this automation
         return redirect("bucket_metrics")
 
