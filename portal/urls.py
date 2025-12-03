@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path
 from django.contrib.auth import views as auth_views
 
-from core.views import dashboard, custom_logout, run_automation
+from core.views import dashboard, custom_logout, run_automation, bucket_metrics_view
 
 
 urlpatterns = [
@@ -28,5 +28,12 @@ urlpatterns = [
         "automations/<int:pk>/run/",
         run_automation,
         name="run_automation",
+    ),
+
+    # NEW: Bucket Metrics Automation
+    path(
+        "automations/bucket-metrics/",
+        bucket_metrics_view,
+        name="bucket_metrics",
     ),
 ]
