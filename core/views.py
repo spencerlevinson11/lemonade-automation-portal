@@ -12,6 +12,7 @@ from .forms import BOLForm
 from .rpcforms import RpcOrderForm
 from .rpc_generation import generate_rpc_from_form
 from .models import Automation, Company
+from .automations.bucket_metrics import analyze_prognosis_workbook
 
 
 @login_required
@@ -140,3 +141,59 @@ def run_automation(request, pk):
             "form": form,
         },
     )
+
+
+@login_required
+def bucket_metrics_view(request, automation_id=None):
+    """
+    Upload a Prognosis spreadsheet and display bucket metrics.
+
+    This view is meant to be wired to an Automation entry like
+    "Bucket Metrics – Prognosis Spreadsheet" via a Run button.
+    """
+    context = {
+        "automation_name": "Bucket Metrics from Prognosis Spreadsheet",
+        "results_available": False,
+    }
+
+    if request.method == "POST" and request.FILES.get("file"):
+        excel_file = request.FILES["file"]
+
+        try:
+            results = analyze_prognosis_workbook(excel_file)
+
+            context.update(
+                {
+                    "results_available": True,
+                    "top_customers_table": results["top_customers"].to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                    "per_customer_month_table": results[
+                        "per_customer_month"
+                    ].to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                    "per_customer_city_item_table": results[
+                        "per_customer_city_item"
+                    ].to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                    "per_customer_city_item_month_table": results[
+                        "per_customer_city_item_month"
+                    ].to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                }
+            )
+        except Exception as e:
+            context["error"] = f"Error reading file: {e}"
+
+    return render(request, "core/bucket_metrics.html", context)
