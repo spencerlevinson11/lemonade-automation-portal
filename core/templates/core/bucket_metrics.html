@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto text-slate-100">
+  <h1 class="text-2xl font-semibold mb-4">
+    {{ automation_name }}
+  </h1>
+
+  <!-- Upload form -->
+  <form method="post" enctype="multipart/form-data" class="mb-6 p-4 rounded-xl border border-slate-700 bg-slate-900/60">
+    {% csrf_token %}
+
+    <label class="block mb-2 text-sm text-slate-300">
+      Upload the Prognosis spreadsheet (.xlsx) – only the "Master List" sheet is used
+    </label>
+
+    <input
+      type="file"
+      name="file"
+      accept=".xlsx,.xls"
+      required
+      class="block w-full text-sm text-slate-200 mb-4"
+    />
+
+    <button
+      type="submit"
+      class="px-4 py-2 rounded-xl bg-yellow-400 text-slate-900 font-semibold hover:bg-yellow-300 transition"
+    >
+      Run metrics
+    </button>
+
+    {% if error %}
+      <p class="mt-2 text-sm text-red-400">
+        {{ error }}
+      </p>
+    {% endif %}
+  </form>
+
+  {% if results_available %}
+    <!-- Top customers -->
+    <div class="mb-8">
+      <h2 class="text-xl font-semibold mb-2">Top customers by total buckets</h2>
+      <div class="overflow-x-auto bg-slate-900/60 rounded-xl p-3 border border-slate-800">
+        {{ top_customers_table|safe }}
+      </div>
+    </div>
+
+    <!-- Buckets per customer per month -->
+    <div class="mb-8">
+      <h2 class="text-xl font-semibold mb-2">Buckets per customer per month</h2>
+      <div class="overflow-x-auto bg-slate-900/60 rounded-xl p-3 border border-slate-800">
+        {{ per_customer_month_table|safe }}
+      </div>
+    </div>
+
+    <!-- Buckets per item per customer per location -->
+    <div class="mb-8">
+      <h2 class="text-xl font-semibold mb-2">
+        Buckets of each type per customer per location
+      </h2>
+      <p class="text-sm text-slate-400 mb-2">
+        One row = customer × city × bucket type
+      </p>
+      <div class="overflow-x-auto bg-slate-900/60 rounded-xl p-3 border border-slate-800">
+        {{ per_customer_city_item_table|safe }}
+      </div>
+    </div>
+
+    <!-- Buckets per item per customer per location per month -->
+    <div class="mb-8">
+      <h2 class="text-xl font-semibold mb-2">
+        Buckets of each type per customer per location per month
+      </h2>
+      <p class="text-sm text-slate-400 mb-2">
+        One row = customer × city × month × bucket type
+      </p>
+      <div class="overflow-x-auto bg-slate-900/60 rounded-xl p-3 border border-slate-800">
+        {{ per_customer_city_item_month_table|safe }}
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
