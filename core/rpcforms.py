@@ -1,5 +1,10 @@
 from django import forms
 
+CONTACT_CHOICES = [
+    ("spencer", "Spencer"),
+    ("jaime", "Jaime"),
+]
+
 
 class RpcOrderForm(forms.Form):
     # --- Header / dates / company info ---
@@ -23,6 +28,12 @@ class RpcOrderForm(forms.Form):
         label="Delivery date",
         required=False,
         widget=forms.DateInput(attrs={"type": "date", "class": "input"}),
+    )
+    contact_person = forms.ChoiceField(
+        label="Send emails to",
+        choices=CONTACT_CHOICES,
+        initial="spencer",
+        widget=forms.Select(attrs={"class": "input"}),
     )
 
     company = forms.CharField(
