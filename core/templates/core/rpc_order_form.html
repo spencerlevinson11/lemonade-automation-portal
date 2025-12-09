@@ -251,9 +251,14 @@
                 </div>
             </div>
 
-            <div class="field">
+                        <div class="field">
                 <label for="{{ form.addr_line5.id_for_label }}">{{ form.addr_line5.label }}</label>
                 {{ form.addr_line5 }}
+            </div>
+
+            <div class="field">
+                <label for="{{ form.contact_person.id_for_label }}">{{ form.contact_person.label }}</label>
+                {{ form.contact_person }}
             </div>
 
             <div class="field">
@@ -263,6 +268,7 @@
             </div>
 
             <div class="section-title">Buckets & pallets</div>
+
             <p class="help-text">
                 Enter the number of pallets for each bucket type. Leave blank or 0 if not included in this order.
             </p>
