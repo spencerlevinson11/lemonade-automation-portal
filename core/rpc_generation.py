@@ -270,6 +270,31 @@ def generate_rpc_from_form(data):
     city_state = data.get("city_state", "").strip()
     denkers = data.get("denkers", False)
 
+    # Who should receive the emails (Spencer vs Jaime)
+    contact_person = data.get("contact_person") or "spencer"
+
+    if contact_person == "jaime":
+        contact_email = "jaime@retriever.pro"
+        signature_html = """
+<p>Kind regards,<br>
+Jaime Matias.<br>
+Retriever Packaging Company LLC<br>
+618 Supreme Dr<br>
+Bensenville, IL 60106<br>
+708-275-0155</p>
+"""
+    else:
+        # Default to Spencer
+        contact_email = "spencer@retriever.pro"
+        signature_html = """
+<p>Kind regards,<br>
+Spencer Levinson<br>
+Retriever Packaging Company LLC<br>
+618 Supreme Drive<br>
+Bensenville, IL, 60106<br>
+708-800-6730</p>
+"""
+
     # Build ordered address lines just like your generator sheet had:
     #   D30: company
     #   D31: street
@@ -302,12 +327,12 @@ def generate_rpc_from_form(data):
     pallets, cap = pack_into_containers(build_pallet_list(paired, leftovers, size_map))
     files = write_rpc(pallets, cap, po, rpc_info, nld, delivery, address_lines)
 
-    # --- Send emails via Django, but ONLY to Spencer -----------------------
+    # --- Send emails via Django -----------------------
     status_parts = []
 
     pickup = f"NLD {format_date_info(nld)} or asap"
 
-    # Email 1: the "Naber" order email, but sent only to Spencer
+    # Email 1: the "Naber" order email
     html1 = f"""
 <p>Hi Annemiek and team,</p>
 <p>New Order RPC#{rpc_info}</p>
@@ -317,12 +342,7 @@ def generate_rpc_from_form(data):
 <p>Kindly confirm and we will release to the forwarder.</p>
 <p>Thank you!</p>
 
-<p>Kind regards,<br>
-Spencer Levinson<br>
-Retriever Packaging Company LLC<br>
-618 Supreme Drive<br>
-Bensenville, IL, 60106<br>
-708-800-6730</p>
+{signature_html}
 """
 
     try:
@@ -330,17 +350,17 @@ Bensenville, IL, 60106<br>
             subject=f"[FORWARD TO NABER] New Order RPC#{rpc_info}",
             body=html1,
             from_email=None,  # uses DEFAULT_FROM_EMAIL
-            to=["spencer@retriever.pro"],  # ONLY Spencer, never Naber directly
+            to=[contact_email],  # Spencer or Jaime
         )
         msg1.content_subtype = "html"
         for f in files:
             msg1.attach_file(str(f))
         msg1.send(fail_silently=False)
-        status_parts.append("Order email sent to spencer@retriever.pro.")
+        status_parts.append(f"Order email sent to {contact_email}.")
     except Exception as e:
         status_parts.append(f"Error sending order email: {e}")
 
-    # Email 2: Denkers email, also ONLY to Spencer
+    # Email 2: Denkers email
     if denkers:
         pickup2 = f'<span style="background-color:yellow"><b>{pickup}</b></span>'
         html2 = f"""
@@ -354,25 +374,20 @@ Bensenville, IL, 60106<br>
 <p>When you can kindly reply with the booking confirmation.</p>
 <p>Kindly confirm. Thanks!</p>
 
-<p>Kind regards,<br>
-Spencer Levinson<br>
-Retriever Packaging Company LLC<br>
-618 Supreme Drive<br>
-Bensenville, IL, 60106<br>
-708-800-6730</p>
+{signature_html}
 """
         try:
             msg2 = EmailMessage(
                 subject=f"[FORWARD TO DENKERS] New Order RPC#{rpc_info}",
                 body=html2,
                 from_email=None,
-                to=["spencer@retriever.pro"],  # ONLY Spencer
+                to=[contact_email],  # Spencer or Jaime
             )
             msg2.content_subtype = "html"
             for f in files:
                 msg2.attach_file(str(f))
             msg2.send(fail_silently=False)
-            status_parts.append("Denkers email sent to spencer@retriever.pro.")
+            status_parts.append(f"Denkers email sent to {contact_email}.")
         except Exception as e:
             status_parts.append(f"Error sending Denkers email: {e}")
 
