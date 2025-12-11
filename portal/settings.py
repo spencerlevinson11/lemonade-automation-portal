@@ -30,7 +30,7 @@ DEBUG = True
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
-    "https://lemonade-automation-portal.onrender.com",
+    "lemonade-automation-portal.onrender.com",
 ]
 
 
