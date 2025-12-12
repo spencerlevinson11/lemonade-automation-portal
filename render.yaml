@@ -4,7 +4,7 @@ databases:
 
 services:
   - type: web
-    name: automation-portal
+    name: lemonade-automation-portal
     env: python
     plan: free
     buildCommand: >
@@ -23,4 +23,5 @@ services:
         fromDatabase:
           name: portal-db
           property: connectionString
+
 
