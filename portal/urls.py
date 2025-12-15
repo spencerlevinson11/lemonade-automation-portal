@@ -39,6 +39,11 @@ urlpatterns = [
         run_automation,
         name="run_automation",
     ),
+    # Pricing Quotes
+    path("automations/pricing/upload/", pricing_upload_view, name="pricing_upload"),
+    path("automations/pricing/customers/", pricing_customer_list_view, name="pricing_customer_list"),
+    path("automations/pricing/customers/<int:customer_id>/", pricing_customer_edit_view, name="pricing_customer_edit"),
+    path("automations/pricing/customers/<int:customer_id>/quote/", pricing_customer_quote_view, name="pricing_customer_quote"),
 
     # NEW: Bucket Metrics Automation
     path(
