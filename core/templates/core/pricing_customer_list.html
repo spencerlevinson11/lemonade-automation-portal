@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pricing Customers</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root { --bg-main:#020617; --bg-card:#0b1120; --accent:#facc15; --text:#e5e7eb; --muted:#9ca3af; --border:#1f2937; }
+    body{margin:0;padding:24px;font-family:system-ui;background:radial-gradient(circle at top, rgba(250,204,21,.16), transparent 55%) var(--bg-main);color:var(--text);}
+    .page{max-width:980px;margin:0 auto;}
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:18px;padding:20px;box-shadow:0 18px 45px rgba(0,0,0,.55);}
+    a{color:var(--accent);text-decoration:none;}
+    ul{list-style:none;padding:0;margin:14px 0 0 0;}
+    li{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid var(--border);}
+    .pill{background:rgba(250,204,21,.14);border:1px solid rgba(250,204,21,.35);padding:6px 10px;border-radius:999px;}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+        <h1 style="margin:0;">Pricing Customers</h1>
+        <a class="pill" href="{% url 'pricing_upload' %}">Upload / Refresh Pricing</a>
+      </div>
+
+      <p style="color:var(--muted);margin-top:8px;">Select a customer to edit pallet quantities and generate the quote.</p>
+
+      <ul>
+        {% for c in customers %}
+          <li>
+            <div>{{ c.name }}</div>
+            <a class="pill" href="{% url 'pricing_customer_edit' c.id %}">Open</a>
+          </li>
+        {% empty %}
+          <li>No customers found yet. Upload your CSV first.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
