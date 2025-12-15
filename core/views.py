@@ -123,9 +123,17 @@ def run_automation(request, pk):
         )
 
     # --- Branch: Bucket Metrics – any automation whose name contains it -----
+     # --- Branch: Bucket Metrics – any automation whose name contains it -----
     elif "bucket metrics" in name_normalized:
-        # Send the user to the upload UI for this automation
         return redirect("bucket_metrics")
+
+    # --- Branch: Pricing Quote Generator -----------------------------------
+    elif "pricing quote" in name_normalized or "pricing" in name_normalized:
+        # Send them to the pricing workflow UI
+        return redirect("pricing_upload")
+
+    # --- Default branch: treat as BOL generator -----------------------------
+
 
     # --- Default branch: treat as BOL generator -----------------------------
 
