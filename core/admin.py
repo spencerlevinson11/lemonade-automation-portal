@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import Company, Automation
+from .models import Company, Automation, PricingCustomer, PricingQuote, PricingQuoteLine
+
 
 
 @admin.register(Company)
