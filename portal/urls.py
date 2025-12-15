@@ -2,7 +2,17 @@ from django.contrib import admin
 from django.urls import path
 from django.contrib.auth import views as auth_views
 
-from core.views import dashboard, custom_logout, run_automation, bucket_metrics_view
+from core.views import (
+    dashboard,
+    custom_logout,
+    run_automation,
+    bucket_metrics_view,
+    pricing_upload_view,
+    pricing_customer_list_view,
+    pricing_customer_edit_view,
+    pricing_customer_quote_view,
+)
+
 
 
 urlpatterns = [
