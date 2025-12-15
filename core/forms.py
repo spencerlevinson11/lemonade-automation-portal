@@ -120,3 +120,25 @@ class BOLForm(forms.Form):
         required=True,
         help_text="e.g., 92",
     )
+
+
+# =========================
+# Pricing Quote Forms
+# =========================
+
+class PricingUploadForm(forms.Form):
+    file = forms.FileField(
+        label="Pricing CSV file",
+        help_text="Upload your pricing matrix CSV."
+    )
+
+
+class PricingPalletQuantityUpdateForm(forms.Form):
+    """
+    Used for updating pallet quantities for a single customer's quote lines.
+    We'll render inputs manually in the template, so this is optional,
+    but it's useful if you want basic validation later.
+    """
+    # We intentionally don't declare dynamic fields here.
+    # We'll read POST keys like pallet_<line_id> in the view.
+    pass
