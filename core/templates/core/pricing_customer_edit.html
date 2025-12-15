@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ customer.name }} - Pallet Quantities</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root { --bg-main:#020617; --bg-card:#0b1120; --accent:#facc15; --text:#e5e7eb; --muted:#9ca3af; --border:#1f2937; }
+    body{margin:0;padding:24px;font-family:system-ui;background:radial-gradient(circle at top, rgba(250,204,21,.16), transparent 55%) var(--bg-main);color:var(--text);}
+    .page{max-width:1200px;margin:0 auto;}
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:18px;padding:20px;box-shadow:0 18px 45px rgba(0,0,0,.55);}
+    a{color:var(--accent);text-decoration:none;}
+    .pill{background:rgba(250,204,21,.14);border:1px solid rgba(250,204,21,.35);padding:6px 10px;border-radius:999px;}
+    table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px;}
+    th,td{border-top:1px solid var(--border);padding:10px 8px;vertical-align:top;}
+    th{color:var(--muted);text-align:left;font-weight:600;}
+    td.num, th.num{text-align:right;white-space:nowrap;}
+    input{width:120px;padding:8px;border-radius:10px;border:1px solid var(--border);background:#020819;color:var(--text);text-align:right;}
+    .btn{background:var(--accent);color:#111827;padding:10px 14px;border-radius:12px;border:none;font-weight:800;cursor:pointer;}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+        <div>
+          <h1 style="margin:0;">{{ customer.name }}</h1>
+          <p style="color:var(--muted);margin:6px 0 0 0;">Edit pallet quantities (pieces). These persist across imports.</p>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <a class="pill" href="{% url 'pricing_customer_list' %}">Back</a>
+          <a class="pill" href="{% url 'pricing_customer_quote' customer.id %}" target="_blank">Generate Quote</a>
+        </div>
+      </div>
+
+      <form method="post">
+        {% csrf_token %}
+        <table>
+          <thead>
+            <tr>
+              <th>Destination</th>
+              <th>Product Description</th>
+              <th class="num">Price (Delivered)</th>
+              <th class="num">Pallet Quantity</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in lines %}
+              <tr>
+                <td>{{ line.destination }}</td>
+                <td>{{ line.product_description }}</td>
+                <td class="num">${{ line.price_delivered }}</td>
+                <td class="num">
+                  <input type="number" min="0" name="pallet_{{ line.id }}" value="{{ line.pallet_quantity_pieces }}" />
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <div style="margin-top:14px;">
+          <button class="btn" type="submit">Save Pallet Quantities</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
