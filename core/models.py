@@ -40,40 +40,67 @@ class Automation(models.Model):
 # Pricing Quote Data Models
 # =========================
 
+# =========================
+# Pricing Quote Data Models
+# =========================
+
+class PricingCustomer(models.Model):
+    """
+    A customer of a Company (ex: Elite, Bay State, Native IL).
+    """
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="pricing_customers",
+    )
+    name = models.CharField(max_length=255)
+
+    class Meta:
+        unique_together = ("company", "name")
+
+    def __str__(self):
+        return f"{self.name} ({self.company.name})"
+
+
 class PricingQuote(models.Model):
     """
-    A saved quote "header" for a company (client).
-    You can generate a new PDF from this any time.
+    Optional: a saved quote "header" for a specific customer.
     """
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
         related_name="pricing_quotes",
     )
-
-    # Optional metadata you might want later
+    customer = models.ForeignKey(
+        PricingCustomer,
+        on_delete=models.CASCADE,
+        related_name="quotes",
+    )
     title = models.CharField(max_length=255, default="Pricing Quote")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.title} - {self.company.name}"
+        return f"{self.customer.name} - {self.company.name}"
 
 
 class PricingQuoteLine(models.Model):
     """
-    One line item in a company's pricing quote.
-    IMPORTANT: pallet_quantity_pieces persists between runs until edited.
+    One line item for one customer’s quote.
+    Pallet qty persists until edited.
     """
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
         related_name="pricing_quote_lines",
     )
+    customer = models.ForeignKey(
+        PricingCustomer,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
 
-    # If you want lines tied to a specific "quote header", keep this FK.
-    # If you prefer "one persistent set of lines per company", you can remove this
-    # and just generate from company lines directly.
+    # Optional: keep if you want “quote versions”
     quote = models.ForeignKey(
         PricingQuote,
         on_delete=models.CASCADE,
@@ -85,20 +112,18 @@ class PricingQuoteLine(models.Model):
     destination = models.CharField(max_length=255)
     product_description = models.CharField(max_length=255)
 
-    # Delivered price from CSV
     price_delivered = models.DecimalField(
         max_digits=10,
         decimal_places=4,
         default=Decimal("0.0"),
     )
 
-    # Persisted quantity input (your requirement)
     pallet_quantity_pieces = models.IntegerField(default=0)
 
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("company", "destination", "product_description")
+        unique_together = ("company", "customer", "destination", "product_description")
 
     def __str__(self):
-        return f"{self.company.name} | {self.destination} | {self.product_description}"
+        return f"{self.customer.name} | {self.destination} | {self.product_description}"
