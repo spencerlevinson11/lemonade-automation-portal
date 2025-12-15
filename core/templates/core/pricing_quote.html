@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Quote - {{ customer.name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:Arial, sans-serif;margin:24px;color:#111;}
+    h1{margin:0 0 4px 0;font-size:18px;}
+    p{margin:0 0 14px 0;color:#444;}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th,td{border:1px solid #111;padding:8px;vertical-align:top;}
+    th{background:#f2f2f2;text-align:left;}
+    .num{text-align:right;white-space:nowrap;}
+    .actions{margin:0 0 14px 0;}
+    .actions button{padding:8px 12px;font-weight:700;cursor:pointer;}
+  </style>
+</head>
+<body>
+  <div class="actions">
+    <button onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  <h1>Pricing Quote — {{ customer.name }}</h1>
+  <p>{{ company.name }}</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Destination</th>
+        <th>Product Description</th>
+        <th class="num">Price (Delivered)</th>
+        <th class="num">Pallet Quantity</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+      <tr>
+        <td>{{ line.destination }}</td>
+        <td>{{ line.product_description }}</td>
+        <td class="num">${{ line.price_delivered }}</td>
+        <td class="num">{{ line.pallet_quantity_pieces }} pieces</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>
