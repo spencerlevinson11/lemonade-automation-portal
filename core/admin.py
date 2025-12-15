@@ -23,6 +23,25 @@ class AutomationAdmin(admin.ModelAdmin):
 
     # Optional: make company clickable instead of name only
     list_display_links = ("name",)
+@admin.register(PricingCustomer)
+class PricingCustomerAdmin(admin.ModelAdmin):
+    list_display = ("name", "company")
+    search_fields = ("name", "company__name")
+    list_filter = ("company",)
+
+
+@admin.register(PricingQuote)
+class PricingQuoteAdmin(admin.ModelAdmin):
+    list_display = ("title", "company", "customer", "updated_at")
+    search_fields = ("title", "company__name", "customer__name")
+    list_filter = ("company",)
+
+
+@admin.register(PricingQuoteLine)
+class PricingQuoteLineAdmin(admin.ModelAdmin):
+    list_display = ("company", "customer", "destination", "product_description", "price_delivered", "pallet_quantity_pieces", "updated_at")
+    search_fields = ("customer__name", "destination", "product_description", "company__name")
+    list_filter = ("company", "customer")
 
 
 # ---- Global admin branding (no "Lemonade Stand") ----
