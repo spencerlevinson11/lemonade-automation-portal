@@ -11,8 +11,14 @@ from .bol_generation import generate_bol_from_templates, generate_bol_from_form
 from .forms import BOLForm
 from .rpcforms import RpcOrderForm
 from .rpc_generation import generate_rpc_from_form
-from .models import Automation, Company
+from .models import Automation, Company, PricingCustomer, PricingQuoteLine
+
 from .automations.bucket_metrics import analyze_prognosis_workbook
+import tempfile
+
+from .forms import PricingUploadForm
+from .services.pricing_import import parse_pricing_matrix_csv
+from .models import PricingCustomer, PricingQuoteLine
 
 
 @login_required
@@ -206,3 +212,152 @@ def bucket_metrics_view(request, automation_id=None):
             context["error"] = f"Error reading file: {e}"
 
     return render(request, "core/bucket_metrics.html", context)
+
+def _get_company_for_request(request):
+    """
+    For normal users: their owned company.
+    For superusers: allow ?company_id=123, otherwise pick the first company.
+    """
+    user = request.user
+
+    if user.is_superuser:
+        company_id = request.GET.get("company_id")
+        if company_id:
+            return get_object_or_404(Company, id=company_id)
+        return Company.objects.order_by("id").first()
+
+    try:
+        return Company.objects.get(owner=user)
+    except Company.DoesNotExist:
+        return None
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def pricing_upload_view(request):
+    company = _get_company_for_request(request)
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    if request.method == "POST":
+        form = PricingUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            f = form.cleaned_data["file"]
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+                for chunk in f.chunks():
+                    tmp.write(chunk)
+                tmp_path = tmp.name
+
+            rows = parse_pricing_matrix_csv(tmp_path)
+
+            created_lines = 0
+            updated_lines = 0
+            created_customers = 0
+
+            for r in rows:
+                customer_obj, cust_created = PricingCustomer.objects.get_or_create(
+                    company=company,
+                    name=r["customer"].strip(),
+                )
+                if cust_created:
+                    created_customers += 1
+
+                # Upsert line WITHOUT overwriting pallet_quantity_pieces
+                obj, was_created = PricingQuoteLine.objects.update_or_create(
+                    company=company,
+                    customer=customer_obj,
+                    destination=r["destination"].strip(),
+                    product_description=r["product_description"].strip(),
+                    defaults={
+                        "price_delivered": r["price_delivered"],
+                    },
+                )
+
+                if was_created:
+                    created_lines += 1
+                else:
+                    updated_lines += 1
+
+            messages.success(
+                request,
+                f"Imported pricing: {created_customers} customers, {created_lines} new lines, {updated_lines} updated lines.",
+            )
+            return redirect("pricing_customer_list")
+
+    else:
+        form = PricingUploadForm()
+
+    return render(request, "core/pricing_upload.html", {"form": form, "company": company})
+
+
+@login_required
+def pricing_customer_list_view(request):
+    company = _get_company_for_request(request)
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    customers = PricingCustomer.objects.filter(company=company).order_by("name")
+    return render(
+        request,
+        "core/pricing_customer_list.html",
+        {"company": company, "customers": customers},
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def pricing_customer_edit_view(request, customer_id):
+    company = _get_company_for_request(request)
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    customer = get_object_or_404(PricingCustomer, id=customer_id, company=company)
+
+    lines_qs = PricingQuoteLine.objects.filter(company=company, customer=customer).order_by(
+        "destination", "product_description"
+    )
+
+    if request.method == "POST":
+        # inputs: pallet_<line.id>
+        for line in lines_qs:
+            key = f"pallet_{line.id}"
+            if key in request.POST:
+                raw = (request.POST.get(key) or "").strip()
+                try:
+                    line.pallet_quantity_pieces = int(raw) if raw else 0
+                    line.save(update_fields=["pallet_quantity_pieces"])
+                except ValueError:
+                    # ignore invalid values; keep previous
+                    pass
+
+        messages.success(request, "Saved pallet quantities.")
+        return redirect("pricing_customer_edit", customer_id=customer.id)
+
+    return render(
+        request,
+        "core/pricing_customer_edit.html",
+        {"company": company, "customer": customer, "lines": lines_qs},
+    )
+
+
+@login_required
+def pricing_customer_quote_view(request, customer_id):
+    """
+    HTML quote page (easy to print/save as PDF).
+    """
+    company = _get_company_for_request(request)
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    customer = get_object_or_404(PricingCustomer, id=customer_id, company=company)
+    lines = PricingQuoteLine.objects.filter(company=company, customer=customer).order_by(
+        "destination", "product_description"
+    )
+
+    return render(
+        request,
+        "core/pricing_quote.html",
+        {"company": company, "customer": customer, "lines": lines},
+    )
+
