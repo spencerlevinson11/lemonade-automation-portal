@@ -365,9 +365,12 @@ def pricing_customer_quote_view(request, customer_id):
         return HttpResponseForbidden("No company is associated with this user.")
 
     customer = get_object_or_404(PricingCustomer, id=customer_id, company=company)
-    lines = PricingQuoteLine.objects.filter(company=company, customer=customer).order_by(
-        "destination", "product_description"
-    )
+    lines = PricingQuoteLine.objects.filter(
+        company=company,
+        customer=customer,
+        include_in_quote=True,
+    ).order_by("destination", "product_description")
+
 
     return render(
         request,
