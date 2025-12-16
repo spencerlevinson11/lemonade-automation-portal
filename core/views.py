@@ -122,6 +122,12 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
     
     if cust_low == "bandy ranch":
         return "Vista"
+    # Native fixed destinations
+    if cust_low == "native ca":
+        return "California"
+
+    if cust_low == "native co":
+        return "Denver"
 
     dest = re.sub(r"\s+", " ", dest).strip()
     return dest
@@ -222,6 +228,38 @@ def merge_duplicate_pricing_customers(company):
                 # Reassign destination safely
                 line.destination = "Long Beach"
                 line.save(update_fields=["destination"])
+    # --- Native legacy cleanup: force fixed destinations ---
+    native_fixes = {
+        "native ca": "California",
+        "native co": "Denver",
+    }
+
+    for cust_key, fixed_dest in native_fixes.items():
+        native_customers = PricingCustomer.objects.filter(
+            company=company,
+            name__iexact=cust_key,
+        )
+
+        for cust in native_customers:
+            lines = PricingQuoteLine.objects.filter(company=company, customer=cust)
+
+            for line in lines:
+                if line.destination != fixed_dest:
+                    existing = PricingQuoteLine.objects.filter(
+                        company=company,
+                        customer=cust,
+                        destination=fixed_dest,
+                        product_description=line.product_description,
+                    ).first()
+
+                    if existing:
+                        if existing.price_delivered != line.price_delivered:
+                            existing.price_delivered = line.price_delivered
+                            existing.save(update_fields=["price_delivered"])
+                        line.delete()
+                    else:
+                        line.destination = fixed_dest
+                        line.save(update_fields=["destination"])
 
     buckets: dict[str, list[PricingCustomer]] = {}
     for c in customers:
