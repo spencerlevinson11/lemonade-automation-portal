@@ -15,7 +15,19 @@
     th,td{border-top:1px solid var(--border);padding:10px 8px;vertical-align:top;}
     th{color:var(--muted);text-align:left;font-weight:600;}
     td.num, th.num{text-align:right;white-space:nowrap;}
-    input{width:120px;padding:8px;border-radius:10px;border:1px solid var(--border);background:#020819;color:var(--text);text-align:right;}
+
+    /* Keep your existing numeric input styling, but don't force it on checkboxes */
+    input[type="number"]{
+      width:120px;padding:8px;border-radius:10px;border:1px solid var(--border);
+      background:#020819;color:var(--text);text-align:right;
+    }
+    input[type="checkbox"]{
+      width:auto;
+      transform: scale(1.2);
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
     .btn{background:var(--accent);color:#111827;padding:10px 14px;border-radius:12px;border:none;font-weight:800;cursor:pointer;}
   </style>
 </head>
@@ -42,6 +54,7 @@
               <th>Product Description</th>
               <th class="num">Price (Delivered)</th>
               <th class="num">Pallet Quantity</th>
+              <th class="num">Include</th>
             </tr>
           </thead>
           <tbody>
@@ -52,6 +65,14 @@
                 <td class="num">${{ line.price_delivered }}</td>
                 <td class="num">
                   <input type="number" min="0" name="pallet_{{ line.id }}" value="{{ line.pallet_quantity_pieces }}" />
+                </td>
+                <td class="num">
+                  <input
+                    type="checkbox"
+                    name="include_{{ line.id }}"
+                    {% if line.include_in_quote %}checked{% endif %}
+                    title="Include this item in the quote"
+                  />
                 </td>
               </tr>
             {% endfor %}
@@ -66,3 +87,4 @@
   </div>
 </body>
 </html>
+
