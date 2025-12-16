@@ -37,7 +37,10 @@
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
         <div>
           <h1 style="margin:0;">{{ customer.name }}</h1>
-          <p style="color:var(--muted);margin:6px 0 0 0;">Edit pallet quantities (pieces). These persist across imports.</p>
+          <p style="color:var(--muted);margin:6px 0 0 0;">
+            Edit pallet quantities (pieces). These persist across imports.
+            Uncheck “Include” to hide an item from the generated quote.
+          </p>
         </div>
         <div style="display:flex;gap:10px;align-items:center;">
           <a class="pill" href="{% url 'pricing_customer_list' %}">Back</a>
@@ -80,11 +83,12 @@
         </table>
 
         <div style="margin-top:14px;">
-          <button class="btn" type="submit">Save Pallet Quantities</button>
+          <button class="btn" type="submit">Save Changes</button>
         </div>
       </form>
     </div>
   </div>
 </body>
 </html>
+
 
