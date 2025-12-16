@@ -124,14 +124,12 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
 
 def get_or_create_customer_safe(company, name: str):
     """
-    Safe under concurrency AND safe inside outer atomic blocks
-    (uses an inner savepoint).
+    Safe under concurrency AND safe inside outer atomic blocks (savepoint).
     """
     try:
         obj = PricingCustomer.objects.get(company=company, name=name)
         return obj, False
     except PricingCustomer.DoesNotExist:
-        # Inner savepoint isolates IntegrityError so it won't break outer transaction
         try:
             with transaction.atomic():
                 obj = PricingCustomer.objects.create(company=company, name=name)
@@ -143,11 +141,9 @@ def get_or_create_customer_safe(company, name: str):
 
 def upsert_pricing_line_safe(*, company, customer, destination, product_description, price_delivered):
     """
-    Safe upsert for PricingQuoteLine under unique constraint:
+    Safe upsert for PricingQuoteLine unique constraint:
     (company, customer, destination, product_description)
-
-    Also safe inside outer atomic blocks by using an inner savepoint.
-    Returns (obj, created_bool).
+    Uses inner savepoint so IntegrityError doesn't poison outer tx.
     """
     destination = (destination or "").strip()
     product_description = (product_description or "").strip()
@@ -276,6 +272,39 @@ def merge_duplicate_pricing_customers(company):
                         line.delete()
 
             dup.delete()
+
+
+# -----------------------------
+# Quote-only description overrides (SESSION)
+# -----------------------------
+
+def _quote_desc_session_key(company_id: int, customer_id: int) -> str:
+    return f"quote_desc_overrides__c{company_id}__cust{customer_id}"
+
+
+def get_quote_desc_overrides(request, company_id: int, customer_id: int) -> dict:
+    """
+    Returns { "<line_id>": "New Description", ... } (all string keys for safety).
+    """
+    key = _quote_desc_session_key(company_id, customer_id)
+    data = request.session.get(key, {})
+    if isinstance(data, dict):
+        # ensure keys are strings
+        return {str(k): str(v) for k, v in data.items() if v is not None}
+    return {}
+
+
+def set_quote_desc_overrides(request, company_id: int, customer_id: int, overrides: dict):
+    key = _quote_desc_session_key(company_id, customer_id)
+    request.session[key] = {str(k): str(v) for k, v in overrides.items() if v is not None}
+    request.session.modified = True
+
+
+def clear_quote_desc_overrides(request, company_id: int, customer_id: int):
+    key = _quote_desc_session_key(company_id, customer_id)
+    if key in request.session:
+        del request.session[key]
+        request.session.modified = True
 
 
 # -----------------------------
@@ -447,7 +476,6 @@ def pricing_upload_view(request):
 
             rows = parse_pricing_matrix_csv(tmp_path)
 
-            # De-dupe within the upload file AFTER normalization:
             normalized_rows = {}
             for r in rows:
                 canon_customer = normalize_customer_name(r.get("customer", ""))
@@ -520,19 +548,36 @@ def pricing_customer_list_view(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def pricing_customer_edit_view(request, customer_id):
+    """
+    Permanent edits (saved): pallet_quantity_pieces, include_in_quote
+    Temporary quote-only edits (session only): product description override
+    """
     company = _get_company_for_request(request)
     if not company:
         return HttpResponseForbidden("No company is associated with this user.")
 
     customer = get_object_or_404(PricingCustomer, id=customer_id, company=company)
+
     lines_qs = PricingQuoteLine.objects.filter(company=company, customer=customer).order_by(
         "destination", "product_description"
     )
 
     currency_code, currency_symbol = get_currency_for_customer_name(customer.name)
 
+    # Load any existing quote-only overrides for this customer
+    overrides = get_quote_desc_overrides(request, company.id, customer.id)
+
     if request.method == "POST":
+        # Optional: user clicked a "Clear quote description edits" button
+        if request.POST.get("clear_quote_desc") == "1":
+            clear_quote_desc_overrides(request, company.id, customer.id)
+            messages.success(request, "Cleared quote-only description edits.")
+            return redirect("pricing_customer_edit", customer_id=customer.id)
+
+        new_overrides = dict(overrides)  # start with existing
+
         for line in lines_qs:
+            # --- Permanent: Pallet quantity ---
             qty_key = f"pallet_{line.id}"
             if qty_key in request.POST:
                 raw = (request.POST.get(qty_key) or "").strip()
@@ -541,13 +586,30 @@ def pricing_customer_edit_view(request, customer_id):
                 except ValueError:
                     pass
 
+            # --- Permanent: Include / exclude toggle ---
             include_key = f"include_{line.id}"
             line.include_in_quote = include_key in request.POST
 
             line.save(update_fields=["pallet_quantity_pieces", "include_in_quote"])
 
-        messages.success(request, "Saved pallet quantities and quote inclusions.")
+            # --- Temporary: Quote-only description override (DO NOT SAVE TO DB) ---
+            desc_key = f"quote_desc_{line.id}"
+            raw_desc = (request.POST.get(desc_key) or "").strip()
+
+            if raw_desc and raw_desc != line.product_description:
+                new_overrides[str(line.id)] = raw_desc
+            else:
+                # if user cleared it or set it back to default, remove override
+                new_overrides.pop(str(line.id), None)
+
+        set_quote_desc_overrides(request, company.id, customer.id, new_overrides)
+
+        messages.success(request, "Saved pallet quantities / inclusions. Quote-only descriptions updated for the next quote.")
         return redirect("pricing_customer_edit", customer_id=customer.id)
+
+    # For GET: attach a helper attribute so templates can show the editable value
+    for line in lines_qs:
+        line.quote_desc_value = overrides.get(str(line.id), line.product_description)
 
     return render(
         request,
@@ -558,22 +620,39 @@ def pricing_customer_edit_view(request, customer_id):
             "lines": lines_qs,
             "currency_code": currency_code,
             "currency_symbol": currency_symbol,
+            "has_quote_desc_overrides": bool(overrides),
         },
     )
 
 
 @login_required
 def pricing_customer_quote_view(request, customer_id):
+    """
+    HTML quote page (easy to print/save as PDF).
+    Uses quote-only description overrides ONCE, then clears them.
+    """
     company = _get_company_for_request(request)
     if not company:
         return HttpResponseForbidden("No company is associated with this user.")
 
     customer = get_object_or_404(PricingCustomer, id=customer_id, company=company)
     lines = PricingQuoteLine.objects.filter(
-        company=company, customer=customer, include_in_quote=True
+        company=company,
+        customer=customer,
+        include_in_quote=True,
     ).order_by("destination", "product_description")
 
     currency_code, currency_symbol = get_currency_for_customer_name(customer.name)
+
+    overrides = get_quote_desc_overrides(request, company.id, customer.id)
+
+    # Apply overrides to display (no DB changes)
+    for line in lines:
+        line.display_product_description = overrides.get(str(line.id), line.product_description)
+
+    # IMPORTANT: clear after generating this quote so future quotes revert automatically
+    if overrides:
+        clear_quote_desc_overrides(request, company.id, customer.id)
 
     return render(
         request,
