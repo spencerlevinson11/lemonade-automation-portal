@@ -5,6 +5,12 @@ from collections import Counter
 
 PRICE_RE = re.compile(r"[^0-9.\-]+")
 
+# Heuristics to detect a product-header row for a "grid"
+HEADER_KEYWORDS = (
+    "liter", "bucket", "lid", "maxima", "amalia", "nextgen", "next gen",
+    "conical", "classic", "round", "wide"
+)
+
 def _clean_price(val) -> Decimal | None:
     if val is None:
         return None
@@ -66,10 +72,9 @@ def parse_pricing_matrix_csv(file_path: str) -> list[dict]:
     """
     Supports multiple product tables ("blocks") in the same CSV.
 
-    Each block looks like:
-      - A header row with many product headers across columns (col 1..N)
-      - Followed by rows where col 0 is "Customer Destination" and price cells appear under headers
-      - Blocks are separated by blank rows and/or a new header row
+    FIXED: Properly handles multiple grids by detecting each header row and
+    rebuilding the column->product mapping per grid. This prevents prices in
+    the lower grid from being mis-assigned to product headers from the upper grid.
     """
     # Try common encodings (your file is often Windows-1252)
     try:
@@ -89,19 +94,32 @@ def parse_pricing_matrix_csv(file_path: str) -> list[dict]:
         s = str(x).strip()
         return "" if s.lower() in {"nan", "none"} else s
 
-    # A "header row" in your format is a row where:
-    # - first_col is blank-ish
-    # - many cells in columns 1..N are non-empty strings (product names)
-    def is_header_row(row) -> bool:
-        left = norm(row.get(first_col))
-        if left:  # header rows in your export usually have blank first col
-            return False
-        nonempty = 0
-        for c in df.columns[1:]:
+    def _row_text(row) -> str:
+        parts = []
+        for c in df.columns:
             v = norm(row.get(c))
             if v:
+                parts.append(v)
+        return " ".join(parts).lower()
+
+    def is_header_row(row) -> bool:
+        """
+        A header row for a grid is a row that contains multiple product names across columns.
+        Previously you required first_col to be blank; that can fail on some exports.
+        We now detect headers by:
+          - having many non-empty cells in columns 1..N
+          - AND containing product-ish keywords somewhere in the row
+        """
+        nonempty = 0
+        for c in df.columns[1:]:
+            if norm(row.get(c)):
                 nonempty += 1
-        return nonempty >= 2  # needs at least a couple product headers
+
+        if nonempty < 3:
+            return False
+
+        text = _row_text(row)
+        return any(k in text for k in HEADER_KEYWORDS)
 
     # A "data row" should have a non-empty first_col label
     def is_data_row(row) -> bool:
@@ -138,38 +156,18 @@ def parse_pricing_matrix_csv(file_path: str) -> list[dict]:
         if not product_headers:
             continue
 
-        # Determine data rows belonging to this block:
-        # start just after header_i and stop before next header row,
-        # skipping totally blank rows.
-        block_df = df.iloc[header_i + 1 : end_i].copy()
+        # Data rows for this block are ONLY the rows after header_i until end_i
+        block_df = df.iloc[header_i + 1: end_i].copy()
 
-        # Drop rows where first col is blank and also no prices anywhere
-        # (separator whitespace in between tables)
-        keep_rows = []
-        for _, r in block_df.iterrows():
-            left = norm(r.get(first_col))
-            if left:
-                keep_rows.append(True)
-                continue
-
-            # if left is blank, keep only if it looks like a real data continuation
-            any_price = False
-            for col in product_headers.keys():
-                if _clean_price(r.get(col)) is not None:
-                    any_price = True
-                    break
-            keep_rows.append(any_price)
-
-        block_df = block_df.loc[keep_rows]
-
-        # Extract labels for mapping customer/destination within the block
+        # Build label -> (customer, destination) map within this block
         labels = [norm(x) for x in block_df[first_col].tolist() if norm(x)]
         mapping = _infer_customer_destination(labels) if labels else {}
 
-        # Emit rows
+        # Emit rows for this block
         for _, row in block_df.iterrows():
             label = norm(row.get(first_col))
             if not label:
+                # IMPORTANT: do not treat blank-label rows as data; prevents cross-grid misassignment
                 continue
 
             customer, destination = mapping.get(label, (label, ""))
