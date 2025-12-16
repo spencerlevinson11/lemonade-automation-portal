@@ -20,6 +20,118 @@ from .forms import PricingUploadForm
 from .services.pricing_import import parse_pricing_matrix_csv
 from .models import PricingCustomer, PricingQuoteLine
 
+import re
+from django.db import transaction
+
+def normalize_customer_name(raw: str) -> str | None:
+    """
+    Returns a canonical customer name, or None to skip the row entirely.
+    """
+    if raw is None:
+        return None
+
+    s = str(raw).strip()
+    if not s:
+        return None
+
+    low = s.lower().strip()
+
+    # Remove the "Los" / LA general pricing customer entirely
+    if low in {"los", "los angeles", "los angeles pricing", "la"}:
+        return None
+
+    # Normalize common punctuation/whitespace
+    s = re.sub(r"\s+", " ", s).strip()
+
+    # Kendal == Kendal - (only when it's literally a trailing dash variant)
+    s = re.sub(r"\s*-\s*$", "", s).strip()
+    low = s.lower()
+
+    # Hard canonical mappings (your rules)
+    mapping = {
+        "designers": "Designers Choice",
+        "desginers": "Designers Choice",
+        "designer's choice": "Designers Choice",
+        "designers choice": "Designers Choice",
+        "falcon": "Falcon",
+        "falcon long": "Falcon",
+        "golden": "Golden State",
+        "golden state": "Golden State",
+    }
+
+    # If the cleaned name matches a mapping key, return canonical
+    if low in mapping:
+        return mapping[low]
+
+    return s
+
+
+@transaction.atomic
+def merge_duplicate_pricing_customers(company):
+    """
+    Merge PricingCustomer rows that normalize to the same canonical name.
+    Also merges PricingQuoteLine rows without blowing away pallet quantities.
+    """
+    customers = list(PricingCustomer.objects.filter(company=company).order_by("id"))
+
+    # Group customers by canonical normalized name
+    buckets: dict[str, list[PricingCustomer]] = {}
+    for c in customers:
+        canon = normalize_customer_name(c.name)
+        # If a stored customer is "Los", we'll treat it as removable
+        if canon is None:
+            buckets.setdefault("__DELETE__", []).append(c)
+        else:
+            buckets.setdefault(canon, []).append(c)
+
+    # Delete any "Los" customers + their lines
+    for c in buckets.get("__DELETE__", []):
+        PricingQuoteLine.objects.filter(company=company, customer=c).delete()
+        c.delete()
+
+    # Merge duplicates
+    for canon_name, cust_list in buckets.items():
+        if canon_name == "__DELETE__":
+            continue
+        if len(cust_list) <= 1:
+            # Ensure the single one is correctly named
+            only = cust_list[0]
+            if only.name != canon_name:
+                only.name = canon_name
+                only.save(update_fields=["name"])
+            continue
+
+        primary = cust_list[0]
+        if primary.name != canon_name:
+            primary.name = canon_name
+            primary.save(update_fields=["name"])
+
+        duplicates = cust_list[1:]
+
+        for dup in duplicates:
+            dup_lines = PricingQuoteLine.objects.filter(company=company, customer=dup)
+
+            for line in dup_lines:
+                existing = PricingQuoteLine.objects.filter(
+                    company=company,
+                    customer=primary,
+                    destination=line.destination,
+                    product_description=line.product_description,
+                ).first()
+
+                if existing:
+                    # Only update price_delivered (don’t overwrite pallet qty / include flags)
+                    if existing.price_delivered != line.price_delivered:
+                        existing.price_delivered = line.price_delivered
+                        existing.save(update_fields=["price_delivered"])
+                    # Drop the duplicate line
+                    line.delete()
+                else:
+                    # Re-home the line to the primary customer
+                    line.customer = primary
+                    line.save(update_fields=["customer"])
+
+            dup.delete()
 
 @login_required
 def dashboard(request):
