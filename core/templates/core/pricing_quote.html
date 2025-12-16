@@ -55,7 +55,7 @@
       cursor: pointer;
     }
 
-    /* 🔥 IMPORTANT PART 🔥 */
+    /* Print styles */
     @media print {
       .actions {
         display: none !important;
@@ -75,7 +75,11 @@
   </div>
 
   <h1>Pricing Quote — {{ customer.name }}</h1>
-  <p>{{ company.name }}</p>
+
+  {# Hide company name if it's blank or looks like a placeholder (e.g., "R") #}
+  {% if company.name and company.name|length > 1 %}
+    <p>{{ company.name }}</p>
+  {% endif %}
 
   <table>
     <thead>
@@ -91,7 +95,7 @@
         <tr>
           <td>{{ line.destination }}</td>
           <td>{{ line.display_product_description }}</td>
-          <td class="num">${{ line.price_delivered }}</td>
+          <td class="num">{{ currency_symbol }}{{ line.price_delivered }}</td>
           <td class="num">{{ line.pallet_quantity_pieces }} pieces</td>
         </tr>
       {% endfor %}
