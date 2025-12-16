@@ -191,6 +191,37 @@ def upsert_pricing_line_safe(*, company, customer, destination, product_descript
 @transaction.atomic
 def merge_duplicate_pricing_customers(company):
     customers = list(PricingCustomer.objects.filter(company=company).order_by("id"))
+    # --- Falcon legacy cleanup: "Beach" -> "Long Beach" ---
+    falcon_customers = PricingCustomer.objects.filter(
+        company=company,
+        name__iexact="Falcon",
+    )
+
+    for falcon in falcon_customers:
+        bad_lines = PricingQuoteLine.objects.filter(
+            company=company,
+            customer=falcon,
+            destination__iexact="Beach",
+        )
+
+        for line in bad_lines:
+            existing = PricingQuoteLine.objects.filter(
+                company=company,
+                customer=falcon,
+                destination="Long Beach",
+                product_description=line.product_description,
+            ).first()
+
+            if existing:
+                # Merge price if needed, then delete bad row
+                if existing.price_delivered != line.price_delivered:
+                    existing.price_delivered = line.price_delivered
+                    existing.save(update_fields=["price_delivered"])
+                line.delete()
+            else:
+                # Reassign destination safely
+                line.destination = "Long Beach"
+                line.save(update_fields=["destination"])
 
     buckets: dict[str, list[PricingCustomer]] = {}
     for c in customers:
