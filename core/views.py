@@ -561,6 +561,30 @@ def pricing_upload_view(request):
                 tmp_path = tmp.name
 
             rows = parse_pricing_matrix_csv(tmp_path)
+            # ------------------------------------------------------------
+            # REBUILD MODE:
+            # Treat the uploaded pricing file as the source of truth.
+            # 1) Snapshot pallet qty + include flags from existing lines
+            # 2) Delete all existing quote lines for the company
+            # 3) Recreate from normalized_rows, restoring qty/include when possible
+            # This permanently removes stale mispriced rows from old imports.
+            # ------------------------------------------------------------
+
+            # Snapshot existing user fields keyed by (customer_name, destination, product_description)
+            existing_meta = {}
+            for line in PricingQuoteLine.objects.select_related("customer").filter(company=company):
+                key = (
+                    (line.customer.name or "").strip(),
+                    (line.destination or "").strip(),
+                    (line.product_description or "").strip(),
+                )
+                existing_meta[key] = {
+                    "pallet_quantity_pieces": line.pallet_quantity_pieces,
+                    "include_in_quote": line.include_in_quote,
+                }
+
+            # Delete all existing quote lines (customers will remain; we'll optionally prune later)
+            PricingQuoteLine.objects.filter(company=company).delete()
 
             normalized_rows = {}
             for r in rows:
@@ -586,18 +610,24 @@ def pricing_upload_view(request):
                 if cust_created:
                     created_customers += 1
 
-                _, created = upsert_pricing_line_safe(
+                # Restore pallet qty/include if we had it before
+                meta = existing_meta.get((canon_customer, norm_dest, prod), None)
+                pallet_qty = meta["pallet_quantity_pieces"] if meta else 0
+                include = meta["include_in_quote"] if meta else True
+
+                # Create the line fresh (no upsert needed because we deleted all lines)
+                PricingQuoteLine.objects.create(
                     company=company,
                     customer=customer_obj,
                     destination=norm_dest,
                     product_description=prod,
                     price_delivered=price,
+                    pallet_quantity_pieces=pallet_qty,
+                    include_in_quote=include,
                 )
 
-                if created:
-                    created_lines += 1
-                else:
-                    updated_lines += 1
+                created_lines += 1
+
 
             merge_duplicate_pricing_customers(company)
 
