@@ -42,7 +42,7 @@ def normalize_customer_name(raw: str) -> str | None:
     if low in {"los", "los angeles", "los angeles pricing", "la"}:
         return None
 
-    # Normalize common whitespace
+    # Normalize whitespace
     s = re.sub(r"\s+", " ", s).strip()
 
     # Kendal == Kendal - (remove trailing dash variants)
@@ -71,33 +71,21 @@ def is_euro_customer_name(name: str) -> bool:
     """
     Display-only currency selection.
     Pyramid + Mobis should display in EUR.
-    We treat close variants as the same (e.g., "Mobi's Flowers" -> mobis).
     """
     if not name:
         return False
 
     s = name.strip().lower()
-
-    # normalize punctuation for matching
     s = s.replace("'", "")
     s = re.sub(r"\s+", " ", s)
 
-    # Pyramid (any "pyramid ..." counts)
     if s == "pyramid" or s.startswith("pyramid "):
         return True
 
-    # Mobis variants (mobi's, mobis flowers, mobis, etc.)
     if s == "mobis" or s.startswith("mobis "):
         return True
     if s == "mobis flowers" or s.startswith("mobis flowers"):
         return True
-
-    # Also catch "mobi's ..." as mobis
-    if s.startswith("mobis") or s.startswith("mobis "):
-        return True
-
-    # If someone typed "mobis" with apostrophe removed already, above catches.
-    # Catch "mobi s" edge
     if s.startswith("mobi s"):
         return True
 
@@ -105,12 +93,57 @@ def is_euro_customer_name(name: str) -> bool:
 
 
 def get_currency_for_customer_name(name: str):
-    """
-    Returns (currency_code, currency_symbol) for display.
-    """
     if is_euro_customer_name(name):
         return ("EUR", "€")
     return ("USD", "$")
+
+
+def normalize_destination(customer_name: str, raw_destination: str) -> str:
+    """
+    Clean up destination strings that include legacy customer prefixes.
+
+    Examples fixed:
+    - Kendal: "- S,C,N" -> "S,C,N"
+    - Designers Choice: "Choice Hyde Park" -> "Hyde Park"
+    - Golden State: "State Ventura" -> "Ventura"
+    """
+    if raw_destination is None:
+        return ""
+
+    dest = str(raw_destination).strip()
+    if not dest:
+        return ""
+
+    # Normalize whitespace
+    dest = re.sub(r"\s+", " ", dest).strip()
+
+    # Strip leading "-" artifacts like "- S,C,N" or "-S,C,N"
+    dest = re.sub(r"^\-\s*", "", dest).strip()
+
+    cust = (customer_name or "").strip()
+
+    # If destination accidentally starts with the customer name (or customer + dash), strip it
+    # e.g. "Kendal - S,C,N" -> "S,C,N" ; "Kendal S,C,N" -> "S,C,N"
+    if cust:
+        # Escape for regex safety
+        cust_re = re.escape(cust)
+        dest = re.sub(rf"^{cust_re}\s*-\s*", "", dest, flags=re.IGNORECASE).strip()
+        dest = re.sub(rf"^{cust_re}\s+", "", dest, flags=re.IGNORECASE).strip()
+
+    # Customer-specific legacy destination prefixes
+    cust_low = cust.lower()
+
+    if cust_low == "designers choice":
+        # "Choice Hyde Park" -> "Hyde Park"
+        dest = re.sub(r"^choice\s+", "", dest, flags=re.IGNORECASE).strip()
+
+    if cust_low == "golden state":
+        # After mapping Golden -> Golden State, legacy "State Ventura" appears; remove "State "
+        dest = re.sub(r"^state\s+", "", dest, flags=re.IGNORECASE).strip()
+
+    # Final whitespace cleanup
+    dest = re.sub(r"\s+", " ", dest).strip()
+    return dest
 
 
 def get_or_create_customer_safe(company, name: str):
@@ -134,7 +167,8 @@ def get_or_create_customer_safe(company, name: str):
 def merge_duplicate_pricing_customers(company):
     """
     Merge PricingCustomer rows that normalize to the same canonical name.
-    Also merges PricingQuoteLine rows without blowing away pallet quantities.
+    Also merges PricingQuoteLine rows, including destination normalization,
+    without blowing away pallet quantities / include flags.
     """
     customers = list(PricingCustomer.objects.filter(company=company).order_by("id"))
 
@@ -152,14 +186,14 @@ def merge_duplicate_pricing_customers(company):
         PricingQuoteLine.objects.filter(company=company, customer=c).delete()
         c.delete()
 
-    # Merge duplicates
+    # Merge duplicates and normalize destinations within each canonical customer
     for canon_name, cust_list in buckets.items():
         if canon_name == "__DELETE__":
             continue
         if not cust_list:
             continue
 
-        # Pick as primary the customer that ALREADY has the canonical name if present
+        # Pick as primary the customer that already has the canonical name if present
         primary = next((c for c in cust_list if (c.name or "").strip() == canon_name), None)
         if primary is None:
             primary = cust_list[0]
@@ -167,29 +201,59 @@ def merge_duplicate_pricing_customers(company):
                 primary.name = canon_name
                 primary.save(update_fields=["name"])
 
+        # 1) First: normalize destinations for ALL lines already under primary
+        primary_lines = PricingQuoteLine.objects.filter(company=company, customer=primary)
+        for line in primary_lines:
+            new_dest = normalize_destination(primary.name, line.destination)
+            if new_dest and new_dest != line.destination:
+                line.destination = new_dest
+                line.save(update_fields=["destination"])
+
         duplicates = [c for c in cust_list if c.id != primary.id]
 
+        # 2) Move / merge lines from duplicate customers into primary, with normalized destination
         for dup in duplicates:
             dup_lines = PricingQuoteLine.objects.filter(company=company, customer=dup)
 
             for line in dup_lines:
+                norm_dest = normalize_destination(primary.name, line.destination)
+
                 existing = PricingQuoteLine.objects.filter(
                     company=company,
                     customer=primary,
-                    destination=line.destination,
+                    destination=norm_dest,
                     product_description=line.product_description,
                 ).first()
 
                 if existing:
+                    # Only update price_delivered (don’t overwrite pallet qty / include flags)
                     if existing.price_delivered != line.price_delivered:
                         existing.price_delivered = line.price_delivered
                         existing.save(update_fields=["price_delivered"])
                     line.delete()
                 else:
                     line.customer = primary
-                    line.save(update_fields=["customer"])
+                    line.destination = norm_dest
+                    line.save(update_fields=["customer", "destination"])
 
             dup.delete()
+
+        # 3) Final pass: if normalization created duplicates INSIDE primary, merge them
+        # (e.g., "S,C,N" and "- S,C,N" now both became "S,C,N")
+        lines_after = list(PricingQuoteLine.objects.filter(company=company, customer=primary))
+        seen = {}  # (destination, product_description) -> PricingQuoteLine
+        for line in lines_after:
+            key = (line.destination, line.product_description)
+            if key not in seen:
+                seen[key] = line
+                continue
+
+            keep = seen[key]
+            # Keep include/pallet qty from the existing keep line, only ensure price_delivered latest-ish
+            if keep.price_delivered != line.price_delivered:
+                keep.price_delivered = line.price_delivered
+                keep.save(update_fields=["price_delivered"])
+            line.delete()
 
 
 # -----------------------------
@@ -237,7 +301,6 @@ def run_automation(request, pk):
 
     name_normalized = automation.name.strip().lower()
 
-    # --- Branch: Retriever RPC Order ----------------------------------------
     if name_normalized == "retriever rpc order":
         if request.method == "POST":
             form = RpcOrderForm(request.POST)
@@ -261,15 +324,12 @@ def run_automation(request, pk):
 
         return render(request, "core/rpc_order_form.html", {"automation": automation, "form": form})
 
-    # --- Branch: Bucket Metrics ---------------------------------------------
     elif "bucket metrics" in name_normalized:
         return redirect("bucket_metrics")
 
-    # --- Branch: Pricing Quote Generator -----------------------------------
     elif "pricing quote" in name_normalized or "pricing" in name_normalized:
         return redirect("pricing_upload")
 
-    # --- Default branch: treat as BOL generator -----------------------------
     if request.method == "POST":
         form = BOLForm(request.POST)
         if form.is_valid():
@@ -378,11 +438,13 @@ def pricing_upload_view(request):
                 if cust_created:
                     created_customers += 1
 
+                norm_dest = normalize_destination(customer_obj.name, r.get("destination", ""))
+
                 obj, was_created = PricingQuoteLine.objects.update_or_create(
                     company=company,
                     customer=customer_obj,
-                    destination=r["destination"].strip(),
-                    product_description=r["product_description"].strip(),
+                    destination=norm_dest,
+                    product_description=(r.get("product_description") or "").strip(),
                     defaults={"price_delivered": r["price_delivered"]},
                 )
 
