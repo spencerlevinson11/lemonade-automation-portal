@@ -123,10 +123,10 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
     if cust_low == "bandy ranch":
         return "Vista"
     # Native fixed destinations
-    if cust_low == "native ca":
+    if cust_low == "ca":
         return "California"
 
-    if cust_low == "native co":
+    if cust_low == "co":
         return "Denver"
 
     dest = re.sub(r"\s+", " ", dest).strip()
@@ -230,8 +230,8 @@ def merge_duplicate_pricing_customers(company):
                 line.save(update_fields=["destination"])
     # --- Native legacy cleanup: force fixed destinations ---
     native_fixes = {
-        "native ca": "California",
-        "native co": "Denver",
+        "ca": "California",
+        "co": "Denver",
     }
 
     for cust_key, fixed_dest in native_fixes.items():
