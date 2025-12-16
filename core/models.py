@@ -119,6 +119,7 @@ class PricingQuoteLine(models.Model):
     )
 
     pallet_quantity_pieces = models.IntegerField(default=0)
+    include_in_quote = models.BooleanField(default=True)
 
     updated_at = models.DateTimeField(auto_now=True)
 
