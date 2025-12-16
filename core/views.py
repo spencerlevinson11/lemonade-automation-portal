@@ -2,13 +2,13 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from django.contrib import messages
-from django.core.mail import send_mail
 from django.utils import timezone
 from django.http import FileResponse, HttpResponseForbidden
 from django.views.decorators.http import require_http_methods
+from django.db import transaction
 
 from .bol_generation import generate_bol_from_templates, generate_bol_from_form
-from .forms import BOLForm
+from .forms import BOLForm, PricingUploadForm
 from .rpcforms import RpcOrderForm
 from .rpc_generation import generate_rpc_from_form
 from .models import Automation, Company, PricingCustomer, PricingQuoteLine
@@ -16,12 +16,10 @@ from .models import Automation, Company, PricingCustomer, PricingQuoteLine
 from .automations.bucket_metrics import analyze_prognosis_workbook
 import tempfile
 
-from .forms import PricingUploadForm
 from .services.pricing_import import parse_pricing_matrix_csv
-from .models import PricingCustomer, PricingQuoteLine
 
 import re
-from django.db import transaction
+
 
 def normalize_customer_name(raw: str) -> str | None:
     """
@@ -40,10 +38,10 @@ def normalize_customer_name(raw: str) -> str | None:
     if low in {"los", "los angeles", "los angeles pricing", "la"}:
         return None
 
-    # Normalize common punctuation/whitespace
+    # Normalize common whitespace
     s = re.sub(r"\s+", " ", s).strip()
 
-    # Kendal == Kendal - (only when it's literally a trailing dash variant)
+    # Kendal == Kendal - (remove trailing dash variants)
     s = re.sub(r"\s*-\s*$", "", s).strip()
     low = s.lower()
 
@@ -59,7 +57,6 @@ def normalize_customer_name(raw: str) -> str | None:
         "golden state": "Golden State",
     }
 
-    # If the cleaned name matches a mapping key, return canonical
     if low in mapping:
         return mapping[low]
 
@@ -93,6 +90,7 @@ def merge_duplicate_pricing_customers(company):
     for canon_name, cust_list in buckets.items():
         if canon_name == "__DELETE__":
             continue
+
         if len(cust_list) <= 1:
             # Ensure the single one is correctly named
             only = cust_list[0]
@@ -132,6 +130,7 @@ def merge_duplicate_pricing_customers(company):
                     line.save(update_fields=["customer"])
 
             dup.delete()
+
 
 @login_required
 def dashboard(request):
@@ -235,7 +234,6 @@ def run_automation(request, pk):
         )
 
     # --- Branch: Bucket Metrics – any automation whose name contains it -----
-     # --- Branch: Bucket Metrics – any automation whose name contains it -----
     elif "bucket metrics" in name_normalized:
         return redirect("bucket_metrics")
 
@@ -245,10 +243,6 @@ def run_automation(request, pk):
         return redirect("pricing_upload")
 
     # --- Default branch: treat as BOL generator -----------------------------
-
-
-    # --- Default branch: treat as BOL generator -----------------------------
-
     if request.method == "POST":
         form = BOLForm(request.POST)
         if form.is_valid():
@@ -305,9 +299,7 @@ def bucket_metrics_view(request, automation_id=None):
                         index=False,
                         border=0,
                     ),
-                    "per_customer_month_table": results[
-                        "per_customer_month"
-                    ].to_html(
+                    "per_customer_month_table": results["per_customer_month"].to_html(
                         classes="table table-striped table-sm",
                         index=False,
                         border=0,
@@ -332,6 +324,7 @@ def bucket_metrics_view(request, automation_id=None):
             context["error"] = f"Error reading file: {e}"
 
     return render(request, "core/bucket_metrics.html", context)
+
 
 def _get_company_for_request(request):
     """
@@ -376,14 +369,19 @@ def pricing_upload_view(request):
             created_customers = 0
 
             for r in rows:
+                canon_customer = normalize_customer_name(r.get("customer", ""))
+                if canon_customer is None:
+                    # Skip "Los" and any blank customer rows
+                    continue
+
                 customer_obj, cust_created = PricingCustomer.objects.get_or_create(
                     company=company,
-                    name=r["customer"].strip(),
+                    name=canon_customer,
                 )
                 if cust_created:
                     created_customers += 1
 
-                # Upsert line WITHOUT overwriting pallet_quantity_pieces
+                # Upsert line WITHOUT overwriting pallet_quantity_pieces or include flags
                 obj, was_created = PricingQuoteLine.objects.update_or_create(
                     company=company,
                     customer=customer_obj,
@@ -399,6 +397,9 @@ def pricing_upload_view(request):
                 else:
                     updated_lines += 1
 
+            # Merge any duplicates already in DB and enforce canonical names
+            merge_duplicate_pricing_customers(company)
+
             messages.success(
                 request,
                 f"Imported pricing: {created_customers} customers, {created_lines} new lines, {updated_lines} updated lines.",
@@ -409,6 +410,7 @@ def pricing_upload_view(request):
         form = PricingUploadForm()
 
     return render(request, "core/pricing_upload.html", {"form": form, "company": company})
+
 
 @login_required
 def pricing_customer_list_view(request):
@@ -426,6 +428,7 @@ def pricing_customer_list_view(request):
             "customers": customers,
         },
     )
+
 
 @login_required
 @require_http_methods(["GET", "POST"])
@@ -460,10 +463,12 @@ def pricing_customer_edit_view(request, customer_id):
             include_key = f"include_{line.id}"
             line.include_in_quote = include_key in request.POST
 
-            line.save(update_fields=[
-                "pallet_quantity_pieces",
-                "include_in_quote",
-            ])
+            line.save(
+                update_fields=[
+                    "pallet_quantity_pieces",
+                    "include_in_quote",
+                ]
+            )
 
         messages.success(
             request,
@@ -502,10 +507,8 @@ def pricing_customer_quote_view(request, customer_id):
         include_in_quote=True,
     ).order_by("destination", "product_description")
 
-
     return render(
         request,
         "core/pricing_quote.html",
         {"company": company, "customer": customer, "lines": lines},
     )
-
