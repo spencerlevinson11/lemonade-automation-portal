@@ -116,9 +116,12 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
 
     if cust_low == "designers choice":
         dest = re.sub(r"^choice\s+", "", dest, flags=re.IGNORECASE).strip()
-
+    
     if cust_low == "golden state":
         dest = re.sub(r"^state\s+", "", dest, flags=re.IGNORECASE).strip()
+    
+    if cust_low == "bandy ranch":
+        return "Vista"
 
     dest = re.sub(r"\s+", " ", dest).strip()
     return dest
