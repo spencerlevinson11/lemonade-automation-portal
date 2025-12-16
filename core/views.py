@@ -45,17 +45,17 @@ def normalize_customer_name(raw: str) -> str | None:
     s = re.sub(r"\s*-\s*$", "", s).strip()
     low = s.lower()
 
-   mapping = {
-    "designers": "Designers Choice",
-    "desginers": "Designers Choice",
-    "designer's choice": "Designers Choice",
-    "designers choice": "Designers Choice",
-    "falcon": "Falcon",
-    "falcon long": "Falcon",
-    "golden": "Golden State",
-    "golden state": "Golden State",
-    "bandy": "Bandy Ranch",
-}
+           mapping = {
+            "designers": "Designers Choice",
+            "desginers": "Designers Choice",
+            "designer's choice": "Designers Choice",
+            "designers choice": "Designers Choice",
+            "falcon": "Falcon",
+            "falcon long": "Falcon",
+            "golden": "Golden State",
+            "golden state": "Golden State",
+            "bandy": "Bandy Ranch",
+        }
 
 
     if low in mapping:
