@@ -298,6 +298,22 @@ def pricing_upload_view(request):
 
     return render(request, "core/pricing_upload.html", {"form": form, "company": company})
 
+@login_required
+def pricing_customer_list_view(request):
+    company = _get_company_for_request(request)
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    customers = PricingCustomer.objects.filter(company=company).order_by("name")
+
+    return render(
+        request,
+        "core/pricing_customer_list.html",
+        {
+            "company": company,
+            "customers": customers,
+        },
+    )
 
 @login_required
 @require_http_methods(["GET", "POST"])
