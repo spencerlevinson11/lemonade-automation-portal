@@ -21,6 +21,10 @@ from .services.pricing_import import parse_pricing_matrix_csv
 import re
 
 
+# -----------------------------
+# Pricing helpers
+# -----------------------------
+
 def normalize_customer_name(raw: str) -> str | None:
     """
     Returns a canonical customer name, or None to skip the row entirely.
@@ -63,6 +67,52 @@ def normalize_customer_name(raw: str) -> str | None:
     return s
 
 
+def is_euro_customer_name(name: str) -> bool:
+    """
+    Display-only currency selection.
+    Pyramid + Mobis should display in EUR.
+    We treat close variants as the same (e.g., "Mobi's Flowers" -> mobis).
+    """
+    if not name:
+        return False
+
+    s = name.strip().lower()
+
+    # normalize punctuation for matching
+    s = s.replace("'", "")
+    s = re.sub(r"\s+", " ", s)
+
+    # Pyramid (any "pyramid ..." counts)
+    if s == "pyramid" or s.startswith("pyramid "):
+        return True
+
+    # Mobis variants (mobi's, mobis flowers, mobis, etc.)
+    if s == "mobis" or s.startswith("mobis "):
+        return True
+    if s == "mobis flowers" or s.startswith("mobis flowers"):
+        return True
+
+    # Also catch "mobi's ..." as mobis
+    if s.startswith("mobis") or s.startswith("mobis "):
+        return True
+
+    # If someone typed "mobis" with apostrophe removed already, above catches.
+    # Catch "mobi s" edge
+    if s.startswith("mobi s"):
+        return True
+
+    return False
+
+
+def get_currency_for_customer_name(name: str):
+    """
+    Returns (currency_code, currency_symbol) for display.
+    """
+    if is_euro_customer_name(name):
+        return ("EUR", "€")
+    return ("USD", "$")
+
+
 def get_or_create_customer_safe(company, name: str):
     """
     Safer than get_or_create under concurrency: if the INSERT races and hits
@@ -92,7 +142,6 @@ def merge_duplicate_pricing_customers(company):
     buckets: dict[str, list[PricingCustomer]] = {}
     for c in customers:
         canon = normalize_customer_name(c.name)
-        # If a stored customer is "Los", we'll treat it as removable
         if canon is None:
             buckets.setdefault("__DELETE__", []).append(c)
         else:
@@ -110,13 +159,10 @@ def merge_duplicate_pricing_customers(company):
         if not cust_list:
             continue
 
-        # CRITICAL FIX:
-        # Pick as primary the customer that ALREADY has the canonical name (if present),
-        # so we never try to rename a different row to a name that already exists.
+        # Pick as primary the customer that ALREADY has the canonical name if present
         primary = next((c for c in cust_list if (c.name or "").strip() == canon_name), None)
         if primary is None:
             primary = cust_list[0]
-            # Only rename if no one else already has canon_name (should be true now)
             if primary.name != canon_name:
                 primary.name = canon_name
                 primary.save(update_fields=["name"])
@@ -135,7 +181,6 @@ def merge_duplicate_pricing_customers(company):
                 ).first()
 
                 if existing:
-                    # Only update price_delivered (don’t overwrite pallet qty / include flags)
                     if existing.price_delivered != line.price_delivered:
                         existing.price_delivered = line.price_delivered
                         existing.save(update_fields=["price_delivered"])
@@ -146,6 +191,10 @@ def merge_duplicate_pricing_customers(company):
 
             dup.delete()
 
+
+# -----------------------------
+# Core portal views
+# -----------------------------
 
 @login_required
 def dashboard(request):
@@ -188,6 +237,7 @@ def run_automation(request, pk):
 
     name_normalized = automation.name.strip().lower()
 
+    # --- Branch: Retriever RPC Order ----------------------------------------
     if name_normalized == "retriever rpc order":
         if request.method == "POST":
             form = RpcOrderForm(request.POST)
@@ -211,12 +261,15 @@ def run_automation(request, pk):
 
         return render(request, "core/rpc_order_form.html", {"automation": automation, "form": form})
 
+    # --- Branch: Bucket Metrics ---------------------------------------------
     elif "bucket metrics" in name_normalized:
         return redirect("bucket_metrics")
 
+    # --- Branch: Pricing Quote Generator -----------------------------------
     elif "pricing quote" in name_normalized or "pricing" in name_normalized:
         return redirect("pricing_upload")
 
+    # --- Default branch: treat as BOL generator -----------------------------
     if request.method == "POST":
         form = BOLForm(request.POST)
         if form.is_valid():
@@ -288,6 +341,10 @@ def _get_company_for_request(request):
     except Company.DoesNotExist:
         return None
 
+
+# -----------------------------
+# Pricing workflow
+# -----------------------------
 
 @login_required
 @require_http_methods(["GET", "POST"])
@@ -374,10 +431,11 @@ def pricing_customer_edit_view(request, customer_id):
         return HttpResponseForbidden("No company is associated with this user.")
 
     customer = get_object_or_404(PricingCustomer, id=customer_id, company=company)
-
     lines_qs = PricingQuoteLine.objects.filter(company=company, customer=customer).order_by(
         "destination", "product_description"
     )
+
+    currency_code, currency_symbol = get_currency_for_customer_name(customer.name)
 
     if request.method == "POST":
         for line in lines_qs:
@@ -400,7 +458,13 @@ def pricing_customer_edit_view(request, customer_id):
     return render(
         request,
         "core/pricing_customer_edit.html",
-        {"company": company, "customer": customer, "lines": lines_qs},
+        {
+            "company": company,
+            "customer": customer,
+            "lines": lines_qs,
+            "currency_code": currency_code,
+            "currency_symbol": currency_symbol,
+        },
     )
 
 
@@ -415,8 +479,16 @@ def pricing_customer_quote_view(request, customer_id):
         company=company, customer=customer, include_in_quote=True
     ).order_by("destination", "product_description")
 
+    currency_code, currency_symbol = get_currency_for_customer_name(customer.name)
+
     return render(
         request,
         "core/pricing_quote.html",
-        {"company": company, "customer": customer, "lines": lines},
+        {
+            "company": company,
+            "customer": customer,
+            "lines": lines,
+            "currency_code": currency_code,
+            "currency_symbol": currency_symbol,
+        },
     )
