@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.utils import timezone
 from django.http import FileResponse, HttpResponseForbidden
 from django.views.decorators.http import require_http_methods
-from django.db import transaction
+from django.db import transaction, IntegrityError
 
 from .bol_generation import generate_bol_from_templates, generate_bol_from_form
 from .forms import BOLForm, PricingUploadForm
@@ -63,6 +63,23 @@ def normalize_customer_name(raw: str) -> str | None:
     return s
 
 
+def get_or_create_customer_safe(company, name: str):
+    """
+    Safer than get_or_create under concurrency: if the INSERT races and hits
+    the unique constraint, we re-fetch.
+    """
+    try:
+        obj = PricingCustomer.objects.get(company=company, name=name)
+        return obj, False
+    except PricingCustomer.DoesNotExist:
+        try:
+            obj = PricingCustomer.objects.create(company=company, name=name)
+            return obj, True
+        except IntegrityError:
+            obj = PricingCustomer.objects.get(company=company, name=name)
+            return obj, False
+
+
 @transaction.atomic
 def merge_duplicate_pricing_customers(company):
     """
@@ -90,21 +107,21 @@ def merge_duplicate_pricing_customers(company):
     for canon_name, cust_list in buckets.items():
         if canon_name == "__DELETE__":
             continue
-
-        if len(cust_list) <= 1:
-            # Ensure the single one is correctly named
-            only = cust_list[0]
-            if only.name != canon_name:
-                only.name = canon_name
-                only.save(update_fields=["name"])
+        if not cust_list:
             continue
 
-        primary = cust_list[0]
-        if primary.name != canon_name:
-            primary.name = canon_name
-            primary.save(update_fields=["name"])
+        # CRITICAL FIX:
+        # Pick as primary the customer that ALREADY has the canonical name (if present),
+        # so we never try to rename a different row to a name that already exists.
+        primary = next((c for c in cust_list if (c.name or "").strip() == canon_name), None)
+        if primary is None:
+            primary = cust_list[0]
+            # Only rename if no one else already has canon_name (should be true now)
+            if primary.name != canon_name:
+                primary.name = canon_name
+                primary.save(update_fields=["name"])
 
-        duplicates = cust_list[1:]
+        duplicates = [c for c in cust_list if c.id != primary.id]
 
         for dup in duplicates:
             dup_lines = PricingQuoteLine.objects.filter(company=company, customer=dup)
@@ -122,10 +139,8 @@ def merge_duplicate_pricing_customers(company):
                     if existing.price_delivered != line.price_delivered:
                         existing.price_delivered = line.price_delivered
                         existing.save(update_fields=["price_delivered"])
-                    # Drop the duplicate line
                     line.delete()
                 else:
-                    # Re-home the line to the primary customer
                     line.customer = primary
                     line.save(update_fields=["customer"])
 
@@ -138,22 +153,16 @@ def dashboard(request):
     company = None
 
     if user.is_superuser:
-        # Admin view: see all automations across all companies
         automations = Automation.objects.select_related("company").all()
-        # (We leave company = None for admins; banner will use is_admin)
     else:
-        # Client view: only see automations for your company
         try:
             company = Company.objects.get(owner=user)
         except Company.DoesNotExist:
             company = None
 
         if company:
-            automations = Automation.objects.select_related("company").filter(
-                company=company
-            )
+            automations = Automation.objects.select_related("company").filter(company=company)
         else:
-            # No company linked to this user yet
             automations = Automation.objects.none()
 
     context = {
@@ -165,10 +174,6 @@ def dashboard(request):
 
 
 def custom_logout(request):
-    """
-    Simple logout view that allows GET requests.
-    Logs the user out, then redirects to the login page.
-    """
     logout(request)
     return redirect("login")
 
@@ -176,45 +181,25 @@ def custom_logout(request):
 @require_http_methods(["GET", "POST"])
 @login_required
 def run_automation(request, pk):
-    """
-    Run an automation.
-
-    - If the automation is named "Retriever RPC Order", we show the RPC form,
-      generate an RPC Excel workbook, and (locally on Windows) try to create
-      Outlook drafts.
-    - If the automation name contains "Bucket Metrics", we redirect to the
-      upload-and-metrics view.
-    - Otherwise, we treat it as a BOL generator automation.
-    """
-
     automation = get_object_or_404(Automation.objects.select_related("company"), pk=pk)
 
-    # Permission check: only superuser or the company owner
     if not (request.user.is_superuser or automation.company.owner == request.user):
         return HttpResponseForbidden("You are not allowed to run this automation.")
 
     name_normalized = automation.name.strip().lower()
 
-    # --- Branch: Retriever RPC Order ----------------------------------------
     if name_normalized == "retriever rpc order":
         if request.method == "POST":
             form = RpcOrderForm(request.POST)
             if form.is_valid():
-                # generate_rpc_from_form now returns (files, outlook_status)
                 files, outlook_status = generate_rpc_from_form(form.cleaned_data)
 
-                # Record last run time on the automation
                 automation.last_run_at = timezone.now()
                 automation.save(update_fields=["last_run_at"])
 
-                # Use the first generated file as the download
                 first_file = files[0]
-
                 status_text = outlook_status or "No Outlook status returned."
-                messages.success(
-                    request,
-                    f"RPC generated. {status_text}",
-                )
+                messages.success(request, f"RPC generated. {status_text}")
 
                 return FileResponse(
                     open(first_file, "rb"),
@@ -224,31 +209,19 @@ def run_automation(request, pk):
         else:
             form = RpcOrderForm()
 
-        return render(
-            request,
-            "core/rpc_order_form.html",
-            {
-                "automation": automation,
-                "form": form,
-            },
-        )
+        return render(request, "core/rpc_order_form.html", {"automation": automation, "form": form})
 
-    # --- Branch: Bucket Metrics – any automation whose name contains it -----
     elif "bucket metrics" in name_normalized:
         return redirect("bucket_metrics")
 
-    # --- Branch: Pricing Quote Generator -----------------------------------
     elif "pricing quote" in name_normalized or "pricing" in name_normalized:
-        # Send them to the pricing workflow UI
         return redirect("pricing_upload")
 
-    # --- Default branch: treat as BOL generator -----------------------------
     if request.method == "POST":
         form = BOLForm(request.POST)
         if form.is_valid():
             output_path = generate_bol_from_form(form.cleaned_data)
 
-            # Record last run time on the automation
             automation.last_run_at = timezone.now()
             automation.save(update_fields=["last_run_at"])
 
@@ -262,24 +235,11 @@ def run_automation(request, pk):
     else:
         form = BOLForm()
 
-    return render(
-        request,
-        "core/run_bol.html",
-        {
-            "automation": automation,
-            "form": form,
-        },
-    )
+    return render(request, "core/run_bol.html", {"automation": automation, "form": form})
 
 
 @login_required
 def bucket_metrics_view(request, automation_id=None):
-    """
-    Upload a Prognosis spreadsheet and display bucket metrics.
-
-    This view is meant to be wired to an Automation entry like
-    "Bucket Metrics – Prognosis Spreadsheet" via a Run button.
-    """
     context = {
         "automation_name": "Bucket Metrics from Prognosis Spreadsheet",
         "results_available": False,
@@ -295,29 +255,17 @@ def bucket_metrics_view(request, automation_id=None):
                 {
                     "results_available": True,
                     "top_customers_table": results["top_customers"].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
+                        classes="table table-striped table-sm", index=False, border=0
                     ),
                     "per_customer_month_table": results["per_customer_month"].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
+                        classes="table table-striped table-sm", index=False, border=0
                     ),
-                    "per_customer_city_item_table": results[
-                        "per_customer_city_item"
-                    ].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
+                    "per_customer_city_item_table": results["per_customer_city_item"].to_html(
+                        classes="table table-striped table-sm", index=False, border=0
                     ),
                     "per_customer_city_item_month_table": results[
                         "per_customer_city_item_month"
-                    ].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
+                    ].to_html(classes="table table-striped table-sm", index=False, border=0),
                 }
             )
         except Exception as e:
@@ -327,10 +275,6 @@ def bucket_metrics_view(request, automation_id=None):
 
 
 def _get_company_for_request(request):
-    """
-    For normal users: their owned company.
-    For superusers: allow ?company_id=123, otherwise pick the first company.
-    """
     user = request.user
 
     if user.is_superuser:
@@ -371,25 +315,18 @@ def pricing_upload_view(request):
             for r in rows:
                 canon_customer = normalize_customer_name(r.get("customer", ""))
                 if canon_customer is None:
-                    # Skip "Los" and any blank customer rows
                     continue
 
-                customer_obj, cust_created = PricingCustomer.objects.get_or_create(
-                    company=company,
-                    name=canon_customer,
-                )
+                customer_obj, cust_created = get_or_create_customer_safe(company, canon_customer)
                 if cust_created:
                     created_customers += 1
 
-                # Upsert line WITHOUT overwriting pallet_quantity_pieces or include flags
                 obj, was_created = PricingQuoteLine.objects.update_or_create(
                     company=company,
                     customer=customer_obj,
                     destination=r["destination"].strip(),
                     product_description=r["product_description"].strip(),
-                    defaults={
-                        "price_delivered": r["price_delivered"],
-                    },
+                    defaults={"price_delivered": r["price_delivered"]},
                 )
 
                 if was_created:
@@ -397,7 +334,6 @@ def pricing_upload_view(request):
                 else:
                     updated_lines += 1
 
-            # Merge any duplicates already in DB and enforce canonical names
             merge_duplicate_pricing_customers(company)
 
             messages.success(
@@ -437,74 +373,46 @@ def pricing_customer_edit_view(request, customer_id):
     if not company:
         return HttpResponseForbidden("No company is associated with this user.")
 
-    customer = get_object_or_404(
-        PricingCustomer,
-        id=customer_id,
-        company=company,
-    )
+    customer = get_object_or_404(PricingCustomer, id=customer_id, company=company)
 
-    lines_qs = PricingQuoteLine.objects.filter(
-        company=company,
-        customer=customer,
-    ).order_by("destination", "product_description")
+    lines_qs = PricingQuoteLine.objects.filter(company=company, customer=customer).order_by(
+        "destination", "product_description"
+    )
 
     if request.method == "POST":
         for line in lines_qs:
-            # --- Pallet quantity ---
             qty_key = f"pallet_{line.id}"
             if qty_key in request.POST:
                 raw = (request.POST.get(qty_key) or "").strip()
                 try:
                     line.pallet_quantity_pieces = int(raw) if raw else 0
                 except ValueError:
-                    pass  # keep previous value if invalid
+                    pass
 
-            # --- Include / exclude toggle ---
             include_key = f"include_{line.id}"
             line.include_in_quote = include_key in request.POST
 
-            line.save(
-                update_fields=[
-                    "pallet_quantity_pieces",
-                    "include_in_quote",
-                ]
-            )
+            line.save(update_fields=["pallet_quantity_pieces", "include_in_quote"])
 
-        messages.success(
-            request,
-            "Saved pallet quantities and quote inclusions."
-        )
-
-        return redirect(
-            "pricing_customer_edit",
-            customer_id=customer.id,
-        )
+        messages.success(request, "Saved pallet quantities and quote inclusions.")
+        return redirect("pricing_customer_edit", customer_id=customer.id)
 
     return render(
         request,
         "core/pricing_customer_edit.html",
-        {
-            "company": company,
-            "customer": customer,
-            "lines": lines_qs,
-        },
+        {"company": company, "customer": customer, "lines": lines_qs},
     )
 
 
 @login_required
 def pricing_customer_quote_view(request, customer_id):
-    """
-    HTML quote page (easy to print/save as PDF).
-    """
     company = _get_company_for_request(request)
     if not company:
         return HttpResponseForbidden("No company is associated with this user.")
 
     customer = get_object_or_404(PricingCustomer, id=customer_id, company=company)
     lines = PricingQuoteLine.objects.filter(
-        company=company,
-        customer=customer,
-        include_in_quote=True,
+        company=company, customer=customer, include_in_quote=True
     ).order_by("destination", "product_description")
 
     return render(
