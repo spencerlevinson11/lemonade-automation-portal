@@ -114,7 +114,6 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
     if not dest:
         return ""
 
-    # Normalize whitespace
     dest = re.sub(r"\s+", " ", dest).strip()
 
     # Strip leading "-" artifacts like "- S,C,N" or "-S,C,N"
@@ -123,25 +122,19 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
     cust = (customer_name or "").strip()
 
     # If destination accidentally starts with the customer name (or customer + dash), strip it
-    # e.g. "Kendal - S,C,N" -> "S,C,N" ; "Kendal S,C,N" -> "S,C,N"
     if cust:
-        # Escape for regex safety
         cust_re = re.escape(cust)
         dest = re.sub(rf"^{cust_re}\s*-\s*", "", dest, flags=re.IGNORECASE).strip()
         dest = re.sub(rf"^{cust_re}\s+", "", dest, flags=re.IGNORECASE).strip()
 
-    # Customer-specific legacy destination prefixes
     cust_low = cust.lower()
 
     if cust_low == "designers choice":
-        # "Choice Hyde Park" -> "Hyde Park"
         dest = re.sub(r"^choice\s+", "", dest, flags=re.IGNORECASE).strip()
 
     if cust_low == "golden state":
-        # After mapping Golden -> Golden State, legacy "State Ventura" appears; remove "State "
         dest = re.sub(r"^state\s+", "", dest, flags=re.IGNORECASE).strip()
 
-    # Final whitespace cleanup
     dest = re.sub(r"\s+", " ", dest).strip()
     return dest
 
@@ -163,6 +156,52 @@ def get_or_create_customer_safe(company, name: str):
             return obj, False
 
 
+def upsert_pricing_line_safe(*, company, customer, destination, product_description, price_delivered):
+    """
+    Safe upsert for PricingQuoteLine under the unique constraint:
+    (company, customer, destination, product_description)
+
+    Returns (obj, created_bool)
+    """
+    destination = (destination or "").strip()
+    product_description = (product_description or "").strip()
+
+    try:
+        obj = PricingQuoteLine.objects.get(
+            company=company,
+            customer=customer,
+            destination=destination,
+            product_description=product_description,
+        )
+        created = False
+    except PricingQuoteLine.DoesNotExist:
+        try:
+            obj = PricingQuoteLine.objects.create(
+                company=company,
+                customer=customer,
+                destination=destination,
+                product_description=product_description,
+                price_delivered=price_delivered,
+            )
+            return obj, True
+        except IntegrityError:
+            # Someone (or another row) created it in-between; re-fetch.
+            obj = PricingQuoteLine.objects.get(
+                company=company,
+                customer=customer,
+                destination=destination,
+                product_description=product_description,
+            )
+            created = False
+
+    # Update only price_delivered (do not overwrite pallet qty/include flags)
+    if obj.price_delivered != price_delivered:
+        obj.price_delivered = price_delivered
+        obj.save(update_fields=["price_delivered"])
+
+    return obj, created
+
+
 @transaction.atomic
 def merge_duplicate_pricing_customers(company):
     """
@@ -172,7 +211,6 @@ def merge_duplicate_pricing_customers(company):
     """
     customers = list(PricingCustomer.objects.filter(company=company).order_by("id"))
 
-    # Group customers by canonical normalized name
     buckets: dict[str, list[PricingCustomer]] = {}
     for c in customers:
         canon = normalize_customer_name(c.name)
@@ -181,19 +219,16 @@ def merge_duplicate_pricing_customers(company):
         else:
             buckets.setdefault(canon, []).append(c)
 
-    # Delete any "Los" customers + their lines
     for c in buckets.get("__DELETE__", []):
         PricingQuoteLine.objects.filter(company=company, customer=c).delete()
         c.delete()
 
-    # Merge duplicates and normalize destinations within each canonical customer
     for canon_name, cust_list in buckets.items():
         if canon_name == "__DELETE__":
             continue
         if not cust_list:
             continue
 
-        # Pick as primary the customer that already has the canonical name if present
         primary = next((c for c in cust_list if (c.name or "").strip() == canon_name), None)
         if primary is None:
             primary = cust_list[0]
@@ -201,17 +236,30 @@ def merge_duplicate_pricing_customers(company):
                 primary.name = canon_name
                 primary.save(update_fields=["name"])
 
-        # 1) First: normalize destinations for ALL lines already under primary
-        primary_lines = PricingQuoteLine.objects.filter(company=company, customer=primary)
-        for line in primary_lines:
+        # Normalize destinations for lines already under primary
+        for line in PricingQuoteLine.objects.filter(company=company, customer=primary):
             new_dest = normalize_destination(primary.name, line.destination)
             if new_dest and new_dest != line.destination:
-                line.destination = new_dest
-                line.save(update_fields=["destination"])
+                # This save can collide with an existing normalized row, so guard it:
+                try:
+                    line.destination = new_dest
+                    line.save(update_fields=["destination"])
+                except IntegrityError:
+                    # If collision, merge into existing and delete this one
+                    existing = PricingQuoteLine.objects.filter(
+                        company=company,
+                        customer=primary,
+                        destination=new_dest,
+                        product_description=line.product_description,
+                    ).first()
+                    if existing:
+                        if existing.price_delivered != line.price_delivered:
+                            existing.price_delivered = line.price_delivered
+                            existing.save(update_fields=["price_delivered"])
+                        line.delete()
 
         duplicates = [c for c in cust_list if c.id != primary.id]
 
-        # 2) Move / merge lines from duplicate customers into primary, with normalized destination
         for dup in duplicates:
             dup_lines = PricingQuoteLine.objects.filter(company=company, customer=dup)
 
@@ -226,34 +274,30 @@ def merge_duplicate_pricing_customers(company):
                 ).first()
 
                 if existing:
-                    # Only update price_delivered (don’t overwrite pallet qty / include flags)
                     if existing.price_delivered != line.price_delivered:
                         existing.price_delivered = line.price_delivered
                         existing.save(update_fields=["price_delivered"])
                     line.delete()
                 else:
-                    line.customer = primary
-                    line.destination = norm_dest
-                    line.save(update_fields=["customer", "destination"])
+                    try:
+                        line.customer = primary
+                        line.destination = norm_dest
+                        line.save(update_fields=["customer", "destination"])
+                    except IntegrityError:
+                        # collision after normalization
+                        existing2 = PricingQuoteLine.objects.filter(
+                            company=company,
+                            customer=primary,
+                            destination=norm_dest,
+                            product_description=line.product_description,
+                        ).first()
+                        if existing2:
+                            if existing2.price_delivered != line.price_delivered:
+                                existing2.price_delivered = line.price_delivered
+                                existing2.save(update_fields=["price_delivered"])
+                        line.delete()
 
             dup.delete()
-
-        # 3) Final pass: if normalization created duplicates INSIDE primary, merge them
-        # (e.g., "S,C,N" and "- S,C,N" now both became "S,C,N")
-        lines_after = list(PricingQuoteLine.objects.filter(company=company, customer=primary))
-        seen = {}  # (destination, product_description) -> PricingQuoteLine
-        for line in lines_after:
-            key = (line.destination, line.product_description)
-            if key not in seen:
-                seen[key] = line
-                continue
-
-            keep = seen[key]
-            # Keep include/pallet qty from the existing keep line, only ensure price_delivered latest-ish
-            if keep.price_delivered != line.price_delivered:
-                keep.price_delivered = line.price_delivered
-                keep.save(update_fields=["price_delivered"])
-            line.delete()
 
 
 # -----------------------------
@@ -425,30 +469,42 @@ def pricing_upload_view(request):
 
             rows = parse_pricing_matrix_csv(tmp_path)
 
-            created_lines = 0
-            updated_lines = 0
-            created_customers = 0
-
+            # De-dupe within the upload file AFTER normalization:
+            # key = (canon_customer, norm_dest, product_description)
+            normalized_rows = {}
             for r in rows:
                 canon_customer = normalize_customer_name(r.get("customer", ""))
                 if canon_customer is None:
                     continue
 
+                dest_raw = r.get("destination", "")
+                prod = (r.get("product_description") or "").strip()
+                price = r["price_delivered"]
+
+                # We normalize destination using the canonical customer name
+                norm_dest = normalize_destination(canon_customer, dest_raw)
+
+                key = (canon_customer, norm_dest, prod)
+                normalized_rows[key] = price  # keep last price seen
+
+            created_lines = 0
+            updated_lines = 0
+            created_customers = 0
+
+            for (canon_customer, norm_dest, prod), price in normalized_rows.items():
                 customer_obj, cust_created = get_or_create_customer_safe(company, canon_customer)
                 if cust_created:
                     created_customers += 1
 
-                norm_dest = normalize_destination(customer_obj.name, r.get("destination", ""))
-
-                obj, was_created = PricingQuoteLine.objects.update_or_create(
+                _, created = upsert_pricing_line_safe(
                     company=company,
                     customer=customer_obj,
                     destination=norm_dest,
-                    product_description=(r.get("product_description") or "").strip(),
-                    defaults={"price_delivered": r["price_delivered"]},
+                    product_description=prod,
+                    price_delivered=price,
                 )
 
-                if was_created:
+                if created:
                     created_lines += 1
                 else:
                     updated_lines += 1
