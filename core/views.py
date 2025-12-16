@@ -123,11 +123,15 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
     if cust_low == "bandy ranch":
         return "Vista"
     # Native fixed destinations
-    if cust_low == "ca":
-        return "California"
+        # Native: map state codes to friendly destinations
+    # (Your data has customer = "Native" and destination = "CA"/"CO")
+    if cust_low == "native":
+        dlow = dest.lower().strip()
+        if dlow == "ca":
+            return "California"
+        if dlow == "co":
+            return "Denver"
 
-    if cust_low == "co":
-        return "Denver"
 
     dest = re.sub(r"\s+", " ", dest).strip()
     return dest
@@ -228,38 +232,46 @@ def merge_duplicate_pricing_customers(company):
                 # Reassign destination safely
                 line.destination = "Long Beach"
                 line.save(update_fields=["destination"])
-    # --- Native legacy cleanup: force fixed destinations ---
-    native_fixes = {
-        "ca": "California",
-        "co": "Denver",
-    }
+      # --- Native legacy cleanup: "CA" -> "California", "CO" -> "Denver" ---
+    native_customers = PricingCustomer.objects.filter(
+        company=company,
+        name__iexact="Native",
+    )
 
-    for cust_key, fixed_dest in native_fixes.items():
-        native_customers = PricingCustomer.objects.filter(
-            company=company,
-            name__iexact=cust_key,
-        )
+    for cust in native_customers:
+        lines = PricingQuoteLine.objects.filter(company=company, customer=cust)
 
-        for cust in native_customers:
-            lines = PricingQuoteLine.objects.filter(company=company, customer=cust)
+        for line in lines:
+            dlow = (line.destination or "").strip().lower()
 
-            for line in lines:
-                if line.destination != fixed_dest:
-                    existing = PricingQuoteLine.objects.filter(
-                        company=company,
-                        customer=cust,
-                        destination=fixed_dest,
-                        product_description=line.product_description,
-                    ).first()
+            fixed_dest = None
+            if dlow == "ca":
+                fixed_dest = "California"
+            elif dlow == "co":
+                fixed_dest = "Denver"
 
-                    if existing:
-                        if existing.price_delivered != line.price_delivered:
-                            existing.price_delivered = line.price_delivered
-                            existing.save(update_fields=["price_delivered"])
-                        line.delete()
-                    else:
-                        line.destination = fixed_dest
-                        line.save(update_fields=["destination"])
+            if not fixed_dest:
+                continue
+
+            if line.destination == fixed_dest:
+                continue
+
+            existing = PricingQuoteLine.objects.filter(
+                company=company,
+                customer=cust,
+                destination=fixed_dest,
+                product_description=line.product_description,
+            ).first()
+
+            if existing:
+                if existing.price_delivered != line.price_delivered:
+                    existing.price_delivered = line.price_delivered
+                    existing.save(update_fields=["price_delivered"])
+                line.delete()
+            else:
+                line.destination = fixed_dest
+                line.save(update_fields=["destination"])
+
 
     buckets: dict[str, list[PricingCustomer]] = {}
     for c in customers:
