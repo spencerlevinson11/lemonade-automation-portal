@@ -329,15 +329,21 @@ def pricing_customer_edit_view(request, customer_id):
     if request.method == "POST":
         # inputs: pallet_<line.id>
         for line in lines_qs:
-            key = f"pallet_{line.id}"
-            if key in request.POST:
-                raw = (request.POST.get(key) or "").strip()
-                try:
-                    line.pallet_quantity_pieces = int(raw) if raw else 0
-                    line.save(update_fields=["pallet_quantity_pieces"])
-                except ValueError:
-                    # ignore invalid values; keep previous
-                    pass
+    # pallet qty
+    qty_key = f"pallet_{line.id}"
+    if qty_key in request.POST:
+        raw = (request.POST.get(qty_key) or "").strip()
+        try:
+            line.pallet_quantity_pieces = int(raw) if raw else 0
+        except ValueError:
+            pass
+
+    # include toggle (unchecked checkboxes are not sent in POST)
+    include_key = f"include_{line.id}"
+    line.include_in_quote = include_key in request.POST
+
+    line.save(update_fields=["pallet_quantity_pieces", "include_in_quote"])
+
 
         messages.success(request, "Saved pallet quantities.")
         return redirect("pricing_customer_edit", customer_id=customer.id)
