@@ -300,58 +300,61 @@ def pricing_upload_view(request):
 
 
 @login_required
-def pricing_customer_list_view(request):
-    company = _get_company_for_request(request)
-    if not company:
-        return HttpResponseForbidden("No company is associated with this user.")
-
-    customers = PricingCustomer.objects.filter(company=company).order_by("name")
-    return render(
-        request,
-        "core/pricing_customer_list.html",
-        {"company": company, "customers": customers},
-    )
-
-
-@login_required
 @require_http_methods(["GET", "POST"])
 def pricing_customer_edit_view(request, customer_id):
     company = _get_company_for_request(request)
     if not company:
         return HttpResponseForbidden("No company is associated with this user.")
 
-    customer = get_object_or_404(PricingCustomer, id=customer_id, company=company)
-
-    lines_qs = PricingQuoteLine.objects.filter(company=company, customer=customer).order_by(
-        "destination", "product_description"
+    customer = get_object_or_404(
+        PricingCustomer,
+        id=customer_id,
+        company=company,
     )
 
+    lines_qs = PricingQuoteLine.objects.filter(
+        company=company,
+        customer=customer,
+    ).order_by("destination", "product_description")
+
     if request.method == "POST":
-        # inputs: pallet_<line.id>
         for line in lines_qs:
-    # pallet qty
-    qty_key = f"pallet_{line.id}"
-    if qty_key in request.POST:
-        raw = (request.POST.get(qty_key) or "").strip()
-        try:
-            line.pallet_quantity_pieces = int(raw) if raw else 0
-        except ValueError:
-            pass
+            # --- Pallet quantity ---
+            qty_key = f"pallet_{line.id}"
+            if qty_key in request.POST:
+                raw = (request.POST.get(qty_key) or "").strip()
+                try:
+                    line.pallet_quantity_pieces = int(raw) if raw else 0
+                except ValueError:
+                    pass  # keep previous value if invalid
 
-    # include toggle (unchecked checkboxes are not sent in POST)
-    include_key = f"include_{line.id}"
-    line.include_in_quote = include_key in request.POST
+            # --- Include / exclude toggle ---
+            include_key = f"include_{line.id}"
+            line.include_in_quote = include_key in request.POST
 
-    line.save(update_fields=["pallet_quantity_pieces", "include_in_quote"])
+            line.save(update_fields=[
+                "pallet_quantity_pieces",
+                "include_in_quote",
+            ])
 
+        messages.success(
+            request,
+            "Saved pallet quantities and quote inclusions."
+        )
 
-        messages.success(request, "Saved pallet quantities.")
-        return redirect("pricing_customer_edit", customer_id=customer.id)
+        return redirect(
+            "pricing_customer_edit",
+            customer_id=customer.id,
+        )
 
     return render(
         request,
         "core/pricing_customer_edit.html",
-        {"company": company, "customer": customer, "lines": lines_qs},
+        {
+            "company": company,
+            "customer": customer,
+            "lines": lines_qs,
+        },
     )
 
 
