@@ -20,14 +20,11 @@ BUCKET_COLUMNS = [
     "HOLD",
 ]
 
-
 _YEAR_RE = re.compile(r"^\s*(19|20)\d{2}\s*$")
 
 
 def _looks_like_year(s: str) -> bool:
-    if not s:
-        return False
-    return bool(_YEAR_RE.match(s))
+    return bool(s and _YEAR_RE.match(str(s)))
 
 
 def normalize_customer_name(raw) -> str:
@@ -71,9 +68,34 @@ def normalize_customer_name(raw) -> str:
     if s_lower in {"mobi's", "mobis", "mobi's flowers", "mobis flowers"}:
         return "Mobi's Flowers"
 
-    # Designer's Choice variants
-    if s_lower in {"designer's choice", "designers choice", "designer choice"}:
+    # Designers Choice variants (incl. common misspellings)
+    if s_lower in {
+        "designer's choice",
+        "designers choice",
+        "designer choice",
+        "desginer's choice",
+        "desginers choice",
+        "desginer choice",
+        "desginers choice llc",
+        "designer's choice llc",
+        "designers choice llc",
+    }:
         return "Designers Choice"
+
+    # Kendal variants (roll up all kendal north/central/south, etc.)
+    if s_lower in {
+        "kendal",
+        "kendal north",
+        "kendal south",
+        "kendal central",
+        "kendal floral, llc",
+        "kendal floral llc",
+        "kendal floral",
+        "kendal north bouquet co.",
+        "kendal north bouquet co",
+        "kendal north bouquet company",
+    }:
+        return "Kendal"
 
     return s
 
