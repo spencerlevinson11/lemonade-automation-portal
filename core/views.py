@@ -488,6 +488,14 @@ def run_automation(request, pk):
     return render(request, "core/run_bol.html", {"automation": automation, "form": form})
 
 
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
+from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.utils import timezone
+
+from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
+
+
 @login_required
 def bucket_metrics_view(request, automation_id=None):
     context = {
@@ -495,33 +503,132 @@ def bucket_metrics_view(request, automation_id=None):
         "results_available": False,
     }
 
+    # If user is applying growth adjustments (second POST), use file stored in session
+    if request.method == "POST" and request.POST.get("action") == "apply_growth":
+        file_bytes = request.session.get("bucket_metrics_file_bytes")
+        file_name = request.session.get("bucket_metrics_file_name", "prognosis.xlsx")
+
+        if not file_bytes:
+            context["error"] = "No uploaded file found. Please upload the spreadsheet again."
+            return render(request, "core/bucket_metrics.html", context)
+
+        # Recreate a file-like object for pandas
+        # (pandas can read from BytesIO)
+        import io
+        f = io.BytesIO(file_bytes)
+
+        # Parse growth inputs
+        growth_pct_by_col = {}
+        for key, val in request.POST.items():
+            if key.startswith("growth__"):
+                col_key = key.replace("growth__", "")
+                try:
+                    pct = float(val) if str(val).strip() else 0.0
+                except ValueError:
+                    pct = 0.0
+
+                # Convert safe key back to column name by matching from the known list
+                # We'll just pass safe keys and map in template using provided list
+                growth_pct_by_col[col_key] = pct
+
+        # We stored safe keys; rebuild expects real column names
+        # So convert safe keys back using a reverse map from the first render.
+        reverse_map = request.session.get("bucket_metrics_growth_reverse_map", {})
+        growth_real = {}
+        for safe_key, pct in growth_pct_by_col.items():
+            real = reverse_map.get(safe_key)
+            if real:
+                growth_real[real] = pct
+
+        projection_df, yoy_suggestions, start_month_label = rebuild_projection_with_growth(f, growth_real)
+
+        # Render only projection sections (you’ll still see the other tables from the first upload)
+        context.update(
+            {
+                "results_available": True,
+                "start_month_label": start_month_label,
+                "projection_table": projection_df.to_html(
+                    classes="table table-striped table-sm",
+                    index=False,
+                    border=0,
+                ),
+                "yoy_suggestions_table": yoy_suggestions.to_html(
+                    classes="table table-striped table-sm",
+                    index=False,
+                    border=0,
+                ),
+                "growth_fields": request.session.get("bucket_metrics_growth_fields", []),
+            }
+        )
+        return render(request, "core/bucket_metrics.html", context)
+
+    # First upload
     if request.method == "POST" and request.FILES.get("file"):
         excel_file = request.FILES["file"]
 
         try:
-            results = analyze_prognosis_workbook(excel_file)
+            # Store file bytes in session for the "apply growth" step
+            file_bytes = excel_file.read()
+            request.session["bucket_metrics_file_bytes"] = file_bytes
+            request.session["bucket_metrics_file_name"] = excel_file.name
+
+            # Need to rewind for pandas
+            import io
+            f = io.BytesIO(file_bytes)
+
+            results = analyze_prognosis_workbook(f)
+
+            # Build reverse map for safe field keys -> real column names
+            reverse_map = {}
+            for item in results["growth_fields"]:
+                reverse_map[item["key"]] = item["col"]
+
+            request.session["bucket_metrics_growth_reverse_map"] = reverse_map
+            request.session["bucket_metrics_growth_fields"] = results["growth_fields"]
 
             context.update(
                 {
                     "results_available": True,
+                    "start_month_label": results["start_month_label"],
                     "top_customers_table": results["top_customers"].to_html(
-                        classes="table table-striped table-sm", index=False, border=0
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
                     ),
                     "per_customer_month_table": results["per_customer_month"].to_html(
-                        classes="table table-striped table-sm", index=False, border=0
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
                     ),
                     "per_customer_city_item_table": results["per_customer_city_item"].to_html(
-                        classes="table table-striped table-sm", index=False, border=0
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
                     ),
-                    "per_customer_city_item_month_table": results[
-                        "per_customer_city_item_month"
-                    ].to_html(classes="table table-striped table-sm", index=False, border=0),
+                    "per_customer_city_item_month_table": results["per_customer_city_item_month"].to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                    # NEW sections:
+                    "projection_table": results["projection_df"].to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                    "yoy_suggestions_table": results["yoy_suggestions"].to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                    "growth_fields": results["growth_fields"],
                 }
             )
         except Exception as e:
             context["error"] = f"Error reading file: {e}"
 
     return render(request, "core/bucket_metrics.html", context)
+
 
 
 def _get_company_for_request(request):
