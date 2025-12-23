@@ -1,29 +1,26 @@
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
-from django.contrib.auth import logout
-from django.contrib import messages
-from django.utils import timezone
-from django.http import FileResponse, HttpResponseForbidden
-from django.views.decorators.http import require_http_methods
-from django.db import transaction, IntegrityError
+from __future__ import annotations
 
-from .bol_generation import generate_bol_from_templates, generate_bol_from_form
-from .forms import BOLForm, PricingUploadForm
-from .rpcforms import RpcOrderForm
-from .rpc_generation import generate_rpc_from_form
-from .models import Automation, Company, PricingCustomer, PricingQuoteLine
+import os
+import re
+import tempfile
+from io import BytesIO
+
+from django.contrib import messages
+from django.contrib.auth import logout
+from django.contrib.auth.decorators import login_required
+from django.db import IntegrityError, transaction
+from django.http import FileResponse, HttpResponseForbidden
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.views.decorators.http import require_http_methods
 
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
-import tempfile
-
+from .bol_generation import generate_bol_from_form, generate_bol_from_templates
+from .forms import BOLForm, PricingUploadForm
+from .models import Automation, Company, PricingCustomer, PricingQuoteLine
+from .rpc_generation import generate_rpc_from_form
+from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
-
-import re
-import io
-import os
-
-from django.shortcuts import render
-from django.utils import timezone
 
 
 # -----------------------------
@@ -128,8 +125,6 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
         return "Vista"
 
     # Native fixed destinations
-    # Native: map state codes to friendly destinations
-    # (Your data has customer = "Native" and destination = "CA"/"CO")
     if cust_low == "native":
         dlow = dest.lower().strip()
         if dlow == "ca":
@@ -494,17 +489,6 @@ def run_automation(request, pk):
     return render(request, "core/run_bol.html", {"automation": automation, "form": form})
 
 
-import os
-import io
-import tempfile
-
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
-from django.utils import timezone
-
-from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
-
-
 @login_required
 def bucket_metrics_view(request, automation_id=None):
     """
@@ -551,7 +535,7 @@ def bucket_metrics_view(request, automation_id=None):
 
         try:
             with open(tmp_path, "rb") as fh:
-                f = io.BytesIO(fh.read())
+                f = BytesIO(fh.read())
 
             projection_df, yoy_suggestions, start_month_label = rebuild_projection_with_growth(
                 f, growth_real
@@ -591,23 +575,20 @@ def bucket_metrics_view(request, automation_id=None):
     if request.method == "POST" and request.FILES.get("file"):
         excel_file = request.FILES["file"]
 
-        # Write upload to a temp file; store path (string) in session
-        # Use /tmp on Render (tempfile does this automatically)
         try:
             suffix = os.path.splitext(excel_file.name or "")[1] or ".xlsx"
 
+            # Write upload to a temp file; store path (string) in session
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 for chunk in excel_file.chunks():
                     tmp.write(chunk)
                 tmp_path = tmp.name
 
-            # Save only JSON-serializable values in session
             request.session["bucket_metrics_tmp_path"] = tmp_path
             request.session["bucket_metrics_uploaded_name"] = excel_file.name
 
-            # Run analysis from the temp file
             with open(tmp_path, "rb") as fh:
-                f = io.BytesIO(fh.read())
+                f = BytesIO(fh.read())
 
             results = analyze_prognosis_workbook(f)
 
@@ -667,88 +648,10 @@ def bucket_metrics_view(request, automation_id=None):
                     "growth_fields": results.get("growth_fields", []),
                 }
             )
-
         except Exception as e:
             context["error"] = f"Error reading file: {e}"
 
         return render(request, "core/bucket_metrics.html", context)
-
-    # GET
-    return render(request, "core/bucket_metrics.html", context)
-
-
-    # First upload
-    if request.method == "POST" and request.FILES.get("file"):
-        excel_file = request.FILES["file"]
-
-        try:
-            file_bytes = excel_file.read()
-            request.session["bucket_metrics_file_bytes"] = file_bytes
-            request.session["bucket_metrics_file_name"] = excel_file.name
-
-            import io
-            f = io.BytesIO(file_bytes)
-
-            results = analyze_prognosis_workbook(f)
-
-            # Reverse map safe field keys -> real column names (for rebuild step)
-            reverse_map = {item["key"]: item["col"] for item in results.get("growth_fields", [])}
-            request.session["bucket_metrics_growth_reverse_map"] = reverse_map
-            request.session["bucket_metrics_growth_fields"] = results.get("growth_fields", [])
-
-            # Pre-render the “static” tables to HTML and store them so apply-growth can re-display without recompute.
-            top_customers_html = results["top_customers"].to_html(
-                classes="table table-striped table-sm",
-                index=False,
-                border=0,
-            )
-            per_customer_month_html = results["per_customer_month"].to_html(
-                classes="table table-striped table-sm",
-                index=False,
-                border=0,
-            )
-            per_customer_city_item_html = results["per_customer_city_item"].to_html(
-                classes="table table-striped table-sm",
-                index=False,
-                border=0,
-            )
-            per_customer_city_item_month_html = results["per_customer_city_item_month"].to_html(
-                classes="table table-striped table-sm",
-                index=False,
-                border=0,
-            )
-
-            request.session["bucket_metrics_top_customers_table"] = top_customers_html
-            request.session["bucket_metrics_per_customer_month_table"] = per_customer_month_html
-            request.session["bucket_metrics_per_customer_city_item_table"] = per_customer_city_item_html
-            request.session["bucket_metrics_per_customer_city_item_month_table"] = per_customer_city_item_month_html
-            request.session.modified = True
-
-            context.update(
-                {
-                    "results_available": True,
-                    "start_month_label": results.get("start_month_label"),
-                    "top_customers_table": top_customers_html,
-                    "per_customer_month_table": per_customer_month_html,
-                    "per_customer_city_item_table": per_customer_city_item_html,
-                    "per_customer_city_item_month_table": per_customer_city_item_month_html,
-
-                    # NEW sections:
-                    "projection_table": results["projection_df"].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
-                    "yoy_suggestions_table": results["yoy_suggestions"].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
-                    "growth_fields": results.get("growth_fields", []),
-                }
-            )
-        except Exception as e:
-            context["error"] = f"Error reading file: {e}"
 
     return render(request, "core/bucket_metrics.html", context)
 
