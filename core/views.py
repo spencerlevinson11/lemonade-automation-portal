@@ -4,6 +4,7 @@ import os
 import re
 import tempfile
 from io import BytesIO
+import pandas as pd
 
 from django.contrib import messages
 from django.contrib.auth import logout
@@ -424,7 +425,246 @@ def custom_logout(request):
     logout(request)
     return redirect("login")
 
+def _yoy_session_key(month_label: str, col_name: str) -> str:
+    # stable key for a single YoY adjustment
+    return f"{month_label}||{col_name}"
 
+
+def _get_applied_yoy_overrides(request) -> dict:
+    """
+    Returns:
+      { "Sep-25||CLASSIC HQ": 0.10, ... }  # pct as decimal
+    """
+    data = request.session.get("bucket_metrics_applied_yoy", {})
+    if isinstance(data, dict):
+        # ensure values are floats
+        cleaned = {}
+        for k, v in data.items():
+            try:
+                cleaned[str(k)] = float(v)
+            except Exception:
+                continue
+        return cleaned
+    return {}
+
+
+def _set_applied_yoy_overrides(request, overrides: dict) -> None:
+    request.session["bucket_metrics_applied_yoy"] = {str(k): float(v) for k, v in overrides.items()}
+    request.session.modified = True
+
+
+def _apply_yoy_overrides_to_projection(projection_df, applied_overrides: dict):
+    """
+    projection_df columns: ["Month", "<bucket cols...>"] or first column is month label.
+    We will find the month row and multiply the specified bucket column by (1 + pct).
+    """
+    if projection_df is None or projection_df.empty:
+        return projection_df
+
+    # Detect month column name (your projection_df uses first column as month label)
+    month_col = projection_df.columns[0]
+
+    df = projection_df.copy()
+
+    for key, pct in (applied_overrides or {}).items():
+        try:
+            month_label, col_name = key.split("||", 1)
+        except ValueError:
+            continue
+
+        if col_name not in df.columns:
+            continue
+
+        mask = df[month_col].astype(str) == str(month_label)
+        if not mask.any():
+            continue
+
+        # Multiply selected cell(s)
+        df.loc[mask, col_name] = pd.to_numeric(df.loc[mask, col_name], errors="coerce").fillna(0) * (1.0 + float(pct))
+
+    # Optional: round to whole numbers
+    for c in df.columns[1:]:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).round(0).astype(int)
+
+    return df
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def bucket_projections_view(request):
+    """
+    Separate page for all projection-related features:
+    - Projection table
+    - YoY suggestions with per-row "Apply"
+    - Growth assumptions form (same as before)
+    - Export to XLSX
+    """
+    tmp_path = request.session.get("bucket_metrics_tmp_path")
+    if not tmp_path or not os.path.exists(tmp_path):
+        return redirect("bucket_metrics")
+
+    context = {
+        "automation_name": "Bucket Projections",
+        "error": None,
+        "results_available": True,
+        "applied_yoy": [],
+    }
+
+    # Load workbook from temp file
+    with open(tmp_path, "rb") as fh:
+        f = BytesIO(fh.read())
+
+    # Pull latest computed results (includes growth_fields + base projection + yoy suggestions)
+    results = analyze_prognosis_workbook(f)
+
+    # Store growth reverse map/fields (so apply-growth can work here too)
+    reverse_map = {item["key"]: item["col"] for item in results.get("growth_fields", [])}
+    request.session["bucket_metrics_growth_reverse_map"] = reverse_map
+    request.session["bucket_metrics_growth_fields"] = results.get("growth_fields", [])
+    request.session.modified = True
+
+    # Applied YoY overrides
+    applied_overrides = _get_applied_yoy_overrides(request)
+
+    # Handle POST actions
+    if request.method == "POST":
+        action = request.POST.get("action") or ""
+
+        # 1) Apply a single YoY suggestion row
+        if action == "apply_yoy":
+            month_label = (request.POST.get("month_label") or "").strip()
+            col_name = (request.POST.get("col_name") or "").strip()
+            pct_str = (request.POST.get("pct") or "").strip()
+
+            try:
+                pct = float(pct_str)
+            except ValueError:
+                pct = 0.0
+
+            if month_label and col_name:
+                key = _yoy_session_key(month_label, col_name)
+                applied_overrides[key] = pct
+                _set_applied_yoy_overrides(request, applied_overrides)
+
+            return redirect("bucket_projections")
+
+        # 2) Apply growth assumptions (same idea as before)
+        if action == "apply_growth":
+            # Parse growth inputs (safe_key -> pct)
+            growth_pct_by_safe_key = {}
+            for key, val in request.POST.items():
+                if key.startswith("growth__"):
+                    safe_key = key.replace("growth__", "")
+                    try:
+                        pct = float(val) if str(val).strip() else 0.0
+                    except ValueError:
+                        pct = 0.0
+                    growth_pct_by_safe_key[safe_key] = pct
+
+            rev = request.session.get("bucket_metrics_growth_reverse_map", {})
+            growth_real = {}
+            for safe_key, pct in growth_pct_by_safe_key.items():
+                real = rev.get(safe_key)
+                if real:
+                    growth_real[real] = pct
+
+            # Rebuild projections with growth
+            with open(tmp_path, "rb") as fh2:
+                f2 = BytesIO(fh2.read())
+
+            projection_df, yoy_suggestions_df, start_month_label = rebuild_projection_with_growth(f2, growth_real)
+
+            # Apply YoY overrides *after* growth
+            projection_df = _apply_yoy_overrides_to_projection(projection_df, applied_overrides)
+
+            # Save the final projection df to a temp xlsx for export
+            export_path = os.path.join(tempfile.gettempdir(), f"bucket_projections_{request.user.id}.xlsx")
+            with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
+                projection_df.to_excel(writer, index=False, sheet_name="Projections")
+            request.session["bucket_metrics_projection_export_path"] = export_path
+            request.session.modified = True
+
+            # Render page using updated projection (and base yoy suggestions list)
+            results["projection_df"] = projection_df
+            results["yoy_suggestions"] = yoy_suggestions_df
+            results["start_month_label"] = start_month_label
+
+    # Base projection df (from analyze) then apply YoY overrides (even on GET)
+    projection_df = results["projection_df"]
+    projection_df = _apply_yoy_overrides_to_projection(projection_df, applied_overrides)
+
+    # Save export file on GET too (so export works even before any click)
+    export_path = os.path.join(tempfile.gettempdir(), f"bucket_projections_{request.user.id}.xlsx")
+    with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
+        projection_df.to_excel(writer, index=False, sheet_name="Projections")
+    request.session["bucket_metrics_projection_export_path"] = export_path
+    request.session.modified = True
+
+    # Convert YoY suggestions to dict records and mark applied
+    yoy_df = results["yoy_suggestions"]
+    yoy_records = []
+    if yoy_df is not None and not yoy_df.empty:
+        for r in yoy_df.to_dict("records"):
+            month_label = str(r.get("month_label", "")).strip() or str(r.get("Month", "")).strip()
+            col_name = str(r.get("col_name", "")).strip() or str(r.get("Bucket Type", "")).strip()
+
+            # you likely already have these fields in your yoy df; handle both names safely
+            pct = r.get("pct", r.get("pct_diff", r.get("Pct", 0.0)))
+            try:
+                pct = float(pct)
+            except Exception:
+                pct = 0.0
+
+            key = _yoy_session_key(month_label, col_name)
+            is_applied = key in applied_overrides
+
+            yoy_records.append(
+                {
+                    "month_label": month_label,
+                    "col_name": col_name,
+                    "prev_year": r.get("prev_year", r.get("Prev Year", "")),
+                    "current_year": r.get("current_year", r.get("Current", "")),
+                    "pct": pct,
+                    "applied": is_applied,
+                }
+            )
+
+    # Human-readable applied list for a banner
+    applied_list = []
+    for k, pct in applied_overrides.items():
+        try:
+            m, c = k.split("||", 1)
+        except ValueError:
+            continue
+        applied_list.append(f"{m} • {c} ({pct*100:.1f}%)")
+
+    context.update(
+        {
+            "start_month_label": results.get("start_month_label"),
+            "projection_table": projection_df.to_html(classes="table table-striped table-sm", index=False, border=0),
+            "growth_fields": results.get("growth_fields", []),
+            "yoy_records": yoy_records,
+            "applied_yoy": applied_list,
+        }
+    )
+
+    return render(request, "core/bucket_projections.html", context)
+
+
+@login_required
+def bucket_projections_export_view(request):
+    """
+    Download the current projections as an .xlsx.
+    """
+    export_path = request.session.get("bucket_metrics_projection_export_path")
+    if not export_path or not os.path.exists(export_path):
+        return HttpResponseForbidden("No export available yet. Open projections first.")
+
+    return FileResponse(
+        open(export_path, "rb"),
+        as_attachment=True,
+        filename="Bucket_Projections.xlsx",
+    )
 @require_http_methods(["GET", "POST"])
 @login_required
 def run_automation(request, pk):
