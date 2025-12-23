@@ -13,7 +13,7 @@ from .rpcforms import RpcOrderForm
 from .rpc_generation import generate_rpc_from_form
 from .models import Automation, Company, PricingCustomer, PricingQuoteLine
 
-from .automations.bucket_metrics import analyze_prognosis_workbook
+from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
 import tempfile
 
 from .services.pricing_import import parse_pricing_matrix_csv
@@ -59,7 +59,6 @@ def normalize_customer_name(raw: str) -> str | None:
 
     if low in mapping:
         return mapping[low]
-
 
     return s
 
@@ -116,14 +115,15 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
 
     if cust_low == "designers choice":
         dest = re.sub(r"^choice\s+", "", dest, flags=re.IGNORECASE).strip()
-    
+
     if cust_low == "golden state":
         dest = re.sub(r"^state\s+", "", dest, flags=re.IGNORECASE).strip()
-    
+
     if cust_low == "bandy ranch":
         return "Vista"
+
     # Native fixed destinations
-        # Native: map state codes to friendly destinations
+    # Native: map state codes to friendly destinations
     # (Your data has customer = "Native" and destination = "CA"/"CO")
     if cust_low == "native":
         dlow = dest.lower().strip()
@@ -131,7 +131,6 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
             return "California"
         if dlow == "co":
             return "Denver"
-
 
     dest = re.sub(r"\s+", " ", dest).strip()
     return dest
@@ -201,6 +200,7 @@ def upsert_pricing_line_safe(*, company, customer, destination, product_descript
 @transaction.atomic
 def merge_duplicate_pricing_customers(company):
     customers = list(PricingCustomer.objects.filter(company=company).order_by("id"))
+
     # --- Falcon legacy cleanup: "Beach" -> "Long Beach" ---
     falcon_customers = PricingCustomer.objects.filter(
         company=company,
@@ -223,16 +223,15 @@ def merge_duplicate_pricing_customers(company):
             ).first()
 
             if existing:
-                # Merge price if needed, then delete bad row
                 if existing.price_delivered != line.price_delivered:
                     existing.price_delivered = line.price_delivered
                     existing.save(update_fields=["price_delivered"])
                 line.delete()
             else:
-                # Reassign destination safely
                 line.destination = "Long Beach"
                 line.save(update_fields=["destination"])
-      # --- Native legacy cleanup: "CA" -> "California", "CO" -> "Denver" ---
+
+    # --- Native legacy cleanup: "CA" -> "California", "CO" -> "Denver" ---
     native_customers = PricingCustomer.objects.filter(
         company=company,
         name__iexact="Native",
@@ -271,7 +270,6 @@ def merge_duplicate_pricing_customers(company):
             else:
                 line.destination = fixed_dest
                 line.save(update_fields=["destination"])
-
 
     buckets: dict[str, list[PricingCustomer]] = {}
     for c in customers:
@@ -375,7 +373,6 @@ def get_quote_desc_overrides(request, company_id: int, customer_id: int) -> dict
     key = _quote_desc_session_key(company_id, customer_id)
     data = request.session.get(key, {})
     if isinstance(data, dict):
-        # ensure keys are strings
         return {str(k): str(v) for k, v in data.items() if v is not None}
     return {}
 
@@ -436,8 +433,9 @@ def run_automation(request, pk):
     if not (request.user.is_superuser or automation.company.owner == request.user):
         return HttpResponseForbidden("You are not allowed to run this automation.")
 
-    name_normalized = automation.name.strip().lower()
+    name_normalized = (automation.name or "").strip().lower()
 
+    # --- Branch: Retriever RPC Order ---
     if name_normalized == "retriever rpc order":
         if request.method == "POST":
             form = RpcOrderForm(request.POST)
@@ -461,12 +459,15 @@ def run_automation(request, pk):
 
         return render(request, "core/rpc_order_form.html", {"automation": automation, "form": form})
 
-    elif "bucket metrics" in name_normalized:
+    # --- Branch: Bucket Metrics ---
+    if "bucket metrics" in name_normalized:
         return redirect("bucket_metrics")
 
-    elif "pricing quote" in name_normalized or "pricing" in name_normalized:
+    # --- Branch: Pricing upload workflow ---
+    if "pricing quote" in name_normalized or "pricing" in name_normalized:
         return redirect("pricing_upload")
 
+    # --- Default: BOL generator ---
     if request.method == "POST":
         form = BOLForm(request.POST)
         if form.is_valid():
@@ -488,78 +489,75 @@ def run_automation(request, pk):
     return render(request, "core/run_bol.html", {"automation": automation, "form": form})
 
 
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
-from django.core.files.uploadedfile import InMemoryUploadedFile
-from django.utils import timezone
-
-from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
-
-
 @login_required
 def bucket_metrics_view(request, automation_id=None):
+    """
+    Upload a Prognosis spreadsheet and display bucket metrics + projections.
+    Supports a second POST that applies growth assumptions without re-upload.
+    """
     context = {
         "automation_name": "Bucket Metrics from Prognosis Spreadsheet",
         "results_available": False,
     }
 
-    # If user is applying growth adjustments (second POST), use file stored in session
+    # Second step: apply growth adjustments using file stored in session
     if request.method == "POST" and request.POST.get("action") == "apply_growth":
         file_bytes = request.session.get("bucket_metrics_file_bytes")
-        file_name = request.session.get("bucket_metrics_file_name", "prognosis.xlsx")
-
         if not file_bytes:
             context["error"] = "No uploaded file found. Please upload the spreadsheet again."
             return render(request, "core/bucket_metrics.html", context)
 
-        # Recreate a file-like object for pandas
-        # (pandas can read from BytesIO)
         import io
         f = io.BytesIO(file_bytes)
 
-        # Parse growth inputs
-        growth_pct_by_col = {}
+        # Parse growth inputs (safe_key -> pct)
+        growth_pct_by_safe_key = {}
         for key, val in request.POST.items():
             if key.startswith("growth__"):
-                col_key = key.replace("growth__", "")
+                safe_key = key.replace("growth__", "")
                 try:
                     pct = float(val) if str(val).strip() else 0.0
                 except ValueError:
                     pct = 0.0
+                growth_pct_by_safe_key[safe_key] = pct
 
-                # Convert safe key back to column name by matching from the known list
-                # We'll just pass safe keys and map in template using provided list
-                growth_pct_by_col[col_key] = pct
-
-        # We stored safe keys; rebuild expects real column names
-        # So convert safe keys back using a reverse map from the first render.
+        # Convert safe keys back to real column names using the stored reverse map
         reverse_map = request.session.get("bucket_metrics_growth_reverse_map", {})
         growth_real = {}
-        for safe_key, pct in growth_pct_by_col.items():
+        for safe_key, pct in growth_pct_by_safe_key.items():
             real = reverse_map.get(safe_key)
             if real:
                 growth_real[real] = pct
 
-        projection_df, yoy_suggestions, start_month_label = rebuild_projection_with_growth(f, growth_real)
+        try:
+            projection_df, yoy_suggestions, start_month_label = rebuild_projection_with_growth(f, growth_real)
 
-        # Render only projection sections (you’ll still see the other tables from the first upload)
-        context.update(
-            {
-                "results_available": True,
-                "start_month_label": start_month_label,
-                "projection_table": projection_df.to_html(
-                    classes="table table-striped table-sm",
-                    index=False,
-                    border=0,
-                ),
-                "yoy_suggestions_table": yoy_suggestions.to_html(
-                    classes="table table-striped table-sm",
-                    index=False,
-                    border=0,
-                ),
-                "growth_fields": request.session.get("bucket_metrics_growth_fields", []),
-            }
-        )
+            context.update(
+                {
+                    "results_available": True,
+                    "start_month_label": start_month_label,
+                    "projection_table": projection_df.to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                    "yoy_suggestions_table": yoy_suggestions.to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                    "growth_fields": request.session.get("bucket_metrics_growth_fields", []),
+
+                    # Keep the other tables if they were previously rendered
+                    "top_customers_table": request.session.get("bucket_metrics_top_customers_table"),
+                    "per_customer_month_table": request.session.get("bucket_metrics_per_customer_month_table"),
+                    "per_customer_city_item_table": request.session.get("bucket_metrics_per_customer_city_item_table"),
+                    "per_customer_city_item_month_table": request.session.get("bucket_metrics_per_customer_city_item_month_table"),
+                }
+            )
+        except Exception as e:
+            context["error"] = f"Error rebuilding projections: {e}"
+
         return render(request, "core/bucket_metrics.html", context)
 
     # First upload
@@ -567,49 +565,57 @@ def bucket_metrics_view(request, automation_id=None):
         excel_file = request.FILES["file"]
 
         try:
-            # Store file bytes in session for the "apply growth" step
             file_bytes = excel_file.read()
             request.session["bucket_metrics_file_bytes"] = file_bytes
             request.session["bucket_metrics_file_name"] = excel_file.name
 
-            # Need to rewind for pandas
             import io
             f = io.BytesIO(file_bytes)
 
             results = analyze_prognosis_workbook(f)
 
-            # Build reverse map for safe field keys -> real column names
-            reverse_map = {}
-            for item in results["growth_fields"]:
-                reverse_map[item["key"]] = item["col"]
-
+            # Reverse map safe field keys -> real column names (for rebuild step)
+            reverse_map = {item["key"]: item["col"] for item in results.get("growth_fields", [])}
             request.session["bucket_metrics_growth_reverse_map"] = reverse_map
-            request.session["bucket_metrics_growth_fields"] = results["growth_fields"]
+            request.session["bucket_metrics_growth_fields"] = results.get("growth_fields", [])
+
+            # Pre-render the “static” tables to HTML and store them so apply-growth can re-display without recompute.
+            top_customers_html = results["top_customers"].to_html(
+                classes="table table-striped table-sm",
+                index=False,
+                border=0,
+            )
+            per_customer_month_html = results["per_customer_month"].to_html(
+                classes="table table-striped table-sm",
+                index=False,
+                border=0,
+            )
+            per_customer_city_item_html = results["per_customer_city_item"].to_html(
+                classes="table table-striped table-sm",
+                index=False,
+                border=0,
+            )
+            per_customer_city_item_month_html = results["per_customer_city_item_month"].to_html(
+                classes="table table-striped table-sm",
+                index=False,
+                border=0,
+            )
+
+            request.session["bucket_metrics_top_customers_table"] = top_customers_html
+            request.session["bucket_metrics_per_customer_month_table"] = per_customer_month_html
+            request.session["bucket_metrics_per_customer_city_item_table"] = per_customer_city_item_html
+            request.session["bucket_metrics_per_customer_city_item_month_table"] = per_customer_city_item_month_html
+            request.session.modified = True
 
             context.update(
                 {
                     "results_available": True,
-                    "start_month_label": results["start_month_label"],
-                    "top_customers_table": results["top_customers"].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
-                    "per_customer_month_table": results["per_customer_month"].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
-                    "per_customer_city_item_table": results["per_customer_city_item"].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
-                    "per_customer_city_item_month_table": results["per_customer_city_item_month"].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
+                    "start_month_label": results.get("start_month_label"),
+                    "top_customers_table": top_customers_html,
+                    "per_customer_month_table": per_customer_month_html,
+                    "per_customer_city_item_table": per_customer_city_item_html,
+                    "per_customer_city_item_month_table": per_customer_city_item_month_html,
+
                     # NEW sections:
                     "projection_table": results["projection_df"].to_html(
                         classes="table table-striped table-sm",
@@ -621,14 +627,13 @@ def bucket_metrics_view(request, automation_id=None):
                         index=False,
                         border=0,
                     ),
-                    "growth_fields": results["growth_fields"],
+                    "growth_fields": results.get("growth_fields", []),
                 }
             )
         except Exception as e:
             context["error"] = f"Error reading file: {e}"
 
     return render(request, "core/bucket_metrics.html", context)
-
 
 
 def _get_company_for_request(request):
@@ -668,14 +673,6 @@ def pricing_upload_view(request):
                 tmp_path = tmp.name
 
             rows = parse_pricing_matrix_csv(tmp_path)
-            # ------------------------------------------------------------
-            # REBUILD MODE:
-            # Treat the uploaded pricing file as the source of truth.
-            # 1) Snapshot pallet qty + include flags from existing lines
-            # 2) Delete all existing quote lines for the company
-            # 3) Recreate from normalized_rows, restoring qty/include when possible
-            # This permanently removes stale mispriced rows from old imports.
-            # ------------------------------------------------------------
 
             # Snapshot existing user fields keyed by (customer_name, destination, product_description)
             existing_meta = {}
@@ -717,12 +714,10 @@ def pricing_upload_view(request):
                 if cust_created:
                     created_customers += 1
 
-                # Restore pallet qty/include if we had it before
                 meta = existing_meta.get((canon_customer, norm_dest, prod), None)
                 pallet_qty = meta["pallet_quantity_pieces"] if meta else 0
                 include = meta["include_in_quote"] if meta else True
 
-                # Create the line fresh (no upsert needed because we deleted all lines)
                 PricingQuoteLine.objects.create(
                     company=company,
                     customer=customer_obj,
@@ -734,7 +729,6 @@ def pricing_upload_view(request):
                 )
 
                 created_lines += 1
-
 
             merge_duplicate_pricing_customers(company)
 
@@ -787,20 +781,17 @@ def pricing_customer_edit_view(request, customer_id):
 
     currency_code, currency_symbol = get_currency_for_customer_name(customer.name)
 
-    # Load any existing quote-only overrides for this customer
     overrides = get_quote_desc_overrides(request, company.id, customer.id)
 
     if request.method == "POST":
-        # Optional: user clicked a "Clear quote description edits" button
         if request.POST.get("clear_quote_desc") == "1":
             clear_quote_desc_overrides(request, company.id, customer.id)
             messages.success(request, "Cleared quote-only description edits.")
             return redirect("pricing_customer_edit", customer_id=customer.id)
 
-        new_overrides = dict(overrides)  # start with existing
+        new_overrides = dict(overrides)
 
         for line in lines_qs:
-            # --- Permanent: Pallet quantity ---
             qty_key = f"pallet_{line.id}"
             if qty_key in request.POST:
                 raw = (request.POST.get(qty_key) or "").strip()
@@ -809,28 +800,27 @@ def pricing_customer_edit_view(request, customer_id):
                 except ValueError:
                     pass
 
-            # --- Permanent: Include / exclude toggle ---
             include_key = f"include_{line.id}"
             line.include_in_quote = include_key in request.POST
 
             line.save(update_fields=["pallet_quantity_pieces", "include_in_quote"])
 
-            # --- Temporary: Quote-only description override (DO NOT SAVE TO DB) ---
             desc_key = f"quote_desc_{line.id}"
             raw_desc = (request.POST.get(desc_key) or "").strip()
 
             if raw_desc and raw_desc != line.product_description:
                 new_overrides[str(line.id)] = raw_desc
             else:
-                # if user cleared it or set it back to default, remove override
                 new_overrides.pop(str(line.id), None)
 
         set_quote_desc_overrides(request, company.id, customer.id, new_overrides)
 
-        messages.success(request, "Saved pallet quantities / inclusions. Quote-only descriptions updated for the next quote.")
+        messages.success(
+            request,
+            "Saved pallet quantities / inclusions. Quote-only descriptions updated for the next quote.",
+        )
         return redirect("pricing_customer_edit", customer_id=customer.id)
 
-    # For GET: attach a helper attribute so templates can show the editable value
     for line in lines_qs:
         line.quote_desc_value = overrides.get(str(line.id), line.product_description)
 
@@ -869,11 +859,9 @@ def pricing_customer_quote_view(request, customer_id):
 
     overrides = get_quote_desc_overrides(request, company.id, customer.id)
 
-    # Apply overrides to display (no DB changes)
     for line in lines:
         line.display_product_description = overrides.get(str(line.id), line.product_description)
 
-    # IMPORTANT: clear after generating this quote so future quotes revert automatically
     if overrides:
         clear_quote_desc_overrides(request, company.id, customer.id)
 
