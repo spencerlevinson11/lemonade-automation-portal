@@ -82,6 +82,18 @@ def normalize_customer_name(raw) -> str:
     }:
         return "Designers Choice"
 
+        # Bay State variants
+    if s_lower in {
+        "bay state",
+        "baystate",
+        "bay state & johnson's ct",
+        "baystate & johnson's ct",
+        "bay state and johnson's ct",
+        "baystate and johnson's ct",
+    }:
+        return "Bay State"
+
+
     # Kendal variants (roll up all kendal north/central/south, etc.)
     if s_lower in {
         "kendal",
