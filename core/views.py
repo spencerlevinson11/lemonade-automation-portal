@@ -804,6 +804,9 @@ def bucket_metrics_view(request, automation_id=None):
                     "per_customer_city_item_month_table": request.session.get("bucket_metrics_per_customer_city_item_month_table"),
                 }
             )
+
+        context["projections_url"] = "bucket_projections"
+
         except Exception as e:
             context["error"] = f"Error rebuilding projections: {e}"
 
