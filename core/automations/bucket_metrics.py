@@ -20,6 +20,40 @@ BUCKET_COLUMNS = [
 ]
 
 
+def normalize_customer_name(raw) -> str:
+    """
+    Normalize customer naming variants so metrics aggregate correctly.
+    """
+    if raw is None:
+        return ""
+
+    s = str(raw).strip()
+    if not s:
+        return ""
+
+    s_lower = s.lower()
+
+    # Retriever variants
+    if s_lower in {"retriever", "retriever packaging", "retriever packaging company", "retriever packaging co.", "retriever packaging co"}:
+        return "Retriever Packaging"
+
+    # Seaside variants
+    if s_lower in {"seaside", "seaside packaging"}:
+        return "Seaside Packaging"
+
+    # Mobi's variants
+    if s_lower in {"mobi's", "mobis", "mobi's flowers", "mobis flowers"}:
+        return "Mobi's Flowers"
+
+    # Designer's Choice variants
+    if s_lower in {"designer's choice", "designers choice", "designer choice"}:
+        return "Designers Choice"
+
+    # Default: title-case but preserve existing acronyms reasonably
+    # (Keeps things neat without breaking names too much.)
+    return s.strip()
+
+
 def analyze_prognosis_workbook(uploaded_file):
     """
     uploaded_file: request.FILES['file'] from Django (InMemoryUploadedFile)
@@ -51,13 +85,14 @@ def analyze_prognosis_workbook(uploaded_file):
     data["date"] = pd.to_datetime(data["date"], errors="coerce")
     data = data[~data["date"].isna()].copy()
 
+    # Normalize customer names BEFORE any grouping
+    data["customer"] = data["customer"].apply(normalize_customer_name)
+
     # Keep only bucket columns that actually exist in this file
     bucket_cols = [c for c in BUCKET_COLUMNS if c in data.columns]
 
     # Convert bucket columns to numbers (NaN -> 0)
-    data[bucket_cols] = data[bucket_cols].apply(
-        pd.to_numeric, errors="coerce"
-    ).fillna(0)
+    data[bucket_cols] = data[bucket_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
 
     # Month string like "2025-02"
     data["month"] = data["date"].dt.to_period("M").astype(str)
