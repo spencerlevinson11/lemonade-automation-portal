@@ -489,26 +489,41 @@ def run_automation(request, pk):
     return render(request, "core/run_bol.html", {"automation": automation, "form": form})
 
 
+import os
+import io
+import tempfile
+
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
+from django.utils import timezone
+
+from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
+
+
 @login_required
 def bucket_metrics_view(request, automation_id=None):
     """
     Upload a Prognosis spreadsheet and display bucket metrics + projections.
     Supports a second POST that applies growth assumptions without re-upload.
+
+    IMPORTANT:
+    - Render often uses cookie-based sessions which are JSON-only.
+      So we store a TEMP FILE PATH in session, not raw bytes.
     """
     context = {
         "automation_name": "Bucket Metrics from Prognosis Spreadsheet",
         "results_available": False,
     }
 
-    # Second step: apply growth adjustments using file stored in session
+    # -----------------------------
+    # Step 2: Apply growth (no re-upload)
+    # -----------------------------
     if request.method == "POST" and request.POST.get("action") == "apply_growth":
-        file_bytes = request.session.get("bucket_metrics_file_bytes")
-        if not file_bytes:
-            context["error"] = "No uploaded file found. Please upload the spreadsheet again."
-            return render(request, "core/bucket_metrics.html", context)
+        tmp_path = request.session.get("bucket_metrics_tmp_path")
 
-        import io
-        f = io.BytesIO(file_bytes)
+        if not tmp_path or not os.path.exists(tmp_path):
+            context["error"] = "Your uploaded file has expired. Please upload the spreadsheet again."
+            return render(request, "core/bucket_metrics.html", context)
 
         # Parse growth inputs (safe_key -> pct)
         growth_pct_by_safe_key = {}
@@ -530,7 +545,12 @@ def bucket_metrics_view(request, automation_id=None):
                 growth_real[real] = pct
 
         try:
-            projection_df, yoy_suggestions, start_month_label = rebuild_projection_with_growth(f, growth_real)
+            with open(tmp_path, "rb") as fh:
+                f = io.BytesIO(fh.read())
+
+            projection_df, yoy_suggestions, start_month_label = rebuild_projection_with_growth(
+                f, growth_real
+            )
 
             context.update(
                 {
@@ -548,7 +568,7 @@ def bucket_metrics_view(request, automation_id=None):
                     ),
                     "growth_fields": request.session.get("bucket_metrics_growth_fields", []),
 
-                    # Keep the other tables if they were previously rendered
+                    # Keep the other tables (stored as HTML strings in session)
                     "top_customers_table": request.session.get("bucket_metrics_top_customers_table"),
                     "per_customer_month_table": request.session.get("bucket_metrics_per_customer_month_table"),
                     "per_customer_city_item_table": request.session.get("bucket_metrics_per_customer_city_item_table"),
@@ -559,6 +579,98 @@ def bucket_metrics_view(request, automation_id=None):
             context["error"] = f"Error rebuilding projections: {e}"
 
         return render(request, "core/bucket_metrics.html", context)
+
+    # -----------------------------
+    # Step 1: Initial upload
+    # -----------------------------
+    if request.method == "POST" and request.FILES.get("file"):
+        excel_file = request.FILES["file"]
+
+        # Write upload to a temp file; store path (string) in session
+        # Use /tmp on Render (tempfile does this automatically)
+        try:
+            suffix = os.path.splitext(excel_file.name or "")[1] or ".xlsx"
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                for chunk in excel_file.chunks():
+                    tmp.write(chunk)
+                tmp_path = tmp.name
+
+            # Save only JSON-serializable values in session
+            request.session["bucket_metrics_tmp_path"] = tmp_path
+            request.session["bucket_metrics_uploaded_name"] = excel_file.name
+
+            # Run analysis from the temp file
+            with open(tmp_path, "rb") as fh:
+                f = io.BytesIO(fh.read())
+
+            results = analyze_prognosis_workbook(f)
+
+            # Reverse map safe field keys -> real column names (for rebuild step)
+            reverse_map = {item["key"]: item["col"] for item in results.get("growth_fields", [])}
+            request.session["bucket_metrics_growth_reverse_map"] = reverse_map
+            request.session["bucket_metrics_growth_fields"] = results.get("growth_fields", [])
+
+            # Pre-render “static” tables to HTML and store them in session (strings only)
+            top_customers_html = results["top_customers"].to_html(
+                classes="table table-striped table-sm",
+                index=False,
+                border=0,
+            )
+            per_customer_month_html = results["per_customer_month"].to_html(
+                classes="table table-striped table-sm",
+                index=False,
+                border=0,
+            )
+            per_customer_city_item_html = results["per_customer_city_item"].to_html(
+                classes="table table-striped table-sm",
+                index=False,
+                border=0,
+            )
+            per_customer_city_item_month_html = results["per_customer_city_item_month"].to_html(
+                classes="table table-striped table-sm",
+                index=False,
+                border=0,
+            )
+
+            request.session["bucket_metrics_top_customers_table"] = top_customers_html
+            request.session["bucket_metrics_per_customer_month_table"] = per_customer_month_html
+            request.session["bucket_metrics_per_customer_city_item_table"] = per_customer_city_item_html
+            request.session["bucket_metrics_per_customer_city_item_month_table"] = per_customer_city_item_month_html
+            request.session.modified = True
+
+            context.update(
+                {
+                    "results_available": True,
+                    "start_month_label": results.get("start_month_label"),
+                    "top_customers_table": top_customers_html,
+                    "per_customer_month_table": per_customer_month_html,
+                    "per_customer_city_item_table": per_customer_city_item_html,
+                    "per_customer_city_item_month_table": per_customer_city_item_month_html,
+
+                    # Projections
+                    "projection_table": results["projection_df"].to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                    "yoy_suggestions_table": results["yoy_suggestions"].to_html(
+                        classes="table table-striped table-sm",
+                        index=False,
+                        border=0,
+                    ),
+                    "growth_fields": results.get("growth_fields", []),
+                }
+            )
+
+        except Exception as e:
+            context["error"] = f"Error reading file: {e}"
+
+        return render(request, "core/bucket_metrics.html", context)
+
+    # GET
+    return render(request, "core/bucket_metrics.html", context)
+
 
     # First upload
     if request.method == "POST" and request.FILES.get("file"):
