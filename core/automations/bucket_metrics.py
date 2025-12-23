@@ -1,3 +1,4 @@
+import re
 import pandas as pd
 
 # Columns that actually represent bucket quantities
@@ -20,21 +21,46 @@ BUCKET_COLUMNS = [
 ]
 
 
+_YEAR_RE = re.compile(r"^\s*(19|20)\d{2}\s*$")
+
+
+def _looks_like_year(s: str) -> bool:
+    if not s:
+        return False
+    return bool(_YEAR_RE.match(s))
+
+
 def normalize_customer_name(raw) -> str:
     """
     Normalize customer naming variants so metrics aggregate correctly.
+    Returns "" for rows that should not be counted as customers (e.g., year headers).
     """
     if raw is None:
         return ""
 
     s = str(raw).strip()
-    if not s:
+    if not s or s.lower() in {"nan", "none"}:
+        return ""
+
+    # Filter out accidental "customers" like 2024 / 2026
+    if _looks_like_year(s):
         return ""
 
     s_lower = s.lower()
 
     # Retriever variants
-    if s_lower in {"retriever", "retriever packaging", "retriever packaging company", "retriever packaging co.", "retriever packaging co"}:
+    if s_lower in {
+        "retriever",
+        "retriever packaging",
+        "retriever packaging company",
+        "retriever packaging co.",
+        "retriever packaging co",
+        "retriever packaging corp",
+        "retriever packaging corporation",
+        "retriever packaging, inc",
+        "retriever packaging inc",
+        "retriever packaging llc",
+    }:
         return "Retriever Packaging"
 
     # Seaside variants
@@ -49,9 +75,7 @@ def normalize_customer_name(raw) -> str:
     if s_lower in {"designer's choice", "designers choice", "designer choice"}:
         return "Designers Choice"
 
-    # Default: title-case but preserve existing acronyms reasonably
-    # (Keeps things neat without breaking names too much.)
-    return s.strip()
+    return s
 
 
 def analyze_prognosis_workbook(uploaded_file):
@@ -88,6 +112,9 @@ def analyze_prognosis_workbook(uploaded_file):
     # Normalize customer names BEFORE any grouping
     data["customer"] = data["customer"].apply(normalize_customer_name)
 
+    # Drop rows that are not actual customers (blank after normalization)
+    data = data[data["customer"].astype(str).str.strip() != ""].copy()
+
     # Keep only bucket columns that actually exist in this file
     bucket_cols = [c for c in BUCKET_COLUMNS if c in data.columns]
 
@@ -108,7 +135,7 @@ def analyze_prognosis_workbook(uploaded_file):
         .sort_values(["customer", "month"])
     )
 
-    # Turn all bucket columns into long form: one row per (customer, city, month, bucket_type)
+    # Long form
     long = data.melt(
         id_vars=["customer", "city", "month"],
         value_vars=bucket_cols,
