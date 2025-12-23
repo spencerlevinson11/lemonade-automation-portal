@@ -773,7 +773,7 @@ def bucket_metrics_view(request, automation_id=None):
             if real:
                 growth_real[real] = pct
 
-        try:
+                try:
             with open(tmp_path, "rb") as fh:
                 f = BytesIO(fh.read())
 
@@ -805,10 +805,12 @@ def bucket_metrics_view(request, automation_id=None):
                 }
             )
 
-        context["projections_url"] = "bucket_projections"
-
         except Exception as e:
             context["error"] = f"Error rebuilding projections: {e}"
+
+        # Always expose the projections link name (template can use {% url projections_url %})
+        context["projections_url"] = "bucket_projections"
+
 
         return render(request, "core/bucket_metrics.html", context)
 
