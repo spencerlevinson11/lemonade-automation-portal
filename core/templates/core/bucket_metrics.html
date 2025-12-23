@@ -133,6 +133,35 @@
         tr:nth-child(even) td {
             background: rgba(15, 23, 42, 0.6);
         }
+
+        /* Growth inputs */
+        .growth-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .growth-input {
+            width: 100%;
+            padding: 8px;
+            border-radius: 10px;
+            border: 1px solid var(--border-subtle);
+            background: rgba(2, 6, 23, 0.6);
+            color: var(--text-main);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 900px) {
+            .growth-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 600px) {
+            .growth-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -206,6 +235,62 @@
                 <div class="section-card">
                     {{ per_customer_city_item_month_table|safe }}
                 </div>
+            </div>
+
+            <!-- NEW: Projections -->
+            <div class="section">
+                <h2>Projections (12 months forward from {{ start_month_label }})</h2>
+                <p class="helper">
+                    These months come directly from the prognosis (including future firm orders). You can apply growth assumptions below.
+                </p>
+                <div class="section-card">
+                    {{ projection_table|safe }}
+                </div>
+            </div>
+
+            <!-- NEW: YoY suggestions -->
+            <div class="section">
+                <h2>YoY comparison (for suggestions)</h2>
+                <p class="helper">
+                    This compares each projected month vs the same month last year. Use this to adjust projections if desired.
+                </p>
+                <div class="section-card">
+                    {{ yoy_suggestions_table|safe }}
+                </div>
+            </div>
+
+            <!-- NEW: Apply growth assumptions -->
+            <div class="section">
+                <h2>Apply growth assumptions</h2>
+                <p class="helper">
+                    Enter a % adjustment by bucket type (example: 20 = +20%). This will be applied to the 12 forward months.
+                </p>
+
+                <form method="post" class="section-card" style="margin-top: 10px;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="apply_growth" />
+
+                    <div class="growth-grid">
+                        {% for f in growth_fields %}
+                            <div>
+                                <label>
+                                    {{ f.col }} (%)
+                                </label>
+                                <input
+                                    type="number"
+                                    step="0.1"
+                                    name="growth__{{ f.key }}"
+                                    value="0"
+                                    class="growth-input"
+                                />
+                            </div>
+                        {% endfor %}
+                    </div>
+
+                    <div style="margin-top: 14px;">
+                        <button type="submit">Apply growth &amp; rebuild projections</button>
+                    </div>
+                </form>
             </div>
         {% endif %}
     </div>
