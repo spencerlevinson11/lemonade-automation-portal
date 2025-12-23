@@ -487,6 +487,32 @@ def _apply_yoy_overrides_to_projection(projection_df, applied_overrides: dict):
     return df
 
 
+def _parse_pct(val) -> float:
+    """
+    Returns pct as decimal (0.12 for 12%).
+    Accepts: 0.12, 12, "12%", "12.0 %", "-5.4%", "—", None.
+    """
+    if val is None:
+        return 0.0
+
+    if isinstance(val, (int, float)):
+        v = float(val)
+        return v / 100.0 if abs(v) > 1.5 else v
+
+    s = str(val).strip()
+    if not s or s in {"—", "-", "N/A", "na", "None"}:
+        return 0.0
+
+    s = s.replace("%", "").replace(",", "").strip()
+
+    try:
+        v = float(s)
+    except Exception:
+        return 0.0
+
+    return v / 100.0 if abs(v) > 1.5 else v
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def bucket_projections_view(request):
@@ -529,10 +555,7 @@ def bucket_projections_view(request):
             col_name = (request.POST.get("col_name") or "").strip()
             pct_str = (request.POST.get("pct") or "").strip()
 
-            try:
-                pct = float(pct_str)
-            except ValueError:
-                pct = 0.0
+            pct = _parse_pct(pct_str)
 
             if month_label and col_name:
                 key = _yoy_session_key(month_label, col_name)
@@ -592,11 +615,27 @@ def bucket_projections_view(request):
             month_label = str(r.get("month_label", "")).strip() or str(r.get("Month", "")).strip()
             col_name = str(r.get("col_name", "")).strip() or str(r.get("Bucket Type", "")).strip()
 
-            pct = r.get("pct", r.get("pct_diff", r.get("Pct", 0.0)))
-            try:
-                pct = float(pct)
-            except Exception:
-                pct = 0.0
+            raw_pct = (
+                r.get("pct")
+                or r.get("pct_diff")
+                or r.get("Pct")
+                or r.get("pct_change")
+                or r.get("Pct Diff")
+                or r.get("%")
+            )
+            pct = _parse_pct(raw_pct)
+
+            # Fallback: compute pct from prev/current if pct column isn't present or is unparsable
+            if pct == 0.0:
+                prev = r.get("prev_year", r.get("Prev Year", r.get("prev", None)))
+                curr = r.get("current_year", r.get("Current", r.get("curr", None)))
+                try:
+                    prev_f = float(str(prev).replace(",", "").strip())
+                    curr_f = float(str(curr).replace(",", "").strip())
+                    if prev_f != 0:
+                        pct = (curr_f - prev_f) / prev_f
+                except Exception:
+                    pass
 
             key = _yoy_session_key(month_label, col_name)
             is_applied = key in applied_overrides
