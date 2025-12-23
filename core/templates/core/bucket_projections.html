@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ automation_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root {
+      --bg-main: #020617;
+      --bg-card: #0b1120;
+      --accent: #facc15;
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+      --border-subtle: #1f2937;
+      --good: #4ade80;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
+      color: var(--text-main);
+    }
+    .page { max-width: 1100px; margin: 0 auto; }
+    .card {
+      background: var(--bg-card);
+      border-radius: 18px;
+      border: 1px solid var(--border-subtle);
+      padding: 20px 20px 24px;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.55);
+    }
+    h1 { margin: 0 0 10px; font-size: 1.6rem; }
+    h2 { margin: 22px 0 8px; font-size: 1.2rem; }
+    .subtitle { color: var(--text-muted); margin: 0 0 18px; font-size: 0.9rem; }
+
+    .row { display:flex; gap: 10px; flex-wrap: wrap; align-items:center; margin-bottom: 12px; }
+    button {
+      display: inline-flex; align-items:center; gap:6px;
+      background: var(--accent); color:#111827;
+      padding: 8px 16px; border-radius: 999px;
+      border: none; font-weight: 700; cursor:pointer;
+    }
+    button:hover { background: #fbbf24; }
+    .ghost {
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+    }
+    .ghost:hover { background: rgba(255,255,255,0.06); }
+
+    .section-card {
+      border-radius: 14px;
+      border: 1px solid var(--border-subtle);
+      background: rgba(15, 23, 42, 0.9);
+      padding: 12px;
+      overflow-x: auto;
+    }
+    table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid rgba(148,163,184,0.25); text-align:left; }
+    th { font-weight: 700; background: rgba(15,23,42,0.9); }
+    tr:nth-child(even) td { background: rgba(15,23,42,0.6); }
+
+    .notice {
+      margin: 10px 0 0;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .applied-tag {
+      display:inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(74,222,128,0.4);
+      color: var(--good);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+
+    .growth-grid {
+      display:grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .growth-input {
+      width: 100%;
+      padding: 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border-subtle);
+      background: rgba(2, 6, 23, 0.6);
+      color: var(--text-main);
+      font-size: 0.9rem;
+    }
+    label { display:block; margin-bottom:6px; color: var(--text-muted); font-size: 0.85rem; }
+
+    @media (max-width: 900px) { .growth-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 600px) { .growth-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+
+<body>
+<div class="page">
+  <div class="card">
+    <h1>{{ automation_name }}</h1>
+    <p class="subtitle">
+      Projections start at <strong>{{ start_month_label }}</strong> and run 12 months forward.
+    </p>
+
+    <div class="row">
+      <a href="{% url 'bucket_metrics' %}" style="text-decoration:none;">
+        <button class="ghost" type="button">Back to metrics</button>
+      </a>
+      <a href="{% url 'bucket_projections_export' %}" style="text-decoration:none;">
+        <button type="button">Export projections (.xlsx)</button>
+      </a>
+    </div>
+
+    {% if applied_yoy %}
+      <div class="notice">
+        <strong>Applied YoY adjustments:</strong>
+        {{ applied_yoy|join:", " }}
+      </div>
+    {% endif %}
+
+    <h2>Projection table</h2>
+    <div class="section-card">
+      {{ projection_table|safe }}
+    </div>
+
+    <h2>YoY suggestions (click Apply per line)</h2>
+    <div class="section-card">
+      <table>
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th>Bucket Type</th>
+            <th>Prev Year</th>
+            <th>Current</th>
+            <th>YoY %</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in yoy_records %}
+            <tr>
+              <td>{{ r.month_label }}</td>
+              <td>{{ r.col_name }}</td>
+              <td>{{ r.prev_year }}</td>
+              <td>{{ r.current_year }}</td>
+              <td>{{ r.pct|floatformat:3 }}</td>
+              <td>
+                {% if r.applied %}
+                  <span class="applied-tag">Applied</span>
+                {% else %}
+                  <form method="post" style="margin:0;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="apply_yoy">
+                    <input type="hidden" name="month_label" value="{{ r.month_label }}">
+                    <input type="hidden" name="col_name" value="{{ r.col_name }}">
+                    <input type="hidden" name="pct" value="{{ r.pct }}">
+                    <button type="submit">Apply</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6">No YoY suggestions available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Apply growth assumptions</h2>
+    <p class="subtitle" style="margin-top:-6px;">
+      Enter a % adjustment by bucket type (example: 20 = +20%). This applies across the 12 forward months.
+    </p>
+
+    <form method="post" class="section-card">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="apply_growth">
+
+      <div class="growth-grid">
+        {% for f in growth_fields %}
+          <div>
+            <label>{{ f.col }} (%)</label>
+            <input class="growth-input" type="number" step="0.1" name="growth__{{ f.key }}" value="0">
+          </div>
+        {% endfor %}
+      </div>
+
+      <div style="margin-top: 14px;">
+        <button type="submit">Apply growth &amp; rebuild projections</button>
+      </div>
+    </form>
+  </div>
+</div>
+</body>
+</html>
