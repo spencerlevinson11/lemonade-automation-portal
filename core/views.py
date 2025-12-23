@@ -426,6 +426,10 @@ def custom_logout(request):
     return redirect("login")
 
 
+# -----------------------------
+# YoY apply/unapply logic (REPLACE current with prev-year)
+# -----------------------------
+
 def _yoy_session_key(month_label: str, col_name: str) -> str:
     return f"{month_label}||{col_name}"
 
@@ -433,7 +437,7 @@ def _yoy_session_key(month_label: str, col_name: str) -> str:
 def _get_applied_yoy_overrides(request) -> dict:
     """
     Stores absolute replacement values, not pct:
-      { "Dec-25||CLASSIC HQ": 1234, ... }
+      { "Dec-25||CLASSIC HQ": 1234.0, ... }
     """
     data = request.session.get("bucket_metrics_applied_yoy", {})
     if not isinstance(data, dict):
@@ -517,36 +521,19 @@ def bucket_projections_view(request):
     if request.method == "POST":
         action = request.POST.get("action") or ""
 
+        # Apply: set projection cell to prev_year absolute value
         if action == "apply_yoy":
             month_label = (request.POST.get("month_label") or "").strip()
             col_name = (request.POST.get("col_name") or "").strip()
-
-            # Preferred: template posts prev_year (absolute value to set)
             prev_year_str = (request.POST.get("prev_year") or "").strip()
 
-            # Backwards compatible: template may post pct
-            pct_str = (request.POST.get("pct") or "").strip()
-            current_str = (request.POST.get("current_year") or "").strip()
-
             target_value: float | None = None
-
-            # 1) Use prev_year if provided
             if prev_year_str:
                 try:
                     target_value = float(prev_year_str)
                 except Exception:
                     target_value = None
 
-            # 2) Fallback: if only pct is provided, compute current*(1+pct)
-            if target_value is None and pct_str and current_str:
-                try:
-                    pct = float(pct_str)
-                    cur = float(current_str)
-                    target_value = cur * (1.0 + pct)
-                except Exception:
-                    target_value = None
-
-            # 3) Last resort: if pct but no current_year, just ignore (no change)
             if month_label and col_name and target_value is not None:
                 key = _yoy_session_key(month_label, col_name)
                 applied_overrides[key] = float(target_value)
@@ -554,6 +541,23 @@ def bucket_projections_view(request):
 
             return redirect("bucket_projections")
 
+        # Unapply: remove override and revert to computed projection
+        if action == "unapply_yoy":
+            month_label = (request.POST.get("month_label") or "").strip()
+            col_name = (request.POST.get("col_name") or "").strip()
+            if month_label and col_name:
+                key = _yoy_session_key(month_label, col_name)
+                if key in applied_overrides:
+                    applied_overrides.pop(key, None)
+                    _set_applied_yoy_overrides(request, applied_overrides)
+            return redirect("bucket_projections")
+
+        # Clear all
+        if action == "clear_all_yoy":
+            _set_applied_yoy_overrides(request, {})
+            return redirect("bucket_projections")
+
+        # Growth rebuild
         if action == "apply_growth":
             growth_pct_by_safe_key = {}
             for key, val in request.POST.items():
@@ -577,7 +581,7 @@ def bucket_projections_view(request):
 
             projection_df, yoy_suggestions_df, start_month_label = rebuild_projection_with_growth(f2, growth_real)
 
-            # Apply replacement overrides
+            # Apply replacement overrides AFTER growth rebuild
             projection_df = _apply_yoy_overrides_to_projection(projection_df, applied_overrides)
 
             export_path = os.path.join(tempfile.gettempdir(), f"bucket_projections_{request.user.id}.xlsx")
@@ -600,7 +604,8 @@ def bucket_projections_view(request):
     request.session["bucket_metrics_projection_export_path"] = export_path
     request.session.modified = True
 
-    yoy_df = results["yoy_suggestions"]
+    # Build YoY records from your analyzer's YoY table (the one that actually has Prev/Current)
+    yoy_df = results.get("yoy_suggestions")
     yoy_records = []
 
     def _to_number_or_none(v):
@@ -744,6 +749,7 @@ def bucket_metrics_view(request, automation_id=None):
         "results_available": False,
     }
 
+    # Step 2: Apply growth (no re-upload)
     if request.method == "POST" and request.POST.get("action") == "apply_growth":
         tmp_path = request.session.get("bucket_metrics_tmp_path")
 
@@ -772,24 +778,14 @@ def bucket_metrics_view(request, automation_id=None):
             with open(tmp_path, "rb") as fh:
                 f = BytesIO(fh.read())
 
-            projection_df, yoy_suggestions, start_month_label = rebuild_projection_with_growth(
-                f, growth_real
-            )
+            projection_df, yoy_suggestions, start_month_label = rebuild_projection_with_growth(f, growth_real)
 
             context.update(
                 {
                     "results_available": True,
                     "start_month_label": start_month_label,
-                    "projection_table": projection_df.to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
-                    "yoy_suggestions_table": yoy_suggestions.to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
+                    "projection_table": projection_df.to_html(classes="table table-striped table-sm", index=False, border=0),
+                    "yoy_suggestions_table": yoy_suggestions.to_html(classes="table table-striped table-sm", index=False, border=0),
                     "growth_fields": request.session.get("bucket_metrics_growth_fields", []),
                     "top_customers_table": request.session.get("bucket_metrics_top_customers_table"),
                     "per_customer_month_table": request.session.get("bucket_metrics_per_customer_month_table"),
@@ -797,13 +793,13 @@ def bucket_metrics_view(request, automation_id=None):
                     "per_customer_city_item_month_table": request.session.get("bucket_metrics_per_customer_city_item_month_table"),
                 }
             )
-
         except Exception as e:
             context["error"] = f"Error rebuilding projections: {e}"
 
         context["projections_url"] = "bucket_projections"
         return render(request, "core/bucket_metrics.html", context)
 
+    # Step 1: Initial upload
     if request.method == "POST" and request.FILES.get("file"):
         excel_file = request.FILES["file"]
 
@@ -827,26 +823,10 @@ def bucket_metrics_view(request, automation_id=None):
             request.session["bucket_metrics_growth_reverse_map"] = reverse_map
             request.session["bucket_metrics_growth_fields"] = results.get("growth_fields", [])
 
-            top_customers_html = results["top_customers"].to_html(
-                classes="table table-striped table-sm",
-                index=False,
-                border=0,
-            )
-            per_customer_month_html = results["per_customer_month"].to_html(
-                classes="table table-striped table-sm",
-                index=False,
-                border=0,
-            )
-            per_customer_city_item_html = results["per_customer_city_item"].to_html(
-                classes="table table-striped table-sm",
-                index=False,
-                border=0,
-            )
-            per_customer_city_item_month_html = results["per_customer_city_item_month"].to_html(
-                classes="table table-striped table-sm",
-                index=False,
-                border=0,
-            )
+            top_customers_html = results["top_customers"].to_html(classes="table table-striped table-sm", index=False, border=0)
+            per_customer_month_html = results["per_customer_month"].to_html(classes="table table-striped table-sm", index=False, border=0)
+            per_customer_city_item_html = results["per_customer_city_item"].to_html(classes="table table-striped table-sm", index=False, border=0)
+            per_customer_city_item_month_html = results["per_customer_city_item_month"].to_html(classes="table table-striped table-sm", index=False, border=0)
 
             request.session["bucket_metrics_top_customers_table"] = top_customers_html
             request.session["bucket_metrics_per_customer_month_table"] = per_customer_month_html
@@ -862,16 +842,8 @@ def bucket_metrics_view(request, automation_id=None):
                     "per_customer_month_table": per_customer_month_html,
                     "per_customer_city_item_table": per_customer_city_item_html,
                     "per_customer_city_item_month_table": per_customer_city_item_month_html,
-                    "projection_table": results["projection_df"].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
-                    "yoy_suggestions_table": results["yoy_suggestions"].to_html(
-                        classes="table table-striped table-sm",
-                        index=False,
-                        border=0,
-                    ),
+                    "projection_table": results["projection_df"].to_html(classes="table table-striped table-sm", index=False, border=0),
+                    "yoy_suggestions_table": results["yoy_suggestions"].to_html(classes="table table-striped table-sm", index=False, border=0),
                     "growth_fields": results.get("growth_fields", []),
                 }
             )
@@ -1010,6 +982,10 @@ def pricing_customer_list_view(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def pricing_customer_edit_view(request, customer_id):
+    """
+    Permanent edits (saved): pallet_quantity_pieces, include_in_quote
+    Temporary quote-only edits (session only): product description override
+    """
     company = _get_company_for_request(request)
     if not company:
         return HttpResponseForbidden("No company is associated with this user.")
@@ -1081,6 +1057,10 @@ def pricing_customer_edit_view(request, customer_id):
 
 @login_required
 def pricing_customer_quote_view(request, customer_id):
+    """
+    HTML quote page (easy to print/save as PDF).
+    Uses quote-only description overrides ONCE, then clears them.
+    """
     company = _get_company_for_request(request)
     if not company:
         return HttpResponseForbidden("No company is associated with this user.")
@@ -1113,4 +1093,3 @@ def pricing_customer_quote_view(request, customer_id):
             "currency_symbol": currency_symbol,
         },
     )
-
