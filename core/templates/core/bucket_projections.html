@@ -14,6 +14,7 @@
       --text-muted: #9ca3af;
       --border-subtle: #1f2937;
       --good: #4ade80;
+      --danger: #f97373;
     }
     * { box-sizing: border-box; }
     body {
@@ -36,10 +37,11 @@
 
     .row { display:flex; gap: 10px; flex-wrap: wrap; align-items:center; margin-bottom: 12px; }
     button {
-      display: inline-flex; align-items:center; gap:6px;
+      display: inline-flex; align-items:center; justify-content:center; gap:6px;
       background: var(--accent); color:#111827;
       padding: 8px 16px; border-radius: 999px;
       border: none; font-weight: 700; cursor:pointer;
+      white-space: nowrap;
     }
     button:hover { background: #fbbf24; }
     .ghost {
@@ -48,6 +50,13 @@
       color: var(--text-main);
     }
     .ghost:hover { background: rgba(255,255,255,0.06); }
+
+    .danger {
+      background: transparent;
+      border: 1px solid rgba(249,115,115,0.45);
+      color: var(--danger);
+    }
+    .danger:hover { background: rgba(249,115,115,0.08); }
 
     .section-card {
       border-radius: 14px;
@@ -74,6 +83,7 @@
       color: var(--good);
       font-size: 0.8rem;
       font-weight: 700;
+      margin-right: 8px;
     }
 
     .growth-grid {
@@ -112,6 +122,14 @@
       <a href="{% url 'bucket_projections_export' %}" style="text-decoration:none;">
         <button type="button">Export projections (.xlsx)</button>
       </a>
+
+      {% if applied_yoy %}
+        <form method="post" style="margin:0;">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="clear_all_yoy">
+          <button class="danger" type="submit">Clear all YoY applies</button>
+        </form>
+      {% endif %}
     </div>
 
     {% if applied_yoy %}
@@ -150,13 +168,25 @@
               <td>
                 {% if r.applied %}
                   <span class="applied-tag">Applied</span>
+                  <form method="post" style="margin:0; display:inline;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="unapply_yoy">
+                    <input type="hidden" name="month_label" value="{{ r.month_label }}">
+                    <input type="hidden" name="col_name" value="{{ r.col_name }}">
+                    <button class="ghost" type="submit">Unapply</button>
+                  </form>
                 {% else %}
                   <form method="post" style="margin:0;">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="apply_yoy">
                     <input type="hidden" name="month_label" value="{{ r.month_label }}">
                     <input type="hidden" name="col_name" value="{{ r.col_name }}">
+
+                    <!-- IMPORTANT: apply should set current = prev_year -->
+                    <input type="hidden" name="prev_year" value="{{ r.prev_year }}">
+                    <input type="hidden" name="current_year" value="{{ r.current_year }}">
                     <input type="hidden" name="pct" value="{{ r.pct }}">
+
                     <button type="submit">Apply</button>
                   </form>
                 {% endif %}
@@ -195,3 +225,4 @@
 </div>
 </body>
 </html>
+
