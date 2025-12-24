@@ -430,6 +430,7 @@ def custom_logout(request):
 # YoY apply/unapply logic
 # - Apply YoY: replace projection cell with prev-year absolute value
 # - Optional extra %: applied on top of that replacement value
+# - Customer micro-deltas: add/subtract absolute units to a month+bucket
 # -----------------------------
 
 def _yoy_session_key(month_label: str, col_name: str) -> str:
@@ -557,6 +558,86 @@ def _apply_yoy_pct_overrides_to_projection(projection_df, yoy_pct_overrides: dic
     return df
 
 
+# -----------------------------
+# Customer micro-delta overrides (SESSION)
+# -----------------------------
+
+def _cust_delta_session_key(month_label: str, col_name: str, customer_name: str) -> str:
+    # Keep customer in the key so you can unapply a single customer's delta cleanly.
+    return f"{month_label}||{col_name}||{customer_name}"
+
+
+def _get_applied_customer_deltas(request) -> dict:
+    """
+    Stores per-customer additive deltas (absolute units):
+      { "Jan-26||CLASSIC||Falcon Farms": 20000.0, ... }
+    These get aggregated to month+bucket when applying to the projection table.
+    """
+    data = request.session.get("bucket_metrics_applied_customer_deltas", {})
+    if not isinstance(data, dict):
+        return {}
+
+    cleaned: dict[str, float] = {}
+    for k, v in data.items():
+        try:
+            cleaned[str(k)] = float(v)
+        except Exception:
+            continue
+    return cleaned
+
+
+def _set_applied_customer_deltas(request, overrides: dict) -> None:
+    request.session["bucket_metrics_applied_customer_deltas"] = {str(k): float(v) for k, v in overrides.items()}
+    request.session.modified = True
+
+
+def _apply_customer_deltas_to_projection(projection_df, applied_customer_deltas: dict):
+    """
+    Apply additive deltas to the projection table.
+
+    We aggregate:
+      (month, bucket) += sum(delta for all customers)
+
+    This intentionally does NOT try to re-split customers, because the projection table
+    is bucket totals per month.
+    """
+    if projection_df is None or projection_df.empty:
+        return projection_df
+
+    month_col = projection_df.columns[0]
+    df = projection_df.copy()
+
+    # Aggregate per-customer keys to month+bucket totals
+    agg: dict[tuple[str, str], float] = {}
+    for key, delta in (applied_customer_deltas or {}).items():
+        try:
+            month_label, col_name, _customer = key.split("||", 2)
+        except ValueError:
+            continue
+        try:
+            d = float(delta)
+        except Exception:
+            continue
+        agg[(str(month_label), str(col_name))] = agg.get((str(month_label), str(col_name)), 0.0) + d
+
+    for (month_label, col_name), delta_total in agg.items():
+        if col_name not in df.columns:
+            continue
+
+        mask = df[month_col].astype(str) == str(month_label)
+        if not mask.any():
+            continue
+
+        cur = pd.to_numeric(df.loc[mask, col_name], errors="coerce").fillna(0)
+        df.loc[mask, col_name] = cur + float(delta_total)
+
+    # round to whole numbers for display
+    for c in df.columns[1:]:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).round(0).astype(int)
+
+    return df
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def bucket_projections_view(request):
@@ -569,6 +650,8 @@ def bucket_projections_view(request):
         "error": None,
         "results_available": True,
         "applied_yoy": [],
+        # NEW: optional list for customer-delta applied summary
+        "applied_customer_deltas": [],
     }
 
     with open(tmp_path, "rb") as fh:
@@ -583,6 +666,7 @@ def bucket_projections_view(request):
 
     applied_overrides = _get_applied_yoy_overrides(request)
     applied_yoy_pct = _get_applied_yoy_pct_overrides(request)
+    applied_customer_deltas = _get_applied_customer_deltas(request)
 
     if request.method == "POST":
         action = request.POST.get("action") or ""
@@ -604,9 +688,6 @@ def bucket_projections_view(request):
                 key = _yoy_session_key(month_label, col_name)
                 applied_overrides[key] = float(target_value)
                 _set_applied_yoy_overrides(request, applied_overrides)
-
-                # If this is a fresh apply, ensure pct map entry exists or stays as-is
-                # (No-op: we just don't force anything here)
 
             return redirect("bucket_projections")
 
@@ -656,7 +737,7 @@ def bucket_projections_view(request):
             if month_label and col_name:
                 key = _yoy_session_key(month_label, col_name)
 
-                # only apply pct if YoY is applied (so your mental model stays consistent)
+                # only apply pct if YoY is applied
                 if key in applied_overrides:
                     if abs(pct_val) < 1e-12:
                         applied_yoy_pct.pop(key, None)  # 0% removes it
@@ -665,6 +746,47 @@ def bucket_projections_view(request):
 
                     _set_applied_yoy_pct_overrides(request, applied_yoy_pct)
 
+            return redirect("bucket_projections")
+
+        # -----------------------------
+        # NEW: Customer delta apply/unapply
+        # -----------------------------
+        if action == "apply_customer_delta":
+            month_label = (request.POST.get("month_label") or "").strip()
+            col_name = (request.POST.get("col_name") or "").strip()
+            customer_name = (request.POST.get("customer_name") or "").strip()
+
+            # expected to be an absolute delta like "20000" (can be negative too)
+            delta_str = (request.POST.get("delta") or "").strip()
+            delta_val: float | None = None
+            if delta_str:
+                try:
+                    delta_val = float(delta_str)
+                except Exception:
+                    delta_val = None
+
+            if month_label and col_name and customer_name and delta_val is not None:
+                key = _cust_delta_session_key(month_label, col_name, customer_name)
+                applied_customer_deltas[key] = float(delta_val)
+                _set_applied_customer_deltas(request, applied_customer_deltas)
+
+            return redirect("bucket_projections")
+
+        if action == "unapply_customer_delta":
+            month_label = (request.POST.get("month_label") or "").strip()
+            col_name = (request.POST.get("col_name") or "").strip()
+            customer_name = (request.POST.get("customer_name") or "").strip()
+
+            if month_label and col_name and customer_name:
+                key = _cust_delta_session_key(month_label, col_name, customer_name)
+                if key in applied_customer_deltas:
+                    applied_customer_deltas.pop(key, None)
+                    _set_applied_customer_deltas(request, applied_customer_deltas)
+
+            return redirect("bucket_projections")
+
+        if action == "clear_all_customer_deltas":
+            _set_applied_customer_deltas(request, {})
             return redirect("bucket_projections")
 
         # Growth rebuild
@@ -691,9 +813,10 @@ def bucket_projections_view(request):
 
             projection_df, yoy_suggestions_df, start_month_label = rebuild_projection_with_growth(f2, growth_real)
 
-            # Apply YoY replacement, THEN apply extra % on top
+            # Apply YoY replacement, THEN YoY extra %, THEN customer deltas (additive)
             projection_df = _apply_yoy_overrides_to_projection(projection_df, applied_overrides)
             projection_df = _apply_yoy_pct_overrides_to_projection(projection_df, applied_yoy_pct)
+            projection_df = _apply_customer_deltas_to_projection(projection_df, applied_customer_deltas)
 
             export_path = os.path.join(tempfile.gettempdir(), f"bucket_projections_{request.user.id}.xlsx")
             with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
@@ -705,10 +828,11 @@ def bucket_projections_view(request):
             results["yoy_suggestions"] = yoy_suggestions_df
             results["start_month_label"] = start_month_label
 
-    # Apply YoY replacement + extra % on GET too
+    # Apply YoY replacement + extra % + customer deltas on GET too
     projection_df = results["projection_df"]
     projection_df = _apply_yoy_overrides_to_projection(projection_df, applied_overrides)
     projection_df = _apply_yoy_pct_overrides_to_projection(projection_df, applied_yoy_pct)
+    projection_df = _apply_customer_deltas_to_projection(projection_df, applied_customer_deltas)
 
     export_path = os.path.join(tempfile.gettempdir(), f"bucket_projections_{request.user.id}.xlsx")
     with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
@@ -772,6 +896,46 @@ def bucket_projections_view(request):
         else:
             applied_list.append(f"{m} • {c} (set to {int(round(float(target)))})")
 
+    # Build a friendly summary for applied customer deltas
+    applied_customer_list = []
+    for k, delta in applied_customer_deltas.items():
+        try:
+            m, c, cust = k.split("||", 2)
+        except ValueError:
+            continue
+        sign = "+" if float(delta) >= 0 else ""
+        applied_customer_list.append(f"{m} • {c} • {cust} ({sign}{int(round(float(delta)))})")
+
+    # (Optional) Customer delta suggestion records:
+    # We'll expect the analyzer to *eventually* provide results["customer_delta_suggestions"] as a DF.
+    # For now, this safely renders empty if not present.
+    customer_delta_records = []
+    cust_df = results.get("customer_delta_suggestions")  # may not exist yet
+    if cust_df is not None and isinstance(cust_df, pd.DataFrame) and not cust_df.empty:
+        for r in cust_df.to_dict("records"):
+            month_label = str(r.get("Month", "")).strip()
+            customer_name = str(r.get("Customer", "")).strip()
+            col_name = str(r.get("Bucket Type", "")).strip()
+
+            prev_val = _to_number_or_none(r.get("Prev Year"))
+            proj_val = _to_number_or_none(r.get("Projection"))
+            delta_val = _to_number_or_none(r.get("Delta"))
+
+            key = _cust_delta_session_key(month_label, col_name, customer_name)
+            is_applied = key in applied_customer_deltas
+
+            customer_delta_records.append(
+                {
+                    "month_label": month_label,
+                    "customer_name": customer_name,
+                    "col_name": col_name,
+                    "prev_year": "" if prev_val is None else int(round(prev_val)),
+                    "projection": "" if proj_val is None else int(round(proj_val)),
+                    "delta": "" if delta_val is None else int(round(delta_val)),
+                    "applied": is_applied,
+                }
+            )
+
     context.update(
         {
             "start_month_label": results.get("start_month_label"),
@@ -779,6 +943,9 @@ def bucket_projections_view(request):
             "growth_fields": results.get("growth_fields", []),
             "yoy_records": yoy_records,
             "applied_yoy": applied_list,
+            # NEW:
+            "customer_delta_records": customer_delta_records,
+            "applied_customer_deltas": applied_customer_list,
         }
     )
 
@@ -1213,3 +1380,4 @@ def pricing_customer_quote_view(request, customer_id):
             "currency_symbol": currency_symbol,
         },
     )
+
