@@ -36,6 +36,10 @@ urlpatterns = [
     path("automations/pricing/customers/<int:customer_id>/", core_views.pricing_customer_edit_view, name="pricing_customer_edit"),
     path("automations/pricing/customers/<int:customer_id>/quote/", core_views.pricing_customer_quote_view, name="pricing_customer_quote"),
 
+    # Prognosis Generation
+    path("bucket-prognosis-export/", views.bucket_adjusted_prognosis_export_view, name="bucket_adjusted_prognosis_export"),
+
+    
     # Bucket Metrics
     path("automations/bucket-metrics/", core_views.bucket_metrics_view, name="bucket_metrics"),
 ]
