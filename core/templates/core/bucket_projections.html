@@ -157,8 +157,10 @@
       <a href="{% url 'bucket_metrics' %}" style="text-decoration:none;">
         <button class="ghost" type="button">Back to metrics</button>
       </a>
-      <a href="{% url 'bucket_projections_export' %}" style="text-decoration:none;">
-        <button type="button">Export projections (.xlsx)</button>
+
+      <!-- UPDATED: one-click ZIP download -->
+      <a href="{% url 'bucket_projections_export_zip' %}" style="text-decoration:none;">
+        <button type="button">Download ZIP (projections + updated prognosis)</button>
       </a>
 
       {% if applied_yoy %}
@@ -372,4 +374,3 @@
 </div>
 </body>
 </html>
-
