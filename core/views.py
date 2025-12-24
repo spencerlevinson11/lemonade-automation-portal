@@ -430,6 +430,69 @@ def custom_logout(request):
 # YoY apply/unapply logic (REPLACE current with prev-year)
 # -----------------------------
 
+def _get_applied_yoy_pct_overrides(request) -> dict:
+    """
+    Stores extra percent to apply AFTER YoY replacement:
+      { "Dec-25||CLASSIC HQ": 0.10, ... }  # 10% as decimal
+    """
+    data = request.session.get("bucket_metrics_applied_yoy_pct", {})
+    if not isinstance(data, dict):
+        return {}
+
+    cleaned: dict[str, float] = {}
+    for k, v in data.items():
+        try:
+            cleaned[str(k)] = float(v)
+        except Exception:
+            continue
+    return cleaned
+
+
+def _set_applied_yoy_pct_overrides(request, overrides: dict) -> None:
+    request.session["bucket_metrics_applied_yoy_pct"] = {str(k): float(v) for k, v in overrides.items()}
+    request.session.modified = True
+
+
+def _apply_yoy_pct_overrides_to_projection(projection_df, yoy_pct_overrides: dict):
+    """
+    Applies extra % AFTER YoY replacement:
+      value := value * (1 + pct)
+    Only touches the specific (month, bucket) cells in yoy_pct_overrides.
+    """
+    if projection_df is None or projection_df.empty:
+        return projection_df
+
+    month_col = projection_df.columns[0]
+    df = projection_df.copy()
+
+    for key, pct in (yoy_pct_overrides or {}).items():
+        try:
+            month_label, col_name = key.split("||", 1)
+        except ValueError:
+            continue
+
+        if col_name not in df.columns:
+            continue
+
+        mask = df[month_col].astype(str) == str(month_label)
+        if not mask.any():
+            continue
+
+        try:
+            pct = float(pct)
+        except Exception:
+            continue
+
+        cur = pd.to_numeric(df.loc[mask, col_name], errors="coerce").fillna(0)
+        df.loc[mask, col_name] = cur * (1.0 + pct)
+
+    # round to whole numbers for display
+    for c in df.columns[1:]:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).round(0).astype(int)
+
+    return df
+
+
 def _yoy_session_key(month_label: str, col_name: str) -> str:
     return f"{month_label}||{col_name}"
 
