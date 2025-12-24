@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import zipfile
+
 from io import BytesIO
 
 import pandas as pd
@@ -137,6 +139,73 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
 
     dest = re.sub(r"\s+", " ", dest).strip()
     return dest
+@login_required
+def bucket_projections_zip_export_view(request):
+    """
+    Downloads BOTH:
+      - Bucket_Projections.xlsx
+      - Prognosis_With_Projections.xlsx
+    as a single ZIP.
+
+    It also ensures the adjusted prognosis is generated fresh at click-time.
+    """
+    tmp_path = request.session.get("bucket_metrics_tmp_path")
+    if not tmp_path or not os.path.exists(tmp_path):
+        return HttpResponseForbidden("Your uploaded file has expired. Please upload again.")
+
+    projections_path = request.session.get("bucket_metrics_projection_export_path")
+    if not projections_path or not os.path.exists(projections_path):
+        return HttpResponseForbidden("No projections export available yet. Open projections first.")
+
+    # Ensure adjusted prognosis exists (generate it if missing)
+    prognosis_path = request.session.get("bucket_metrics_adjusted_prognosis_export_path")
+    if not prognosis_path or not os.path.exists(prognosis_path):
+        try:
+            # Baseline projection (from original prognosis)
+            with open(tmp_path, "rb") as fh:
+                f = BytesIO(fh.read())
+            results = analyze_prognosis_workbook(f)
+            baseline_projection_df = results.get("projection_df")
+
+            # Adjusted projection = what we're exporting (read it back from the export file)
+            adjusted_projection_df = pd.read_excel(projections_path, sheet_name="Projections")
+
+            applied_customer_deltas = _get_applied_customer_deltas(request)
+
+            prognosis_out = _generate_adjusted_prognosis_from_current_session(
+                tmp_path=tmp_path,
+                user_id=request.user.id,
+                baseline_projection_df=baseline_projection_df,
+                adjusted_projection_df=adjusted_projection_df,
+                applied_customer_deltas=applied_customer_deltas,
+            )
+
+            if prognosis_out and os.path.exists(prognosis_out):
+                prognosis_path = prognosis_out
+                request.session["bucket_metrics_adjusted_prognosis_export_path"] = prognosis_out
+                request.session.modified = True
+            else:
+                return HttpResponseForbidden("Could not generate adjusted prognosis export.")
+        except Exception as e:
+            return HttpResponseForbidden(f"Could not generate adjusted prognosis export: {e}")
+
+    # Build ZIP
+    zip_path = os.path.join(tempfile.gettempdir(), f"bucket_exports_{request.user.id}.zip")
+    try:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+    except Exception:
+        pass
+
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.write(projections_path, arcname="Bucket_Projections.xlsx")
+        z.write(prognosis_path, arcname="Prognosis_With_Projections.xlsx")
+
+    return FileResponse(
+        open(zip_path, "rb"),
+        as_attachment=True,
+        filename="Bucket_Exports.zip",
+    )
 
 
 def get_or_create_customer_safe(company, name: str):
