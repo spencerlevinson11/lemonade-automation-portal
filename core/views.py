@@ -1265,9 +1265,40 @@ def bucket_projections_view(request):
 
 @login_required
 def bucket_projections_export_view(request):
+    tmp_path = request.session.get("bucket_metrics_tmp_path")
+    if not tmp_path or not os.path.exists(tmp_path):
+        return HttpResponseForbidden("Your uploaded file has expired. Please upload again.")
+
     export_path = request.session.get("bucket_metrics_projection_export_path")
     if not export_path or not os.path.exists(export_path):
         return HttpResponseForbidden("No export available yet. Open projections first.")
+
+    # Ensure adjusted prognosis exists (or re-generate it) at export time
+    try:
+        # Baseline projection (from original prognosis)
+        with open(tmp_path, "rb") as fh:
+            f = BytesIO(fh.read())
+        results = analyze_prognosis_workbook(f)
+        baseline_projection_df = results.get("projection_df")
+
+        # Current adjusted projection (what we're exporting)
+        adjusted_projection_df = pd.read_excel(export_path, sheet_name="Projections")
+
+        applied_customer_deltas = _get_applied_customer_deltas(request)
+
+        prognosis_out = _generate_adjusted_prognosis_from_current_session(
+            tmp_path=tmp_path,
+            user_id=request.user.id,
+            baseline_projection_df=baseline_projection_df,
+            adjusted_projection_df=adjusted_projection_df,
+            applied_customer_deltas=applied_customer_deltas,
+        )
+        if prognosis_out:
+            request.session["bucket_metrics_adjusted_prognosis_export_path"] = prognosis_out
+            request.session.modified = True
+    except Exception as e:
+        # IMPORTANT: don't swallow silently; at least show a message
+        messages.warning(request, f"Could not generate adjusted prognosis: {e}")
 
     return FileResponse(
         open(export_path, "rb"),
