@@ -6,6 +6,8 @@ import tempfile
 from io import BytesIO
 
 import pandas as pd
+import openpyxl
+from openpyxl.styles import Font, PatternFill
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
@@ -392,6 +394,291 @@ def clear_quote_desc_overrides(request, company_id: int, customer_id: int):
 
 
 # -----------------------------
+# Prognosis rebuild (with applied tweaks)
+# - Adds NEW highlighted lines to "Clean Data (Use for Metrics)"
+# - Customer micro adjustments -> "<Customer> Projection"
+# - All other deltas -> "General Projection"
+# -----------------------------
+
+def _month_label_to_first_of_month(label: str):
+    """
+    "Jan-26" -> datetime.date(2026, 1, 1)
+    Returns None on failure.
+    """
+    s = (label or "").strip()
+    if not s:
+        return None
+    try:
+        dt = pd.to_datetime(s, format="%b-%y")
+        return dt.to_pydatetime().date().replace(day=1)
+    except Exception:
+        return None
+
+
+def _safe_float(v) -> float:
+    try:
+        if v is None:
+            return 0.0
+        if isinstance(v, str) and not v.strip():
+            return 0.0
+        return float(v)
+    except Exception:
+        return 0.0
+
+
+def _normalize_month_str(x) -> str:
+    # Always compare months as "Mon-YY" labels
+    try:
+        if x is None:
+            return ""
+        s = str(x).strip()
+        return s
+    except Exception:
+        return ""
+
+
+def _build_month_bucket_df(projection_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Input: projection_df with month label in first col, bucket columns thereafter.
+    Output: DataFrame indexed by month_label (str), columns are bucket names, floats.
+    """
+    if projection_df is None or projection_df.empty:
+        return pd.DataFrame()
+
+    month_col = projection_df.columns[0]
+    df = projection_df.copy()
+
+    df[month_col] = df[month_col].astype(str).map(_normalize_month_str)
+    df = df.set_index(month_col, drop=True)
+
+    for c in df.columns:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+
+    return df
+
+
+def _append_projection_rows_to_clean_data(
+    *,
+    workbook_path: str,
+    out_path: str,
+    customer_rows: list[dict],
+    general_rows: list[dict],
+):
+    wb = openpyxl.load_workbook(workbook_path, data_only=False)
+
+    sheet_name = "Clean Data (Use for Metrics)"
+    if sheet_name not in wb.sheetnames:
+        ws = wb.create_sheet(sheet_name)
+        # Add default headers
+        ws.append(["NLD", "RPC#", "City", "Customer", "Bucket Type", "Quantity", "Delivered"])
+    else:
+        ws = wb[sheet_name]
+
+    # Map header names -> column index (1-based)
+    header_row = 1
+    headers = {}
+    for c in range(1, ws.max_column + 1):
+        v = ws.cell(header_row, c).value
+        if v is None:
+            continue
+        key = str(v).strip()
+        if key:
+            headers[key] = c
+
+    def col_idx(name: str, fallback: int) -> int:
+        return headers.get(name, fallback)
+
+    c_nld = col_idx("NLD", 1)
+    c_rpc = col_idx("RPC#", 2)
+    c_city = col_idx("City", 3)
+    c_cust = col_idx("Customer", 4)
+    c_bucket = col_idx("Bucket Type", 5)
+    c_qty = col_idx("Quantity", 6)
+    c_deliv = col_idx("Delivered", 7)
+
+    # Find the last used row (based on key columns)
+    def row_has_data(r: int) -> bool:
+        for cc in (c_nld, c_cust, c_bucket, c_qty):
+            v = ws.cell(r, cc).value
+            if v is not None and str(v).strip() != "":
+                return True
+        return False
+
+    last = ws.max_row
+    while last > 1 and not row_has_data(last):
+        last -= 1
+    next_row = last + 1
+
+    highlight_fill = PatternFill("solid", fgColor="FFF2CC")  # light yellow
+    italic_font = Font(italic=True, color="1F2937")
+
+    def write_row(r: int, *, nld, customer, bucket_type, quantity):
+        ws.cell(r, c_nld).value = nld
+        ws.cell(r, c_rpc).value = ""  # blank
+        ws.cell(r, c_city).value = ""  # blank
+        ws.cell(r, c_cust).value = customer
+        ws.cell(r, c_bucket).value = bucket_type
+        ws.cell(r, c_qty).value = quantity
+        ws.cell(r, c_deliv).value = ""  # blank
+
+        # Highlight + italicize the “projection” line
+        for cc in (c_nld, c_rpc, c_city, c_cust, c_bucket, c_qty, c_deliv):
+            cell = ws.cell(r, cc)
+            cell.fill = highlight_fill
+            cell.font = italic_font
+
+    # Write customer micro rows first (so they’re clearly separated)
+    for rec in customer_rows:
+        nld = rec.get("nld")
+        customer = rec.get("customer")
+        bucket_type = rec.get("bucket_type")
+        qty = rec.get("quantity")
+
+        if nld is None or not customer or not bucket_type:
+            continue
+        if abs(_safe_float(qty)) < 1e-9:
+            continue
+
+        write_row(next_row, nld=nld, customer=customer, bucket_type=bucket_type, quantity=float(qty))
+        next_row += 1
+
+    # Write general projection rows
+    for rec in general_rows:
+        nld = rec.get("nld")
+        customer = rec.get("customer")
+        bucket_type = rec.get("bucket_type")
+        qty = rec.get("quantity")
+
+        if nld is None or not customer or not bucket_type:
+            continue
+        if abs(_safe_float(qty)) < 1e-9:
+            continue
+
+        write_row(next_row, nld=nld, customer=customer, bucket_type=bucket_type, quantity=float(qty))
+        next_row += 1
+
+    wb.save(out_path)
+
+
+def _generate_adjusted_prognosis_from_current_session(
+    *,
+    tmp_path: str,
+    user_id: int,
+    baseline_projection_df: pd.DataFrame,
+    adjusted_projection_df: pd.DataFrame,
+    applied_customer_deltas: dict,
+) -> str | None:
+    """
+    Creates a NEW prognosis workbook by appending highlighted projection rows
+    to "Clean Data (Use for Metrics)".
+
+    Customer micro adjustments:
+      - One line per (Month, Bucket Type, Customer) with Quantity = delta
+      - Customer value: "<Customer> Projection"
+
+    General adjustments (YoY + YoY% + Growth, etc):
+      - For each (Month, Bucket Type): total_delta - customer_delta_total
+      - Customer value: "General Projection"
+    """
+    if not tmp_path or not os.path.exists(tmp_path):
+        return None
+
+    base_df = _build_month_bucket_df(baseline_projection_df)
+    adj_df = _build_month_bucket_df(adjusted_projection_df)
+
+    if base_df.empty or adj_df.empty:
+        return None
+
+    # Align (months, buckets)
+    all_months = sorted(set(base_df.index).union(set(adj_df.index)))
+    all_buckets = sorted(set(base_df.columns).union(set(adj_df.columns)))
+
+    base_aligned = base_df.reindex(index=all_months, columns=all_buckets).fillna(0.0)
+    adj_aligned = adj_df.reindex(index=all_months, columns=all_buckets).fillna(0.0)
+
+    total_delta = adj_aligned - base_aligned  # month x bucket
+
+    # Aggregate customer deltas into month+bucket totals
+    cust_totals = pd.DataFrame(0.0, index=all_months, columns=all_buckets)
+
+    customer_rows: list[dict] = []
+    for key, delta in (applied_customer_deltas or {}).items():
+        try:
+            month_label, bucket_type, customer_name = key.split("||", 2)
+        except ValueError:
+            continue
+
+        month_label = str(month_label).strip()
+        bucket_type = str(bucket_type).strip()
+        customer_name = str(customer_name).strip()
+
+        if not month_label or not bucket_type or not customer_name:
+            continue
+
+        d = _safe_float(delta)
+        if abs(d) < 1e-9:
+            continue
+
+        # Add to aggregate
+        if month_label in cust_totals.index and bucket_type in cust_totals.columns:
+            cust_totals.loc[month_label, bucket_type] = cust_totals.loc[month_label, bucket_type] + d
+
+        nld = _month_label_to_first_of_month(month_label)
+        if nld is None:
+            continue
+
+        customer_rows.append(
+            {
+                "nld": nld,
+                "customer": f"{customer_name} Projection",
+                "bucket_type": bucket_type,
+                "quantity": d,
+            }
+        )
+
+    # Remaining delta is "general projection" delta
+    general_delta = total_delta - cust_totals
+
+    general_rows: list[dict] = []
+    for month_label in general_delta.index:
+        nld = _month_label_to_first_of_month(month_label)
+        if nld is None:
+            continue
+        for bucket_type in general_delta.columns:
+            d = _safe_float(general_delta.loc[month_label, bucket_type])
+            if abs(d) < 1e-9:
+                continue
+            general_rows.append(
+                {
+                    "nld": nld,
+                    "customer": "General Projection",
+                    "bucket_type": bucket_type,
+                    "quantity": d,
+                }
+            )
+
+    # Sort rows nicely for readability: Month then Customer then Bucket
+    def _sort_key(rec: dict):
+        # month sort by actual date
+        nld = rec.get("nld")
+        cust = rec.get("customer") or ""
+        b = rec.get("bucket_type") or ""
+        return (nld or pd.Timestamp("1900-01-01").date(), cust, b)
+
+    customer_rows.sort(key=_sort_key)
+    general_rows.sort(key=_sort_key)
+
+    out_path = os.path.join(tempfile.gettempdir(), f"prognosis_with_projections_{user_id}.xlsx")
+    _append_projection_rows_to_clean_data(
+        workbook_path=tmp_path,
+        out_path=out_path,
+        customer_rows=customer_rows,
+        general_rows=general_rows,
+    )
+    return out_path
+
+
+# -----------------------------
 # Core portal views
 # -----------------------------
 
@@ -658,6 +945,9 @@ def bucket_projections_view(request):
     applied_yoy_pct = _get_applied_yoy_pct_overrides(request)
     applied_customer_deltas = _get_applied_customer_deltas(request)
 
+    # Baseline = what the file said BEFORE any tweaks
+    baseline_projection_df = results.get("projection_df")
+
     if request.method == "POST":
         action = request.POST.get("action") or ""
 
@@ -818,11 +1108,28 @@ def bucket_projections_view(request):
     projection_df = _apply_yoy_pct_overrides_to_projection(projection_df, applied_yoy_pct)
     projection_df = _apply_customer_deltas_to_projection(projection_df, applied_customer_deltas)
 
+    # Export projections
     export_path = os.path.join(tempfile.gettempdir(), f"bucket_projections_{request.user.id}.xlsx")
     with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
         projection_df.to_excel(writer, index=False, sheet_name="Projections")
     request.session["bucket_metrics_projection_export_path"] = export_path
     request.session.modified = True
+
+    # NEW: Build adjusted prognosis workbook (appends highlighted projection lines)
+    try:
+        prognosis_out = _generate_adjusted_prognosis_from_current_session(
+            tmp_path=tmp_path,
+            user_id=request.user.id,
+            baseline_projection_df=baseline_projection_df,
+            adjusted_projection_df=projection_df,
+            applied_customer_deltas=applied_customer_deltas,
+        )
+        if prognosis_out:
+            request.session["bucket_metrics_adjusted_prognosis_export_path"] = prognosis_out
+            request.session.modified = True
+    except Exception:
+        # Don't break the page if prognosis generation fails
+        pass
 
     # Build YoY records
     yoy_df = results.get("yoy_suggestions")
@@ -948,6 +1255,8 @@ def bucket_projections_view(request):
             # NEW:
             "customer_delta_records": customer_delta_records,
             "applied_customer_deltas": applied_customer_list,
+            # NEW: you can use this in the template to show a download button
+            "adjusted_prognosis_available": bool(request.session.get("bucket_metrics_adjusted_prognosis_export_path")),
         }
     )
 
@@ -964,6 +1273,20 @@ def bucket_projections_export_view(request):
         open(export_path, "rb"),
         as_attachment=True,
         filename="Bucket_Projections.xlsx",
+    )
+
+
+# NEW: download the prognosis workbook with highlighted projection lines added
+@login_required
+def bucket_adjusted_prognosis_export_view(request):
+    export_path = request.session.get("bucket_metrics_adjusted_prognosis_export_path")
+    if not export_path or not os.path.exists(export_path):
+        return HttpResponseForbidden("No adjusted prognosis export available yet. Open projections first.")
+
+    return FileResponse(
+        open(export_path, "rb"),
+        as_attachment=True,
+        filename="Prognosis_With_Projections.xlsx",
     )
 
 
@@ -1382,4 +1705,3 @@ def pricing_customer_quote_view(request, customer_id):
             "currency_symbol": currency_symbol,
         },
     )
-
