@@ -1,6 +1,6 @@
 import re
 from datetime import date
-from typing import Dict, Tuple, List
+from typing import Dict, List
 
 import pandas as pd
 
@@ -58,12 +58,7 @@ def _period_to_label(p: pd.Period) -> str:
 def _safe_key(col: str) -> str:
     # Convert a display column name into a safe HTML field key
     # Example: "CLASSIC HQ" -> "CLASSIC_HQ", "5-liter Vase" -> "5_liter_Vase"
-    return (
-        col.replace("-", "_")
-        .replace(" ", "_")
-        .replace("/", "_")
-        .replace(".", "")
-    )
+    return col.replace("-", "_").replace(" ", "_").replace("/", "_").replace(".", "")
 
 
 def normalize_customer_name(raw) -> str:
@@ -114,8 +109,8 @@ def normalize_customer_name(raw) -> str:
         "desginer's choice",
         "desginers choice",
         "desginer choice",
-        "designer’s choice",   # curly apostrophe
-        "desginer’s choice",   # curly apostrophe misspell
+        "designer’s choice",  # curly apostrophe
+        "desginer’s choice",  # curly apostrophe misspell
     }:
         return "Designers Choice"
 
@@ -224,15 +219,12 @@ def build_projection_table(
         else:
             row = pd.Series({c: 0 for c in monthly.columns})
 
-        # Build projection row with the exact layout
         out = {}
         out["Month"] = _period_to_label(p)
 
         classic_hq = float(row.get("CLASSIC HQ", 0))
         classic = float(row.get("CLASSIC", 0))
 
-        # Apply growth adjustments (per bucket type) to forward-looking rows
-        # (User-driven assumptions)
         def apply_growth(col_name: str, value: float) -> float:
             pct = float(growth_pct_by_col.get(col_name, 0) or 0)
             return value * (1.0 + pct / 100.0)
@@ -244,7 +236,6 @@ def build_projection_table(
         out["CLASSIC"] = round(classic)
         out["Total Classics"] = round(classic_hq + classic)
 
-        # Map the remaining columns in order
         for col in PROJECTION_COLUMNS:
             if col in {"Month", "CLASSIC HQ", "CLASSIC", "Total Classics"}:
                 continue
@@ -256,15 +247,13 @@ def build_projection_table(
 
     proj_df = pd.DataFrame(rows, columns=["Month"] + PROJECTION_COLUMNS)
 
-    # Totals row label (e.g., Total 2025-26)
     end_month = start_month + (months_forward - 1)
     total_label = f"Total {start_month.year}-{str(end_month.year)[-2:]}"
 
     totals = {"Month": total_label}
     for col in PROJECTION_COLUMNS:
-        totals[col] = int(proj_df[col].sum()) if col != "Total Classics" else int(proj_df[col].sum())
+        totals[col] = int(proj_df[col].sum())
 
-    # Prior year totals row (same 12 months one year back)
     prior_periods = [p - 12 for p in idx_periods]
     prior_rows = []
     for p in prior_periods:
@@ -278,7 +267,6 @@ def build_projection_table(
     prior_label = f"Total {start_month.year - 1}-{str(end_month.year - 1)[-2:]}"
     prior_totals = {"Month": prior_label}
 
-    # Prior totals for projection columns
     prior_classic_hq = float(prior_sum.get("CLASSIC HQ", 0))
     prior_classic = float(prior_sum.get("CLASSIC", 0))
     prior_totals["CLASSIC HQ"] = int(round(prior_classic_hq))
@@ -290,7 +278,6 @@ def build_projection_table(
             continue
         prior_totals[col] = int(round(float(prior_sum.get(col, 0))))
 
-    # Append totals rows
     proj_df = pd.concat([proj_df, pd.DataFrame([totals, prior_totals])], ignore_index=True)
 
     return proj_df
@@ -316,7 +303,6 @@ def build_yoy_suggestions(
         p = start_month + i
         p_prev = p - 12
 
-        # If either month missing, we still compute with zeros (safe)
         cur = monthly.loc[p] if p in monthly.index else pd.Series({c: 0 for c in monthly.columns})
         prev = monthly.loc[p_prev] if p_prev in monthly.index else pd.Series({c: 0 for c in monthly.columns})
 
@@ -324,7 +310,6 @@ def build_yoy_suggestions(
             cur_val = float(cur.get(col, 0))
             prev_val = float(prev.get(col, 0))
 
-            # YoY %: if prev is 0, we avoid division; show blank unless cur is also 0
             if prev_val == 0:
                 yoy = None
             else:
@@ -344,8 +329,8 @@ def build_yoy_suggestions(
 
 
 # -----------------------------
-# NEW: Per-customer delta suggestions
-# (compare last year's customer-month-bucket vs this year's prognosis for that same customer-month-bucket)
+# NEW: Per-customer delta suggestions (micro-adjustments)
+# Compare last year's customer-month-bucket vs this year's prognosis customer-month-bucket
 # -----------------------------
 
 def build_customer_delta_suggestions(
@@ -361,23 +346,22 @@ def build_customer_delta_suggestions(
       Prev Year   = customer's qty in (month - 12)
       Projection  = customer's qty in (month)  [current prognosis]
       Delta       = Prev Year - Projection
-
-    These are the "micro-adjustment" candidates: if Delta is +20,000 for Falcon/CLASSIC/Jan,
-    then applying it would add +20,000 to Jan's CLASSIC total projection.
     """
-    bucket_cols = [c for c in BUCKET_COLUMNS if c in data.columns]
-    if not bucket_cols:
+    # IMPORTANT: these are the bucket types you care about in projections (not SUB/HOLD/MAXIMA)
+    bucket_types = [c for c in PROJECTION_COLUMNS if c != "Total Classics"]
+    bucket_types = [c for c in bucket_types if c in data.columns]
+
+    if not bucket_types:
         return pd.DataFrame(columns=["Month", "Customer", "Bucket Type", "Prev Year", "Projection", "Delta"])
 
-    # Build long table at (customer, month, bucket_type)
+    # Long table at (customer, month, bucket_type)
     long = data.melt(
         id_vars=["customer", "month"],
-        value_vars=bucket_cols,
+        value_vars=bucket_types,
         var_name="bucket_type",
         value_name="qty",
     )
     long["qty"] = pd.to_numeric(long["qty"], errors="coerce").fillna(0)
-    long = long[long["qty"] != 0].copy()
 
     per = (
         long.groupby(["customer", "month", "bucket_type"])["qty"]
@@ -385,8 +369,7 @@ def build_customer_delta_suggestions(
         .reset_index()
     )
 
-    # Helpful for quick lookups
-    # key: (customer, month, bucket_type) -> qty
+    # lookup: (customer, month, bucket_type) -> qty
     lookup = {
         (r["customer"], r["month"], r["bucket_type"]): float(r["qty"])
         for r in per.to_dict("records")
@@ -397,18 +380,20 @@ def build_customer_delta_suggestions(
         p = start_month + i
         p_prev = p - 12
 
-        # Consider customers that appear in either month for better coverage
         customers_cur = set(per.loc[per["month"] == p, "customer"].unique())
         customers_prev = set(per.loc[per["month"] == p_prev, "customer"].unique())
         customers = customers_cur.union(customers_prev)
 
         for cust in sorted(customers):
-            for bucket in bucket_cols:
+            if not str(cust).strip():
+                continue
+
+            for bucket in bucket_types:
                 cur_val = lookup.get((cust, p, bucket), 0.0)
                 prev_val = lookup.get((cust, p_prev, bucket), 0.0)
                 delta = prev_val - cur_val
 
-                if abs(delta) < 0.5:  # ignore near-zero noise
+                if abs(delta) < 0.5:
                     continue
 
                 rows.append(
@@ -426,7 +411,6 @@ def build_customer_delta_suggestions(
     if df.empty:
         return pd.DataFrame(columns=["Month", "Customer", "Bucket Type", "Prev Year", "Projection", "Delta"])
 
-    # Sort to keep the UI readable: largest absolute deltas first, then month/customer
     df["abs_delta"] = df["Delta"].abs()
     df = df.sort_values(["abs_delta", "Month", "Customer", "Bucket Type"], ascending=[False, True, True, True]).drop(
         columns=["abs_delta"]
@@ -440,15 +424,13 @@ def analyze_prognosis_workbook(uploaded_file):
     Existing metrics + includes:
       - monthly projection table (12 months forward from current month)
       - YoY suggestions dataframe
-      - NEW: customer delta suggestions dataframe (micro-adjustments)
+      - NEW: per-customer delta suggestions dataframe (micro-adjustments)
     """
     data = _read_master_list(uploaded_file)
 
-    # Bucket columns that exist
     bucket_cols = [c for c in BUCKET_COLUMNS if c in data.columns]
     data["total_buckets"] = data[bucket_cols].sum(axis=1)
 
-    # Existing metrics
     data["month_str"] = data["month"].astype(str)
 
     per_customer_month = (
@@ -489,22 +471,18 @@ def analyze_prognosis_workbook(uploaded_file):
         .head(20)
     )
 
-    # NEW: projections
     monthly = build_monthly_totals(data)
 
-    # Start in current month (server time)
     today = date.today()
     start_month = pd.Period(today, freq="M")
 
-    # Suggestions table (YoY comparisons)
     yoy_suggestions = build_yoy_suggestions(monthly, start_month, months_forward=12)
 
-    # Default projection table (no growth adjustments)
     projection_df = build_projection_table(
         monthly=monthly,
         start_month=start_month,
         months_forward=12,
-        growth_pct_by_col={},  # no adjustments by default
+        growth_pct_by_col={},
     )
 
     # NEW: customer delta micro-adjustments
@@ -514,17 +492,11 @@ def analyze_prognosis_workbook(uploaded_file):
         months_forward=12,
     )
 
-    # Provide growth input fields list to the UI
     growth_fields = []
     for col in PROJECTION_COLUMNS:
         if col == "Total Classics":
             continue
-        growth_fields.append(
-            {
-                "col": col,
-                "key": _safe_key(col),
-            }
-        )
+        growth_fields.append({"col": col, "key": _safe_key(col)})
 
     return {
         "per_customer_month": per_customer_month,
