@@ -343,11 +343,104 @@ def build_yoy_suggestions(
     return pd.DataFrame(rows)
 
 
+# -----------------------------
+# NEW: Per-customer delta suggestions
+# (compare last year's customer-month-bucket vs this year's prognosis for that same customer-month-bucket)
+# -----------------------------
+
+def build_customer_delta_suggestions(
+    data: pd.DataFrame,
+    start_month: pd.Period,
+    months_forward: int = 12,
+) -> pd.DataFrame:
+    """
+    Produces rows like:
+      Month | Customer | Bucket Type | Prev Year | Projection | Delta
+
+    Where:
+      Prev Year   = customer's qty in (month - 12)
+      Projection  = customer's qty in (month)  [current prognosis]
+      Delta       = Prev Year - Projection
+
+    These are the "micro-adjustment" candidates: if Delta is +20,000 for Falcon/CLASSIC/Jan,
+    then applying it would add +20,000 to Jan's CLASSIC total projection.
+    """
+    bucket_cols = [c for c in BUCKET_COLUMNS if c in data.columns]
+    if not bucket_cols:
+        return pd.DataFrame(columns=["Month", "Customer", "Bucket Type", "Prev Year", "Projection", "Delta"])
+
+    # Build long table at (customer, month, bucket_type)
+    long = data.melt(
+        id_vars=["customer", "month"],
+        value_vars=bucket_cols,
+        var_name="bucket_type",
+        value_name="qty",
+    )
+    long["qty"] = pd.to_numeric(long["qty"], errors="coerce").fillna(0)
+    long = long[long["qty"] != 0].copy()
+
+    per = (
+        long.groupby(["customer", "month", "bucket_type"])["qty"]
+        .sum()
+        .reset_index()
+    )
+
+    # Helpful for quick lookups
+    # key: (customer, month, bucket_type) -> qty
+    lookup = {
+        (r["customer"], r["month"], r["bucket_type"]): float(r["qty"])
+        for r in per.to_dict("records")
+    }
+
+    rows = []
+    for i in range(months_forward):
+        p = start_month + i
+        p_prev = p - 12
+
+        # Consider customers that appear in either month for better coverage
+        customers_cur = set(per.loc[per["month"] == p, "customer"].unique())
+        customers_prev = set(per.loc[per["month"] == p_prev, "customer"].unique())
+        customers = customers_cur.union(customers_prev)
+
+        for cust in sorted(customers):
+            for bucket in bucket_cols:
+                cur_val = lookup.get((cust, p, bucket), 0.0)
+                prev_val = lookup.get((cust, p_prev, bucket), 0.0)
+                delta = prev_val - cur_val
+
+                if abs(delta) < 0.5:  # ignore near-zero noise
+                    continue
+
+                rows.append(
+                    {
+                        "Month": _period_to_label(p),
+                        "Customer": cust,
+                        "Bucket Type": bucket,
+                        "Prev Year": int(round(prev_val)),
+                        "Projection": int(round(cur_val)),
+                        "Delta": int(round(delta)),
+                    }
+                )
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return pd.DataFrame(columns=["Month", "Customer", "Bucket Type", "Prev Year", "Projection", "Delta"])
+
+    # Sort to keep the UI readable: largest absolute deltas first, then month/customer
+    df["abs_delta"] = df["Delta"].abs()
+    df = df.sort_values(["abs_delta", "Month", "Customer", "Bucket Type"], ascending=[False, True, True, True]).drop(
+        columns=["abs_delta"]
+    )
+
+    return df
+
+
 def analyze_prognosis_workbook(uploaded_file):
     """
-    Existing metrics + now includes:
+    Existing metrics + includes:
       - monthly projection table (12 months forward from current month)
       - YoY suggestions dataframe
+      - NEW: customer delta suggestions dataframe (micro-adjustments)
     """
     data = _read_master_list(uploaded_file)
 
@@ -371,6 +464,7 @@ def analyze_prognosis_workbook(uploaded_file):
         var_name="bucket_type",
         value_name="qty",
     )
+    long["qty"] = pd.to_numeric(long["qty"], errors="coerce").fillna(0)
     long = long[long["qty"] > 0]
 
     per_customer_city_item = (
@@ -413,6 +507,13 @@ def analyze_prognosis_workbook(uploaded_file):
         growth_pct_by_col={},  # no adjustments by default
     )
 
+    # NEW: customer delta micro-adjustments
+    customer_delta_suggestions = build_customer_delta_suggestions(
+        data=data,
+        start_month=start_month,
+        months_forward=12,
+    )
+
     # Provide growth input fields list to the UI
     growth_fields = []
     for col in PROJECTION_COLUMNS:
@@ -432,6 +533,7 @@ def analyze_prognosis_workbook(uploaded_file):
         "top_customers": top_customers,
         "projection_df": projection_df,
         "yoy_suggestions": yoy_suggestions,
+        "customer_delta_suggestions": customer_delta_suggestions,  # NEW
         "growth_fields": growth_fields,
         "start_month_label": _period_to_label(start_month),
     }
@@ -440,6 +542,7 @@ def analyze_prognosis_workbook(uploaded_file):
 def rebuild_projection_with_growth(uploaded_file, growth_pct_by_col: Dict[str, float]):
     """
     Recompute projections after the user enters growth % assumptions.
+    (Keeps original return signature for backwards compatibility.)
     """
     data = _read_master_list(uploaded_file)
     monthly = build_monthly_totals(data)
@@ -457,3 +560,32 @@ def rebuild_projection_with_growth(uploaded_file, growth_pct_by_col: Dict[str, f
     yoy_suggestions = build_yoy_suggestions(monthly, start_month, months_forward=12)
 
     return projection_df, yoy_suggestions, _period_to_label(start_month)
+
+
+# OPTIONAL helper (non-breaking): use this in views if you want deltas during growth rebuild too.
+def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct_by_col: Dict[str, float]):
+    """
+    Same as rebuild_projection_with_growth, but also returns customer_delta_suggestions.
+    """
+    data = _read_master_list(uploaded_file)
+    monthly = build_monthly_totals(data)
+
+    today = date.today()
+    start_month = pd.Period(today, freq="M")
+
+    projection_df = build_projection_table(
+        monthly=monthly,
+        start_month=start_month,
+        months_forward=12,
+        growth_pct_by_col=growth_pct_by_col,
+    )
+
+    yoy_suggestions = build_yoy_suggestions(monthly, start_month, months_forward=12)
+
+    customer_delta_suggestions = build_customer_delta_suggestions(
+        data=data,
+        start_month=start_month,
+        months_forward=12,
+    )
+
+    return projection_df, yoy_suggestions, _period_to_label(start_month), customer_delta_suggestions
