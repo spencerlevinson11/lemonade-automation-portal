@@ -889,52 +889,55 @@ def bucket_projections_view(request):
         sign = "+" if float(delta) >= 0 else ""
         applied_customer_list.append(f"{m} • {c} • {cust} ({sign}{int(round(float(delta)))})")
 
-       customer_delta_records = []
-    cust_df = results.get("customer_delta_suggestions")  # may not exist yet
+                   # (Optional) Customer delta suggestion records:
+            # Safely renders empty if not present.
+            customer_delta_records = []
+            cust_df = results.get("customer_delta_suggestions")  # df from bucket_metrics.py
+        
+            def _month_sort_key(label: str):
+                # "Jan-26" -> Period for correct chronological sorting
+                try:
+                    return pd.Period(pd.to_datetime(str(label), format="%b-%y"), freq="M")
+                except Exception:
+                    return pd.Period("1900-01", freq="M")
+        
+            if cust_df is not None and isinstance(cust_df, pd.DataFrame) and not cust_df.empty:
+                df = cust_df.copy()
+        
+                # Sort by Customer first, then Month, then Bucket Type, then largest delta
+                df["_month_sort"] = df["Month"].astype(str).map(_month_sort_key)
+                df["_abs_delta"] = pd.to_numeric(df.get("Delta", 0), errors="coerce").fillna(0).abs()
+        
+                df = df.sort_values(
+                    by=["Customer", "_month_sort", "Bucket Type", "_abs_delta"],
+                    ascending=[True, True, True, False],
+                    kind="mergesort",
+                )
+        
+                for r in df.to_dict("records"):
+                    month_label = str(r.get("Month", "")).strip()
+                    customer_name = str(r.get("Customer", "")).strip()
+                    col_name = str(r.get("Bucket Type", "")).strip()
+        
+                    prev_val = _to_number_or_none(r.get("Prev Year"))
+                    proj_val = _to_number_or_none(r.get("Projection"))
+                    delta_val = _to_number_or_none(r.get("Delta"))
+        
+                    key = _cust_delta_session_key(month_label, col_name, customer_name)
+                    is_applied = key in applied_customer_deltas
+        
+                    customer_delta_records.append(
+                        {
+                            "month_label": month_label,
+                            "customer_name": customer_name,
+                            "col_name": col_name,
+                            "prev_year": "" if prev_val is None else int(round(prev_val)),
+                            "projection": "" if proj_val is None else int(round(proj_val)),
+                            "delta": "" if delta_val is None else int(round(delta_val)),
+                            "applied": is_applied,
+                        }
+                    )
 
-    if cust_df is not None and isinstance(cust_df, pd.DataFrame) and not cust_df.empty:
-        # Sort by Customer first (then Month, then Bucket Type, then largest deltas)
-        df = cust_df.copy()
-
-        # Month sort: convert "Jan-26" -> period for correct chronological order
-        def _month_sort_key(label: str):
-            try:
-                return pd.Period(pd.to_datetime(label, format="%b-%y"), freq="M")
-            except Exception:
-                return pd.Period("1900-01", freq="M")
-
-        df["_month_sort"] = df["Month"].astype(str).map(_month_sort_key)
-        df["_abs_delta"] = pd.to_numeric(df.get("Delta", 0), errors="coerce").fillna(0).abs()
-
-        df = df.sort_values(
-            by=["Customer", "_month_sort", "Bucket Type", "_abs_delta"],
-            ascending=[True, True, True, False],
-            kind="mergesort",
-        ).drop(columns=["_month_sort", "_abs_delta"], errors="ignore")
-
-        for r in df.to_dict("records"):
-            month_label = str(r.get("Month", "")).strip()
-            customer_name = str(r.get("Customer", "")).strip()
-            col_name = str(r.get("Bucket Type", "")).strip()
-
-            prev_val = _to_number_or_none(r.get("Prev Year"))
-            proj_val = _to_number_or_none(r.get("Projection"))
-            delta_val = _to_number_or_none(r.get("Delta"))
-
-            key = _cust_delta_session_key(month_label, col_name, customer_name)
-            is_applied = key in applied_customer_deltas
-
-            customer_delta_records.append(
-                {
-                    "month_label": month_label,
-                    "customer_name": customer_name,
-                    "col_name": col_name,
-                    "prev_year": "" if prev_val is None else int(round(prev_val)),
-                    "projection": "" if proj_val is None else int(round(proj_val)),
-                    "delta": "" if delta_val is None else int(round(delta_val)),
-                    "applied": is_applied,
-                }
-            )
 
 
     context.update(
