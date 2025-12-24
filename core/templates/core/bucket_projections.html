@@ -107,6 +107,40 @@
       font-size: 0.85rem;
     }
 
+    /* NEW: micro-adjustment UI */
+    .micro-grid {
+      display:grid;
+      grid-template-columns: 1.2fr 0.9fr 0.8fr 0.8fr 0.9fr 1.2fr;
+      gap: 10px;
+      align-items: end;
+    }
+    .micro-input {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+      background: var(--input);
+      color: var(--text-main);
+      font-size: 0.9rem;
+    }
+    .micro-actions {
+      display:flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items:center;
+      margin-top: 12px;
+    }
+    .pill {
+      display:inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(250,204,21,0.35);
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
     .growth-grid {
       display:grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -123,11 +157,15 @@
     }
     label { display:block; margin-bottom:6px; color: var(--text-muted); font-size: 0.85rem; }
 
-    @media (max-width: 900px) { .growth-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 900px) {
+      .growth-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .micro-grid { grid-template-columns: 1fr 1fr; }
+    }
     @media (max-width: 600px) {
       .growth-grid { grid-template-columns: 1fr; }
       .mini-input { width: 82px; }
       .mini-help { display:none; }
+      .micro-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -168,6 +206,83 @@
     <div class="section-card">
       {{ projection_table|safe }}
     </div>
+
+    <!-- NEW: Customer micro-adjustments -->
+    <h2>Customer micro-adjustments <span class="pill">NEW</span></h2>
+    <p class="subtitle" style="margin-top:-6px;">
+      Compare last year's customer-month purchases vs this year's prognosis. Apply a delta to push the monthly projection up or down.
+      Example: if Falcon bought 20,000 more <strong>CLASSIC</strong> in <strong>Jan</strong> last year, apply +20,000 to this year's Jan CLASSIC projection.
+    </p>
+
+    <!-- Manual entry (works even before you wire up the suggestions table) -->
+    <form method="post" class="section-card">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="apply_customer_delta">
+
+      <div class="micro-grid">
+        <div>
+          <label>Month (e.g., Jan-26)</label>
+          <input class="micro-input" type="text" name="month_label" placeholder="Jan-26" required>
+        </div>
+
+        <div>
+          <label>Customer</label>
+          <input class="micro-input" type="text" name="customer" placeholder="Falcon" required>
+        </div>
+
+        <div>
+          <label>Bucket Type</label>
+          <input class="micro-input" type="text" name="bucket_type" placeholder="CLASSIC" required>
+        </div>
+
+        <div>
+          <label>Delta (units)</label>
+          <input class="micro-input" type="number" step="1" name="delta_units" placeholder="20000" required>
+        </div>
+
+        <div>
+          <label>Notes (optional)</label>
+          <input class="micro-input" type="text" name="note" placeholder="Prev-year variance">
+        </div>
+
+        <div>
+          <label>&nbsp;</label>
+          <button type="submit">Apply delta to projection</button>
+        </div>
+      </div>
+
+      <div class="notice" style="margin-top:10px;">
+        Tip: use a negative delta to pull a projection down (example: -5000).
+      </div>
+    </form>
+
+    {% if applied_customer_deltas %}
+      <div class="notice" style="margin-top:10px;">
+        <strong>Applied customer deltas:</strong>
+        {{ applied_customer_deltas|join:", " }}
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <form method="post" style="margin:0;">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="clear_all_customer_deltas">
+          <button class="danger" type="submit">Clear all customer deltas</button>
+        </form>
+      </div>
+    {% endif %}
+
+    {% if customer_delta_table %}
+      <h2>Suggested deltas (largest discrepancies first)</h2>
+      <p class="subtitle" style="margin-top:-6px;">
+        These are computed from the Master List. You can apply any line to push the projection month+bucket total.
+      </p>
+      <div class="section-card">
+        {{ customer_delta_table|safe }}
+      </div>
+      <p class="notice">
+        Note: the “Apply” buttons for suggestions require the matching POST action in <code>views.py</code>.
+      </p>
+    {% endif %}
 
     <h2>YoY suggestions</h2>
     <p class="subtitle" style="margin-top:-6px;">
