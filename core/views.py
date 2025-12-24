@@ -889,11 +889,30 @@ def bucket_projections_view(request):
         sign = "+" if float(delta) >= 0 else ""
         applied_customer_list.append(f"{m} • {c} • {cust} ({sign}{int(round(float(delta)))})")
 
-    # Customer delta suggestion records (from analyzer)
-    customer_delta_records = []
-    cust_df = results.get("customer_delta_suggestions")
+       customer_delta_records = []
+    cust_df = results.get("customer_delta_suggestions")  # may not exist yet
+
     if cust_df is not None and isinstance(cust_df, pd.DataFrame) and not cust_df.empty:
-        for r in cust_df.to_dict("records"):
+        # Sort by Customer first (then Month, then Bucket Type, then largest deltas)
+        df = cust_df.copy()
+
+        # Month sort: convert "Jan-26" -> period for correct chronological order
+        def _month_sort_key(label: str):
+            try:
+                return pd.Period(pd.to_datetime(label, format="%b-%y"), freq="M")
+            except Exception:
+                return pd.Period("1900-01", freq="M")
+
+        df["_month_sort"] = df["Month"].astype(str).map(_month_sort_key)
+        df["_abs_delta"] = pd.to_numeric(df.get("Delta", 0), errors="coerce").fillna(0).abs()
+
+        df = df.sort_values(
+            by=["Customer", "_month_sort", "Bucket Type", "_abs_delta"],
+            ascending=[True, True, True, False],
+            kind="mergesort",
+        ).drop(columns=["_month_sort", "_abs_delta"], errors="ignore")
+
+        for r in df.to_dict("records"):
             month_label = str(r.get("Month", "")).strip()
             customer_name = str(r.get("Customer", "")).strip()
             col_name = str(r.get("Bucket Type", "")).strip()
@@ -916,6 +935,7 @@ def bucket_projections_view(request):
                     "applied": is_applied,
                 }
             )
+
 
     context.update(
         {
