@@ -427,8 +427,37 @@ def custom_logout(request):
 
 
 # -----------------------------
-# YoY apply/unapply logic (REPLACE current with prev-year)
+# YoY apply/unapply logic
+# - Apply YoY: replace projection cell with prev-year absolute value
+# - Optional extra %: applied on top of that replacement value
 # -----------------------------
+
+def _yoy_session_key(month_label: str, col_name: str) -> str:
+    return f"{month_label}||{col_name}"
+
+
+def _get_applied_yoy_overrides(request) -> dict:
+    """
+    Stores absolute replacement values:
+      { "Dec-25||CLASSIC HQ": 1234.0, ... }
+    """
+    data = request.session.get("bucket_metrics_applied_yoy", {})
+    if not isinstance(data, dict):
+        return {}
+
+    cleaned: dict[str, float] = {}
+    for k, v in data.items():
+        try:
+            cleaned[str(k)] = float(v)
+        except Exception:
+            continue
+    return cleaned
+
+
+def _set_applied_yoy_overrides(request, overrides: dict) -> None:
+    request.session["bucket_metrics_applied_yoy"] = {str(k): float(v) for k, v in overrides.items()}
+    request.session.modified = True
+
 
 def _get_applied_yoy_pct_overrides(request) -> dict:
     """
@@ -451,6 +480,41 @@ def _get_applied_yoy_pct_overrides(request) -> dict:
 def _set_applied_yoy_pct_overrides(request, overrides: dict) -> None:
     request.session["bucket_metrics_applied_yoy_pct"] = {str(k): float(v) for k, v in overrides.items()}
     request.session.modified = True
+
+
+def _apply_yoy_overrides_to_projection(projection_df, applied_overrides: dict):
+    """
+    Replace the projection value with the stored absolute value.
+    """
+    if projection_df is None or projection_df.empty:
+        return projection_df
+
+    month_col = projection_df.columns[0]
+    df = projection_df.copy()
+
+    for key, target_value in (applied_overrides or {}).items():
+        try:
+            month_label, col_name = key.split("||", 1)
+        except ValueError:
+            continue
+
+        if col_name not in df.columns:
+            continue
+
+        mask = df[month_col].astype(str) == str(month_label)
+        if not mask.any():
+            continue
+
+        try:
+            df.loc[mask, col_name] = float(target_value)
+        except Exception:
+            continue
+
+    # round to whole numbers for display
+    for c in df.columns[1:]:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).round(0).astype(int)
+
+    return df
 
 
 def _apply_yoy_pct_overrides_to_projection(projection_df, yoy_pct_overrides: dict):
@@ -493,68 +557,6 @@ def _apply_yoy_pct_overrides_to_projection(projection_df, yoy_pct_overrides: dic
     return df
 
 
-def _yoy_session_key(month_label: str, col_name: str) -> str:
-    return f"{month_label}||{col_name}"
-
-
-def _get_applied_yoy_overrides(request) -> dict:
-    """
-    Stores absolute replacement values, not pct:
-      { "Dec-25||CLASSIC HQ": 1234.0, ... }
-    """
-    data = request.session.get("bucket_metrics_applied_yoy", {})
-    if not isinstance(data, dict):
-        return {}
-
-    cleaned: dict[str, float] = {}
-    for k, v in data.items():
-        try:
-            cleaned[str(k)] = float(v)
-        except Exception:
-            continue
-    return cleaned
-
-
-def _set_applied_yoy_overrides(request, overrides: dict) -> None:
-    request.session["bucket_metrics_applied_yoy"] = {str(k): float(v) for k, v in overrides.items()}
-    request.session.modified = True
-
-
-def _apply_yoy_overrides_to_projection(projection_df, applied_overrides: dict):
-    """
-    Replace the projection value with the stored absolute value.
-    """
-    if projection_df is None or projection_df.empty:
-        return projection_df
-
-    month_col = projection_df.columns[0]
-    df = projection_df.copy()
-
-    for key, target_value in (applied_overrides or {}).items():
-        try:
-            month_label, col_name = key.split("||", 1)
-        except ValueError:
-            continue
-
-        if col_name not in df.columns:
-            continue
-
-        mask = df[month_col].astype(str) == str(month_label)
-        if not mask.any():
-            continue
-
-        try:
-            df.loc[mask, col_name] = float(target_value)
-        except Exception:
-            continue
-
-    # round to whole numbers for display
-    for c in df.columns[1:]:
-        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).round(0).astype(int)
-
-    return df
-
-
 @login_required
 @require_http_methods(["GET", "POST"])
 def bucket_projections_view(request):
@@ -580,6 +582,7 @@ def bucket_projections_view(request):
     request.session.modified = True
 
     applied_overrides = _get_applied_yoy_overrides(request)
+    applied_yoy_pct = _get_applied_yoy_pct_overrides(request)
 
     if request.method == "POST":
         action = request.POST.get("action") or ""
@@ -602,22 +605,66 @@ def bucket_projections_view(request):
                 applied_overrides[key] = float(target_value)
                 _set_applied_yoy_overrides(request, applied_overrides)
 
+                # If this is a fresh apply, ensure pct map entry exists or stays as-is
+                # (No-op: we just don't force anything here)
+
             return redirect("bucket_projections")
 
-        # Unapply: remove override and revert to computed projection
+        # Unapply: remove override and any extra pct, revert to computed projection
         if action == "unapply_yoy":
             month_label = (request.POST.get("month_label") or "").strip()
             col_name = (request.POST.get("col_name") or "").strip()
             if month_label and col_name:
                 key = _yoy_session_key(month_label, col_name)
+
+                changed = False
                 if key in applied_overrides:
                     applied_overrides.pop(key, None)
+                    changed = True
+                if key in applied_yoy_pct:
+                    applied_yoy_pct.pop(key, None)
+                    changed = True
+
+                if changed:
                     _set_applied_yoy_overrides(request, applied_overrides)
+                    _set_applied_yoy_pct_overrides(request, applied_yoy_pct)
+
             return redirect("bucket_projections")
 
-        # Clear all
+        # Clear all YoY (and extra %)
         if action == "clear_all_yoy":
             _set_applied_yoy_overrides(request, {})
+            _set_applied_yoy_pct_overrides(request, {})
+            return redirect("bucket_projections")
+
+        # Set extra % on top of an already-applied YoY cell
+        if action == "set_yoy_pct":
+            month_label = (request.POST.get("month_label") or "").strip()
+            col_name = (request.POST.get("col_name") or "").strip()
+            pct_raw = (request.POST.get("yoy_extra_pct") or "").strip()
+
+            pct_val = 0.0
+            try:
+                pct_val = float(pct_raw) if pct_raw else 0.0
+            except Exception:
+                pct_val = 0.0
+
+            # allow user to type 10 (meaning 10%) or 0.10 (meaning 10%)
+            if pct_val > 1.0:
+                pct_val = pct_val / 100.0
+
+            if month_label and col_name:
+                key = _yoy_session_key(month_label, col_name)
+
+                # only apply pct if YoY is applied (so your mental model stays consistent)
+                if key in applied_overrides:
+                    if abs(pct_val) < 1e-12:
+                        applied_yoy_pct.pop(key, None)  # 0% removes it
+                    else:
+                        applied_yoy_pct[key] = pct_val
+
+                    _set_applied_yoy_pct_overrides(request, applied_yoy_pct)
+
             return redirect("bucket_projections")
 
         # Growth rebuild
@@ -644,8 +691,9 @@ def bucket_projections_view(request):
 
             projection_df, yoy_suggestions_df, start_month_label = rebuild_projection_with_growth(f2, growth_real)
 
-            # Apply replacement overrides AFTER growth rebuild
+            # Apply YoY replacement, THEN apply extra % on top
             projection_df = _apply_yoy_overrides_to_projection(projection_df, applied_overrides)
+            projection_df = _apply_yoy_pct_overrides_to_projection(projection_df, applied_yoy_pct)
 
             export_path = os.path.join(tempfile.gettempdir(), f"bucket_projections_{request.user.id}.xlsx")
             with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
@@ -657,9 +705,10 @@ def bucket_projections_view(request):
             results["yoy_suggestions"] = yoy_suggestions_df
             results["start_month_label"] = start_month_label
 
-    # Apply replacement overrides on GET too
+    # Apply YoY replacement + extra % on GET too
     projection_df = results["projection_df"]
     projection_df = _apply_yoy_overrides_to_projection(projection_df, applied_overrides)
+    projection_df = _apply_yoy_pct_overrides_to_projection(projection_df, applied_yoy_pct)
 
     export_path = os.path.join(tempfile.gettempdir(), f"bucket_projections_{request.user.id}.xlsx")
     with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
@@ -696,6 +745,7 @@ def bucket_projections_view(request):
             key = _yoy_session_key(month_label, col_name)
             is_applied = key in applied_overrides
 
+            extra_pct = float(applied_yoy_pct.get(key, 0.0))
             yoy_records.append(
                 {
                     "month_label": month_label,
@@ -704,6 +754,8 @@ def bucket_projections_view(request):
                     "current_year": "" if current_val is None else int(round(current_val)),
                     "pct": "" if pct_val is None else float(pct_val),
                     "applied": is_applied,
+                    "extra_pct": extra_pct,  # decimal
+                    "extra_pct_display": extra_pct * 100.0,  # percent number for input
                 }
             )
 
@@ -713,7 +765,12 @@ def bucket_projections_view(request):
             m, c = k.split("||", 1)
         except ValueError:
             continue
-        applied_list.append(f"{m} • {c} (set to {int(round(float(target)))})")
+
+        pct = float(applied_yoy_pct.get(k, 0.0))
+        if abs(pct) > 1e-12:
+            applied_list.append(f"{m} • {c} (set to {int(round(float(target)))}, +{pct * 100:.1f}%)")
+        else:
+            applied_list.append(f"{m} • {c} (set to {int(round(float(target)))})")
 
     context.update(
         {
