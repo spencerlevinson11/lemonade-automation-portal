@@ -45,7 +45,9 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
     urlpatterns += [
         path("automations/bucket-metrics/projections/", core_views.bucket_projections_view, name="bucket_projections"),
         path("automations/bucket-metrics/projections/export/", core_views.bucket_projections_export_view, name="bucket_projections_export"),
+        path("automations/bucket-metrics/projections/export-zip/", core_views.bucket_projections_zip_export_view, name="bucket_projections_export_zip"),
     ]
+
 
 # Adjusted Prognosis Export (optional)
 if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
