@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 from decimal import Decimal
+from django.core.validators import MinValueValidator
+from datetime import timedelta
 
 
 class Company(models.Model):
@@ -82,6 +84,64 @@ class PricingQuote(models.Model):
 
     def __str__(self):
         return f"{self.customer.name} - {self.company.name}"
+
+class TipEntry(models.Model):
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="tip_entries",
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="tip_entries",
+    )
+
+    # The date the tips were earned (defaults to "today" in the form/view)
+    tip_date = models.DateField()
+
+    # Shift times (time-of-day)
+    shift_start = models.TimeField()
+    shift_end = models.TimeField()
+
+    # Total tips for that shift
+    tips_total = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=0,
+    )
+
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-tip_date", "-created_at"]
+
+    def __str__(self):
+        return f"{self.user.username} {self.tip_date} ${self.tips_total}"
+
+    def shift_duration_hours(self) -> float:
+        """
+        Returns shift duration in hours. If end is earlier than start,
+        we assume the shift ended after midnight (next day).
+        """
+        start_minutes = self.shift_start.hour * 60 + self.shift_start.minute
+        end_minutes = self.shift_end.hour * 60 + self.shift_end.minute
+
+        if end_minutes < start_minutes:
+            end_minutes += 24 * 60  # crossed midnight
+
+        minutes = end_minutes - start_minutes
+        return round(minutes / 60.0, 2)
+
+    def tips_per_hour(self) -> float:
+        hrs = self.shift_duration_hours()
+        if hrs <= 0:
+            return 0.0
+        return float(self.tips_total) / hrs
 
 
 class PricingQuoteLine(models.Model):
