@@ -85,7 +85,23 @@ class PricingQuote(models.Model):
     def __str__(self):
         return f"{self.customer.name} - {self.company.name}"
 
+
 class TipEntry(models.Model):
+    # ---- Job type choices ----
+    JOB_WELL_BARTENDER = "well_bartender"
+    JOB_BARTENDER = "bartender"
+    JOB_SERVER = "server"
+    JOB_MIX_WELL_SERVER = "mix_well_server"
+    JOB_MIX_BARTENDER_SERVER = "mix_bartender_server"
+
+    JOB_TYPE_CHOICES = [
+        (JOB_WELL_BARTENDER, "Well-bartender"),
+        (JOB_BARTENDER, "Bartender"),
+        (JOB_SERVER, "Server"),
+        (JOB_MIX_WELL_SERVER, "Mix of well and serving"),
+        (JOB_MIX_BARTENDER_SERVER, "Mix of bartender and serving"),
+    ]
+
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
@@ -99,6 +115,13 @@ class TipEntry(models.Model):
 
     # The date the tips were earned (defaults to "today" in the form/view)
     tip_date = models.DateField()
+
+    # NEW: what role she worked that shift
+    job_type = models.CharField(
+        max_length=32,
+        choices=JOB_TYPE_CHOICES,
+        default=JOB_BARTENDER,
+    )
 
     # Shift times (time-of-day)
     shift_start = models.TimeField()
@@ -188,3 +211,4 @@ class PricingQuoteLine(models.Model):
 
     def __str__(self):
         return f"{self.customer.name} | {self.destination} | {self.product_description}"
+
