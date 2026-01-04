@@ -36,6 +36,8 @@ urlpatterns = [
     path("automations/pricing/customers/<int:customer_id>/", core_views.pricing_customer_edit_view, name="pricing_customer_edit"),
     path("automations/pricing/customers/<int:customer_id>/quote/", core_views.pricing_customer_quote_view, name="pricing_customer_quote"),
     path("automations/tips/", core_views.tip_tracker_view, name="tip_tracker"),
+    path("tips/", views.tip_tracker_view, name="tip_tracker"),
+    path("tips/delete/<int:entry_id>/", views.tip_entry_delete_view, name="tip_entry_delete"),
 
     # Bucket Metrics
     path("automations/bucket-metrics/", core_views.bucket_metrics_view, name="bucket_metrics"),
