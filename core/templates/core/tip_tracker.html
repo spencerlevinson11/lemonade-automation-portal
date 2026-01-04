@@ -296,13 +296,6 @@
           <p class="muted">Add more shifts to see whether closings win.</p>
         {% endif %}
 
-        <h3 style="margin: 14px 0 6px; font-size: 1rem;">Crossed midnight?</h3>
-        {% if midnight_table_html %}
-          {{ midnight_table_html|safe }}
-        {% else %}
-          <p class="muted">Add more late shifts to see how after-midnight compares.</p>
-        {% endif %}
-
         <!-- ✅ NEW: Recommended shifts -->
         <h3 style="margin: 14px 0 6px; font-size: 1rem;">Recommended shifts</h3>
         {% if recommended_shifts_table_html %}
