@@ -37,6 +37,7 @@
       border: 1px solid rgba(148, 163, 184, 0.35);
       background: rgba(15,23,42,0.8);
       font-size: 0.85rem;
+      white-space: nowrap;
     }
     a { color: var(--accent); text-decoration:none; }
     a:hover { text-decoration: underline; }
@@ -104,7 +105,12 @@
     th { color: var(--text-muted); font-weight: 600; }
     .muted { color: var(--text-muted); }
     .actions { text-align: right; white-space: nowrap; }
-    .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    .scroll-x {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 12px;
+    }
 
     .kpi {
       display:grid;
@@ -121,6 +127,42 @@
     .kpi .label { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 4px; }
     .kpi .value { font-size: 1rem; font-weight: 700; }
     .kpi .sub { color: var(--text-muted); font-size: 0.82rem; margin-top: 2px; }
+
+    /* ✅ Mobile polish */
+    @media (max-width: 720px) {
+      body { padding: 14px; }
+      .wrap { max-width: 100%; }
+
+      .top {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .pill {
+        width: 100%;
+        justify-content: center;
+        white-space: normal;
+        border-radius: 14px;
+      }
+
+      /* Make form inputs easy to tap (and prevent iOS zoom-on-focus) */
+      input, textarea, select, button { min-height: 44px; font-size: 16px; }
+
+      .row { gap: 10px; }
+      .field { min-width: 100%; }   /* forces full width fields on mobile */
+
+      .btn { width: 100%; }
+
+      .card { padding: 14px; }
+
+      .kpi { grid-template-columns: 1fr; }
+
+      /* Tables: don't squish, scroll instead */
+      table { min-width: 760px; }
+      th, td { white-space: nowrap; }
+      td.muted { white-space: normal; } /* notes can wrap */
+      .actions { text-align: left; }
+    }
   </style>
 </head>
 
@@ -196,32 +238,34 @@
       <div class="card">
         <h2 style="margin:0 0 10px;">Recent entries</h2>
         {% if entries %}
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Job</th>
-                <th>Shift</th>
-                <th>Tips</th>
-                <th>Notes</th>
-                <th class="actions"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for e in entries %}
+          <div class="scroll-x">
+            <table>
+              <thead>
                 <tr>
-                  <td>{{ e.tip_date }}</td>
-                  <td>{{ e.get_job_type_display }}</td>
-                  <td>{{ e.shift_start }} → {{ e.shift_end }}</td>
-                  <td>${{ e.tips_total }}</td>
-                  <td class="muted">{{ e.notes|default:"" }}</td>
-                  <td class="actions">
-                    <a class="btn-danger" href="{% url 'tip_entry_delete' e.id %}">Delete</a>
-                  </td>
+                  <th>Date</th>
+                  <th>Job</th>
+                  <th>Shift</th>
+                  <th>Tips</th>
+                  <th>Notes</th>
+                  <th class="actions"></th>
                 </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {% for e in entries %}
+                  <tr>
+                    <td>{{ e.tip_date }}</td>
+                    <td>{{ e.get_job_type_display }}</td>
+                    <td>{{ e.shift_start }} → {{ e.shift_end }}</td>
+                    <td>${{ e.tips_total }}</td>
+                    <td class="muted">{{ e.notes|default:"" }}</td>
+                    <td class="actions">
+                      <a class="btn-danger" href="{% url 'tip_entry_delete' e.id %}">Delete</a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         {% else %}
           <p class="muted">No entries yet.</p>
         {% endif %}
@@ -255,21 +299,21 @@
 
         <h3 style="margin: 10px 0 6px; font-size: 1rem;">By weekday</h3>
         {% if weekday_table_html %}
-          {{ weekday_table_html|safe }}
+          <div class="scroll-x">{{ weekday_table_html|safe }}</div>
         {% else %}
           <p class="muted">Add a few shifts to see patterns.</p>
         {% endif %}
 
         <h3 style="margin: 14px 0 6px; font-size: 1rem;">Most profitable shift start times</h3>
         {% if start_hour_table_html %}
-          {{ start_hour_table_html|safe }}
+          <div class="scroll-x">{{ start_hour_table_html|safe }}</div>
         {% else %}
           <p class="muted">Add a few shifts to see patterns.</p>
         {% endif %}
 
         <h3 style="margin: 14px 0 6px; font-size: 1rem;">By job type</h3>
         {% if job_type_table_html %}
-          {{ job_type_table_html|safe }}
+          <div class="scroll-x">{{ job_type_table_html|safe }}</div>
           <div class="help">Includes consistency metrics: median, standard deviation, and risk score (std ÷ mean).</div>
         {% else %}
           <p class="muted">Add a few shifts to compare roles.</p>
@@ -277,29 +321,30 @@
 
         <h3 style="margin: 14px 0 6px; font-size: 1rem;">Job type by weekday</h3>
         {% if weekday_by_job_table_html %}
-          {{ weekday_by_job_table_html|safe }}
+          <div class="scroll-x">{{ weekday_by_job_table_html|safe }}</div>
         {% else %}
           <p class="muted">Add more shifts to see which roles win on specific days.</p>
         {% endif %}
 
         <h3 style="margin: 14px 0 6px; font-size: 1rem;">Shift length sweet spot</h3>
         {% if duration_bucket_table_html %}
-          {{ duration_bucket_table_html|safe }}
+          <div class="scroll-x">{{ duration_bucket_table_html|safe }}</div>
         {% else %}
           <p class="muted">Add more shifts to find the best duration.</p>
         {% endif %}
 
         <h3 style="margin: 14px 0 6px; font-size: 1rem;">End time performance</h3>
         {% if end_hour_table_html %}
-          {{ end_hour_table_html|safe }}
+          <div class="scroll-x">{{ end_hour_table_html|safe }}</div>
         {% else %}
           <p class="muted">Add more shifts to see whether closings win.</p>
         {% endif %}
 
-        <!-- ✅ NEW: Recommended shifts -->
+        <!-- (after-midnight section intentionally removed) -->
+
         <h3 style="margin: 14px 0 6px; font-size: 1rem;">Recommended shifts</h3>
         {% if recommended_shifts_table_html %}
-          {{ recommended_shifts_table_html|safe }}
+          <div class="scroll-x">{{ recommended_shifts_table_html|safe }}</div>
           <div class="help">
             These are the best weekday × start-time combos by tips/hr, filtered to only include cells with enough history
             (minimum sample size applied in the view).
@@ -327,14 +372,14 @@
 
         <h3 style="margin: 14px 0 6px; font-size: 1rem;">Weekly totals</h3>
         {% if weekly_table_html %}
-          {{ weekly_table_html|safe }}
+          <div class="scroll-x">{{ weekly_table_html|safe }}</div>
         {% else %}
           <p class="muted">Add more shifts to see weekly patterns.</p>
         {% endif %}
 
         <h3 style="margin: 14px 0 6px; font-size: 1rem;">Trends (daily)</h3>
         {% if trend_table_html %}
-          {{ trend_table_html|safe }}
+          <div class="scroll-x">{{ trend_table_html|safe }}</div>
           <div class="help">Includes a 30-day rolling average of daily tips/hr.</div>
         {% else %}
           <p class="muted">Add more shifts to see trendlines.</p>
@@ -344,4 +389,5 @@
   </div>
 </body>
 </html>
+
 
