@@ -21,8 +21,8 @@ from django.views.decorators.http import require_http_methods
 
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
 from .bol_generation import generate_bol_from_form, generate_bol_from_templates
-from .forms import BOLForm, PricingUploadForm
-from .models import Automation, Company, PricingCustomer, PricingQuoteLine
+from .forms import BOLForm, PricingUploadForm, TipEntryForm
+from .models import Automation, Company, PricingCustomer, PricingQuoteLine, TipEntry
 from .rpc_generation import generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
@@ -139,6 +139,8 @@ def normalize_destination(customer_name: str, raw_destination: str) -> str:
 
     dest = re.sub(r"\s+", " ", dest).strip()
     return dest
+
+
 @login_required
 def bucket_projections_zip_export_view(request):
     """
@@ -783,6 +785,131 @@ def custom_logout(request):
 
 
 # -----------------------------
+# Tip Tracker (Family Automations)
+# -----------------------------
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def tip_tracker_view(request):
+    """
+    Simple tip tracker:
+      - default tip date = today (editable)
+      - shift start/end (handles crossing midnight in the model helper)
+      - total tips + notes
+      - basic analytics (weekday + start-hour)
+    """
+    user = request.user
+
+    # Match your portal pattern: a normal user "owns" exactly one company
+    if user.is_superuser:
+        company_id = request.GET.get("company_id")
+        if company_id:
+            company = get_object_or_404(Company, id=company_id)
+        else:
+            company = Company.objects.order_by("id").first()
+    else:
+        try:
+            company = Company.objects.get(owner=user)
+        except Company.DoesNotExist:
+            company = None
+
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    if request.method == "POST":
+        form = TipEntryForm(request.POST)
+        if form.is_valid():
+            TipEntry.objects.create(
+                company=company,
+                user=user,
+                tip_date=form.cleaned_data["tip_date"],
+                shift_start=form.cleaned_data["shift_start"],
+                shift_end=form.cleaned_data["shift_end"],
+                tips_total=form.cleaned_data["tips_total"],
+                notes=form.cleaned_data.get("notes", "") or "",
+            )
+            messages.success(request, "Tip entry saved.")
+            return redirect("tip_tracker")
+    else:
+        form = TipEntryForm()
+
+    entries = (
+        TipEntry.objects
+        .filter(company=company, user=user)
+        .order_by("-tip_date", "-created_at")[:60]
+    )
+
+    weekday_table_html = None
+    start_hour_table_html = None
+
+    try:
+        qs = TipEntry.objects.filter(company=company, user=user)
+        if qs.exists():
+            rows = []
+            for e in qs:
+                rows.append(
+                    {
+                        "tip_date": e.tip_date,
+                        "weekday": e.tip_date.strftime("%A"),
+                        "start_hour": e.shift_start.hour,
+                        "tips_total": float(e.tips_total),
+                        "hours": float(e.shift_duration_hours()),
+                        "tips_per_hour": float(e.tips_per_hour()),
+                    }
+                )
+
+            df = pd.DataFrame(rows)
+
+            wd = (
+                df.groupby("weekday", as_index=False)
+                .agg(
+                    shifts=("tips_total", "count"),
+                    total_tips=("tips_total", "sum"),
+                    avg_tips=("tips_total", "mean"),
+                    avg_hours=("hours", "mean"),
+                    avg_tips_per_hour=("tips_per_hour", "mean"),
+                )
+            )
+
+            weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            wd["weekday"] = pd.Categorical(wd["weekday"], categories=weekday_order, ordered=True)
+            wd = wd.sort_values("weekday")
+
+            for c in ["total_tips", "avg_tips", "avg_hours", "avg_tips_per_hour"]:
+                wd[c] = wd[c].round(2)
+
+            weekday_table_html = wd.to_html(classes="table table-striped table-sm", index=False, border=0)
+
+            sh = (
+                df.groupby("start_hour", as_index=False)
+                .agg(
+                    shifts=("tips_total", "count"),
+                    total_tips=("tips_total", "sum"),
+                    avg_tips=("tips_total", "mean"),
+                    avg_tips_per_hour=("tips_per_hour", "mean"),
+                )
+                .sort_values("avg_tips_per_hour", ascending=False)
+            )
+            for c in ["total_tips", "avg_tips", "avg_tips_per_hour"]:
+                sh[c] = sh[c].round(2)
+
+            start_hour_table_html = sh.to_html(classes="table table-striped table-sm", index=False, border=0)
+
+    except Exception as e:
+        messages.warning(request, f"Analytics error: {e}")
+
+    context = {
+        "automation_name": "Tip Tracker",
+        "company": company,
+        "form": form,
+        "entries": entries,
+        "weekday_table_html": weekday_table_html,
+        "start_hour_table_html": start_hour_table_html,
+    }
+    return render(request, "core/tip_tracker.html", context)
+
+
+# -----------------------------
 # YoY apply/unapply logic
 # - Apply YoY: replace projection cell with prev-year absolute value
 # - Optional extra %: applied on top of that replacement value
@@ -1399,6 +1526,10 @@ def run_automation(request, pk):
         return HttpResponseForbidden("You are not allowed to run this automation.")
 
     name_normalized = (automation.name or "").strip().lower()
+
+    # --- Branch: Tip Tracker ---
+    if name_normalized in {"tip tracker", "tips tracker", "tip tracking", "tips"}:
+        return redirect("tip_tracker")
 
     # --- Branch: Retriever RPC Order ---
     if name_normalized == "retriever rpc order":
