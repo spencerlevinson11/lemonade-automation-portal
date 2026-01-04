@@ -80,6 +80,17 @@
     }
     .btn:hover { background: rgba(250,204,21,0.18); }
 
+    .btn-danger {
+      border: 1px solid rgba(249,115,115,0.45);
+      background: rgba(249,115,115,0.10);
+      color: var(--danger);
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-weight: 700;
+      display:inline-flex;
+    }
+    .btn-danger:hover { background: rgba(249,115,115,0.16); text-decoration:none; }
+
     .messages { margin-bottom: 10px; }
     .msg {
       padding: 10px 12px; border-radius: 12px; margin-bottom: 8px;
@@ -89,9 +100,10 @@
     }
 
     table { width:100%; border-collapse: collapse; }
-    th, td { border-bottom: 1px solid rgba(31,41,55,0.9); padding: 10px; text-align:left; font-size: 0.92rem; }
+    th, td { border-bottom: 1px solid rgba(31,41,55,0.9); padding: 10px; text-align:left; font-size: 0.92rem; vertical-align: top; }
     th { color: var(--text-muted); font-weight: 600; }
     .muted { color: var(--text-muted); }
+    .actions { text-align: right; white-space: nowrap; }
   </style>
 </head>
 
@@ -128,7 +140,6 @@
             {% if form.tip_date.help_text %}<div class="help">{{ form.tip_date.help_text }}</div>{% endif %}
           </div>
 
-          <!-- Step 3 edit: job type selector -->
           <div class="field">
             <label for="{{ form.job_type.id_for_label }}">{{ form.job_type.label }}</label>
             {{ form.job_type }}
@@ -174,6 +185,7 @@
                 <th>Shift</th>
                 <th>Tips</th>
                 <th>Notes</th>
+                <th class="actions"></th>
               </tr>
             </thead>
             <tbody>
@@ -184,6 +196,9 @@
                   <td>{{ e.shift_start }} → {{ e.shift_end }}</td>
                   <td>${{ e.tips_total }}</td>
                   <td class="muted">{{ e.notes|default:"" }}</td>
+                  <td class="actions">
+                    <a class="btn-danger" href="{% url 'tip_entry_delete' e.id %}">Delete</a>
+                  </td>
                 </tr>
               {% endfor %}
             </tbody>
