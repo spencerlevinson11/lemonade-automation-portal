@@ -1,5 +1,6 @@
 # core/forms.py
 from django import forms
+from django.utils import timezone
 
 
 class BOLForm(forms.Form):
@@ -132,6 +133,43 @@ class PricingUploadForm(forms.Form):
         help_text="Upload your pricing matrix CSV."
     )
 
+class TipEntryForm(forms.Form):
+    tip_date = forms.DateField(
+        label="Tip date",
+        required=True,
+        widget=forms.DateInput(attrs={"type": "date"}),
+        initial=timezone.localdate,
+        help_text="Defaults to today, but you can change it.",
+    )
+
+    shift_start = forms.TimeField(
+        label="Shift start",
+        required=True,
+        widget=forms.TimeInput(attrs={"type": "time"}),
+        help_text="Example: 5:00 PM",
+    )
+
+    shift_end = forms.TimeField(
+        label="Shift end",
+        required=True,
+        widget=forms.TimeInput(attrs={"type": "time"}),
+        help_text="Example: 11:00 PM (if it ends after midnight, still enter the time, e.g. 2:00 AM)",
+    )
+
+    tips_total = forms.DecimalField(
+        label="Total tips",
+        required=True,
+        min_value=0,
+        decimal_places=2,
+        max_digits=10,
+        widget=forms.NumberInput(attrs={"step": "0.01", "inputmode": "decimal"}),
+    )
+
+    notes = forms.CharField(
+        label="Notes",
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Any notes about the shift..."}),
+    )
 
 class PricingPalletQuantityUpdateForm(forms.Form):
     """
