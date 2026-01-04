@@ -228,6 +228,10 @@
             border-radius: 12px;
             border: 1px solid rgba(31, 41, 55, 0.9);
             overflow: hidden;
+
+            /* ✅ Mobile usability: let table scroll instead of squishing */
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
@@ -315,6 +319,38 @@
         }
 
         .empty-state strong { color: var(--accent); }
+
+        /* ✅ Mobile polish */
+        @media (max-width: 720px) {
+            body { padding: 12px; }
+
+            .page-inner { padding: 14px; }
+
+            .top-bar {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .brand-text-sub { display: none; }
+
+            .user-pill {
+                width: 100%;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 10px;
+                padding: 10px 12px;
+                border-radius: 16px;
+            }
+
+            .main-title { font-size: 1.15rem; }
+
+            /* Make sure the automation table doesn't squish */
+            table { min-width: 760px; }
+
+            /* Slightly larger tap area for "Run now" */
+            .run-btn { padding: 10px 12px; font-size: 0.8rem; }
+        }
     </style>
 </head>
 <body>
@@ -460,4 +496,3 @@
 </div>
 </body>
 </html>
-
