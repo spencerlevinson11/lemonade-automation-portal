@@ -104,6 +104,23 @@
     th { color: var(--text-muted); font-weight: 600; }
     .muted { color: var(--text-muted); }
     .actions { text-align: right; white-space: nowrap; }
+    .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    .kpi {
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin: 10px 0 6px;
+    }
+    .kpi .box {
+      border: 1px solid rgba(148,163,184,0.20);
+      background: rgba(2,6,23,0.25);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+    .kpi .label { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 4px; }
+    .kpi .value { font-size: 1rem; font-weight: 700; }
+    .kpi .sub { color: var(--text-muted); font-size: 0.82rem; margin-top: 2px; }
   </style>
 </head>
 
@@ -151,11 +168,13 @@
             {{ form.shift_start }}
             {% if form.shift_start.help_text %}<div class="help">{{ form.shift_start.help_text }}</div>{% endif %}
           </div>
+
           <div class="field">
             <label for="{{ form.shift_end.id_for_label }}">{{ form.shift_end.label }}</label>
             {{ form.shift_end }}
             {% if form.shift_end.help_text %}<div class="help">{{ form.shift_end.help_text }}</div>{% endif %}
           </div>
+
           <div class="field">
             <label for="{{ form.tips_total.id_for_label }}">{{ form.tips_total.label }}</label>
             {{ form.tips_total }}
@@ -211,6 +230,29 @@
       <div class="card">
         <h2 style="margin:0 0 10px;">Analytics</h2>
 
+        {% if best_week_summary or worst_week_summary %}
+          <div class="kpi">
+            {% if best_week_summary %}
+              <div class="box">
+                <div class="label">Best week (by tips/hr)</div>
+                <div class="value">Week of {{ best_week_summary.week_start }}</div>
+                <div class="sub">
+                  {{ best_week_summary.shifts }} shifts • ${{ best_week_summary.total_tips|floatformat:2 }} total • ${{ best_week_summary.avg_tips_per_hour|floatformat:2 }}/hr
+                </div>
+              </div>
+            {% endif %}
+            {% if worst_week_summary %}
+              <div class="box">
+                <div class="label">Worst week (by tips/hr)</div>
+                <div class="value">Week of {{ worst_week_summary.week_start }}</div>
+                <div class="sub">
+                  {{ worst_week_summary.shifts }} shifts • ${{ worst_week_summary.total_tips|floatformat:2 }} total • ${{ worst_week_summary.avg_tips_per_hour|floatformat:2 }}/hr
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        {% endif %}
+
         <h3 style="margin: 10px 0 6px; font-size: 1rem;">By weekday</h3>
         {% if weekday_table_html %}
           {{ weekday_table_html|safe }}
@@ -223,6 +265,72 @@
           {{ start_hour_table_html|safe }}
         {% else %}
           <p class="muted">Add a few shifts to see patterns.</p>
+        {% endif %}
+
+        <h3 style="margin: 14px 0 6px; font-size: 1rem;">By job type</h3>
+        {% if job_type_table_html %}
+          {{ job_type_table_html|safe }}
+          <div class="help">Includes consistency metrics: median, standard deviation, and risk score (std ÷ mean).</div>
+        {% else %}
+          <p class="muted">Add a few shifts to compare roles.</p>
+        {% endif %}
+
+        <h3 style="margin: 14px 0 6px; font-size: 1rem;">Job type by weekday</h3>
+        {% if weekday_by_job_table_html %}
+          {{ weekday_by_job_table_html|safe }}
+        {% else %}
+          <p class="muted">Add more shifts to see which roles win on specific days.</p>
+        {% endif %}
+
+        <h3 style="margin: 14px 0 6px; font-size: 1rem;">Shift length sweet spot</h3>
+        {% if duration_bucket_table_html %}
+          {{ duration_bucket_table_html|safe }}
+        {% else %}
+          <p class="muted">Add more shifts to find the best duration.</p>
+        {% endif %}
+
+        <h3 style="margin: 14px 0 6px; font-size: 1rem;">End time performance</h3>
+        {% if end_hour_table_html %}
+          {{ end_hour_table_html|safe }}
+        {% else %}
+          <p class="muted">Add more shifts to see whether closings win.</p>
+        {% endif %}
+
+        <h3 style="margin: 14px 0 6px; font-size: 1rem;">Crossed midnight?</h3>
+        {% if midnight_table_html %}
+          {{ midnight_table_html|safe }}
+        {% else %}
+          <p class="muted">Add more late shifts to see how after-midnight compares.</p>
+        {% endif %}
+
+        <h3 style="margin: 14px 0 6px; font-size: 1rem;">Money map: weekday × start hour (avg tips/hr)</h3>
+        {% if heatmap_avg_table_html %}
+          <div class="scroll-x">{{ heatmap_avg_table_html|safe }}</div>
+          <div class="help">Use this with the count table below so you don’t over-trust low-sample cells.</div>
+        {% else %}
+          <p class="muted">Add more shifts to build your heatmap.</p>
+        {% endif %}
+
+        <h3 style="margin: 14px 0 6px; font-size: 1rem;">Money map: weekday × start hour (shift count)</h3>
+        {% if heatmap_count_table_html %}
+          <div class="scroll-x">{{ heatmap_count_table_html|safe }}</div>
+        {% else %}
+          <p class="muted">Add more shifts to see sample sizes.</p>
+        {% endif %}
+
+        <h3 style="margin: 14px 0 6px; font-size: 1rem;">Weekly totals</h3>
+        {% if weekly_table_html %}
+          {{ weekly_table_html|safe }}
+        {% else %}
+          <p class="muted">Add more shifts to see weekly patterns.</p>
+        {% endif %}
+
+        <h3 style="margin: 14px 0 6px; font-size: 1rem;">Trends (daily)</h3>
+        {% if trend_table_html %}
+          {{ trend_table_html|safe }}
+          <div class="help">Includes a 30-day rolling average of daily tips/hr.</div>
+        {% else %}
+          <p class="muted">Add more shifts to see trendlines.</p>
         {% endif %}
       </div>
     </div>
