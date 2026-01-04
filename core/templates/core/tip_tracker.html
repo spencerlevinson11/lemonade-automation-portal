@@ -56,7 +56,7 @@
     .row { display:flex; gap:12px; flex-wrap:wrap; }
     .field { flex: 1; min-width: 220px; }
     label { display:block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; }
-    input, textarea {
+    input, textarea, select {
       width: 100%;
       padding: 10px 10px;
       border-radius: 10px;
@@ -127,6 +127,14 @@
             {{ form.tip_date }}
             {% if form.tip_date.help_text %}<div class="help">{{ form.tip_date.help_text }}</div>{% endif %}
           </div>
+
+          <!-- Step 3 edit: job type selector -->
+          <div class="field">
+            <label for="{{ form.job_type.id_for_label }}">{{ form.job_type.label }}</label>
+            {{ form.job_type }}
+            {% if form.job_type.help_text %}<div class="help">{{ form.job_type.help_text }}</div>{% endif %}
+          </div>
+
           <div class="field">
             <label for="{{ form.shift_start.id_for_label }}">{{ form.shift_start.label }}</label>
             {{ form.shift_start }}
@@ -162,6 +170,7 @@
             <thead>
               <tr>
                 <th>Date</th>
+                <th>Job</th>
                 <th>Shift</th>
                 <th>Tips</th>
                 <th>Notes</th>
@@ -171,6 +180,7 @@
               {% for e in entries %}
                 <tr>
                   <td>{{ e.tip_date }}</td>
+                  <td>{{ e.get_job_type_display }}</td>
                   <td>{{ e.shift_start }} → {{ e.shift_end }}</td>
                   <td>${{ e.tips_total }}</td>
                   <td class="muted">{{ e.notes|default:"" }}</td>
