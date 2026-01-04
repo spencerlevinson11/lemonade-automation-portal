@@ -860,6 +860,8 @@ def tip_tracker_view(request):
     trend_table_html = None
     best_week_summary = None
     worst_week_summary = None
+    recommended_shifts_table_html = None
+
 
     try:
         qs = TipEntry.objects.filter(company=company, user=user)
@@ -1076,6 +1078,49 @@ def tip_tracker_view(request):
 
             heatmap_avg_table_html = heat_avg.to_html(classes="table table-striped table-sm", border=0)
             heatmap_count_table_html = heat_cnt.to_html(classes="table table-striped table-sm", border=0)
+            # -----------------------------
+            # 6b) Recommended shifts (weekday × start hour)
+            # -----------------------------
+            MIN_SHIFTS_PER_CELL = 3   # bump to 5 later once you have more data
+            TOP_N = 10
+
+            # Flatten the pivot tables to rows: weekday, start_hour, avg_tips_per_hour, shifts
+            rec = (
+                heat_avg.stack(dropna=False)
+                .rename("avg_tips_per_hour")
+                .reset_index()
+                .merge(
+                    heat_cnt.stack(dropna=False).rename("shifts").reset_index(),
+                    on=["weekday", "start_hour"],
+                    how="left",
+                )
+            )
+
+            # Clean + filter
+            rec["shifts"] = rec["shifts"].fillna(0).astype(int)
+            rec = rec.dropna(subset=["avg_tips_per_hour"])
+            rec = rec[rec["shifts"] >= MIN_SHIFTS_PER_CELL].copy()
+
+            # Sort best first, and format start_hour nicely
+            rec = rec.sort_values(["avg_tips_per_hour", "shifts"], ascending=[False, False]).head(TOP_N)
+            rec["avg_tips_per_hour"] = rec["avg_tips_per_hour"].round(2)
+            rec["start_time"] = rec["start_hour"].astype(int).astype(str).str.zfill(2) + ":00"
+
+            # Display columns
+            rec_display = rec[["weekday", "start_time", "shifts", "avg_tips_per_hour"]].rename(
+                columns={
+                    "weekday": "Weekday",
+                    "start_time": "Start",
+                    "shifts": "Shifts (sample)",
+                    "avg_tips_per_hour": "Avg tips/hr",
+                }
+            )
+
+            recommended_shifts_table_html = rec_display.to_html(
+                classes="table table-striped table-sm",
+                index=False,
+                border=0,
+            )
 
             # -----------------------------
             # 7) Weekly totals + best/worst week + rolling averages (7-shift, 30-day)
@@ -1162,6 +1207,8 @@ def tip_tracker_view(request):
         "trend_table_html": trend_table_html,
         "best_week_summary": best_week_summary,
         "worst_week_summary": worst_week_summary,
+        "recommended_shifts_table_html": recommended_shifts_table_html,
+
     }
     return render(request, "core/tip_tracker.html", context)
 
