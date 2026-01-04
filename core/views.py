@@ -852,7 +852,6 @@ def tip_tracker_view(request):
     job_type_table_html = None
     weekday_by_job_table_html = None
     end_hour_table_html = None
-    midnight_table_html = None
     duration_bucket_table_html = None
     heatmap_avg_table_html = None
     heatmap_count_table_html = None
@@ -869,10 +868,7 @@ def tip_tracker_view(request):
             # Build a DataFrame of all entries for analytics.
             rows = []
             for e in qs:
-                crossed_midnight = (
-                    (e.shift_end.hour * 60 + e.shift_end.minute)
-                    < (e.shift_start.hour * 60 + e.shift_start.minute)
-                )
+               
                 rows.append(
                     {
                         "tip_date": e.tip_date,
@@ -880,7 +876,6 @@ def tip_tracker_view(request):
                         "job_type": e.get_job_type_display(),
                         "start_hour": e.shift_start.hour,
                         "end_hour": e.shift_end.hour,
-                        "crossed_midnight": bool(crossed_midnight),
                         "tips_total": float(e.tips_total),
                         "hours": float(e.shift_duration_hours()),
                         "tips_per_hour": float(e.tips_per_hour()),
@@ -1033,21 +1028,6 @@ def tip_tracker_view(request):
                 eh[c] = eh[c].round(2)
             end_hour_table_html = eh.to_html(classes="table table-striped table-sm", index=False, border=0)
 
-            md = (
-                df.groupby("crossed_midnight", as_index=False)
-                .agg(
-                    shifts=("tips_total", "count"),
-                    avg_tips_per_hour=("tips_per_hour", "mean"),
-                    median_tips_per_hour=("tips_per_hour", "median"),
-                    std_tips_per_hour=("tips_per_hour", "std"),
-                )
-                .sort_values("avg_tips_per_hour", ascending=False)
-            )
-            md = add_consistency_columns(md)
-            md["crossed_midnight"] = md["crossed_midnight"].map({True: "Yes", False: "No"})
-            for c in ["avg_tips_per_hour"]:
-                md[c] = md[c].round(2)
-            midnight_table_html = md.to_html(classes="table table-striped table-sm", index=False, border=0)
 
             # -----------------------------
             # 6) Heatmap: weekday × start hour (avg tips/hr + count)
@@ -1199,7 +1179,6 @@ def tip_tracker_view(request):
         "job_type_table_html": job_type_table_html,
         "weekday_by_job_table_html": weekday_by_job_table_html,
         "end_hour_table_html": end_hour_table_html,
-        "midnight_table_html": midnight_table_html,
         "duration_bucket_table_html": duration_bucket_table_html,
         "heatmap_avg_table_html": heatmap_avg_table_html,
         "heatmap_count_table_html": heatmap_count_table_html,
