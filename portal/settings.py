@@ -123,7 +123,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# FIX: use your local timezone so timezone.localdate() matches "today"
+TIME_ZONE = 'America/New_York'
 
 USE_I18N = True
 
@@ -165,4 +166,3 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL",
     "Spencer <spencer@retriever.pro>",
 )
-
