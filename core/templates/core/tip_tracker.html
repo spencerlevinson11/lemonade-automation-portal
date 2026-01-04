@@ -303,6 +303,20 @@
           <p class="muted">Add more late shifts to see how after-midnight compares.</p>
         {% endif %}
 
+        <!-- ✅ NEW: Recommended shifts -->
+        <h3 style="margin: 14px 0 6px; font-size: 1rem;">Recommended shifts</h3>
+        {% if recommended_shifts_table_html %}
+          {{ recommended_shifts_table_html|safe }}
+          <div class="help">
+            These are the best weekday × start-time combos by tips/hr, filtered to only include cells with enough history
+            (minimum sample size applied in the view).
+          </div>
+        {% else %}
+          <p class="muted">
+            Not enough data yet. Once you have multiple entries for the same weekday + start-time slot, recommendations will appear.
+          </p>
+        {% endif %}
+
         <h3 style="margin: 14px 0 6px; font-size: 1rem;">Money map: weekday × start hour (avg tips/hr)</h3>
         {% if heatmap_avg_table_html %}
           <div class="scroll-x">{{ heatmap_avg_table_html|safe }}</div>
@@ -337,3 +351,4 @@
   </div>
 </body>
 </html>
+
