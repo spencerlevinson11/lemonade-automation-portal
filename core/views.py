@@ -796,7 +796,13 @@ def tip_tracker_view(request):
       - default tip date = today (editable)
       - shift start/end (handles crossing midnight in the model helper)
       - total tips + notes
-      - basic analytics (weekday + start-hour)
+      - expanded analytics:
+          * weekday, start hour, job type
+          * weekday×start-hour heatmaps (avg + count)
+          * shift length buckets
+          * end hour + crossed midnight
+          * consistency metrics (median/std/risk score)
+          * weekly totals + best/worst + daily trend w/ rolling 30D avg tips/hr
     """
     user = request.user
 
@@ -827,9 +833,8 @@ def tip_tracker_view(request):
                 shift_end=form.cleaned_data["shift_end"],
                 tips_total=form.cleaned_data["tips_total"],
                 notes=form.cleaned_data.get("notes", "") or "",
-                job_type=form.cleaned_data["job_type"],  # <-- ADD THIS
+                job_type=form.cleaned_data["job_type"],
             )
-
             messages.success(request, "Tip entry saved.")
             return redirect("tip_tracker")
     else:
@@ -841,19 +846,39 @@ def tip_tracker_view(request):
         .order_by("-tip_date", "-created_at")[:60]
     )
 
+    # Analytics outputs
     weekday_table_html = None
     start_hour_table_html = None
+    job_type_table_html = None
+    weekday_by_job_table_html = None
+    end_hour_table_html = None
+    midnight_table_html = None
+    duration_bucket_table_html = None
+    heatmap_avg_table_html = None
+    heatmap_count_table_html = None
+    weekly_table_html = None
+    trend_table_html = None
+    best_week_summary = None
+    worst_week_summary = None
 
     try:
         qs = TipEntry.objects.filter(company=company, user=user)
         if qs.exists():
+            # Build a DataFrame of all entries for analytics.
             rows = []
             for e in qs:
+                crossed_midnight = (
+                    (e.shift_end.hour * 60 + e.shift_end.minute)
+                    < (e.shift_start.hour * 60 + e.shift_start.minute)
+                )
                 rows.append(
                     {
                         "tip_date": e.tip_date,
                         "weekday": e.tip_date.strftime("%A"),
+                        "job_type": e.get_job_type_display(),
                         "start_hour": e.shift_start.hour,
+                        "end_hour": e.shift_end.hour,
+                        "crossed_midnight": bool(crossed_midnight),
                         "tips_total": float(e.tips_total),
                         "hours": float(e.shift_duration_hours()),
                         "tips_per_hour": float(e.tips_per_hour()),
@@ -862,6 +887,31 @@ def tip_tracker_view(request):
 
             df = pd.DataFrame(rows)
 
+            # ---- Common formatting helpers ----
+            weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            df["weekday"] = pd.Categorical(df["weekday"], categories=weekday_order, ordered=True)
+
+            def add_consistency_columns(g: pd.DataFrame) -> pd.DataFrame:
+                """
+                Assumes columns:
+                  - avg_tips_per_hour
+                  - median_tips_per_hour
+                  - std_tips_per_hour
+                Adds:
+                  - risk_score = std / mean
+                """
+                g = g.copy()
+                g["median_tips_per_hour"] = g["median_tips_per_hour"].round(2)
+                g["std_tips_per_hour"] = g["std_tips_per_hour"].fillna(0).round(2)
+                g["risk_score"] = (
+                    g["std_tips_per_hour"]
+                    / g["avg_tips_per_hour"].replace({0: pd.NA})
+                ).fillna(0).round(2)
+                return g
+
+            # -----------------------------
+            # 1) By weekday (with consistency metrics)
+            # -----------------------------
             wd = (
                 df.groupby("weekday", as_index=False)
                 .agg(
@@ -870,18 +920,19 @@ def tip_tracker_view(request):
                     avg_tips=("tips_total", "mean"),
                     avg_hours=("hours", "mean"),
                     avg_tips_per_hour=("tips_per_hour", "mean"),
+                    median_tips_per_hour=("tips_per_hour", "median"),
+                    std_tips_per_hour=("tips_per_hour", "std"),
                 )
+                .sort_values("weekday")
             )
-
-            weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-            wd["weekday"] = pd.Categorical(wd["weekday"], categories=weekday_order, ordered=True)
-            wd = wd.sort_values("weekday")
-
+            wd = add_consistency_columns(wd)
             for c in ["total_tips", "avg_tips", "avg_hours", "avg_tips_per_hour"]:
                 wd[c] = wd[c].round(2)
-
             weekday_table_html = wd.to_html(classes="table table-striped table-sm", index=False, border=0)
 
+            # -----------------------------
+            # 2) Most profitable start times (with consistency metrics)
+            # -----------------------------
             sh = (
                 df.groupby("start_hour", as_index=False)
                 .agg(
@@ -889,13 +940,206 @@ def tip_tracker_view(request):
                     total_tips=("tips_total", "sum"),
                     avg_tips=("tips_total", "mean"),
                     avg_tips_per_hour=("tips_per_hour", "mean"),
+                    median_tips_per_hour=("tips_per_hour", "median"),
+                    std_tips_per_hour=("tips_per_hour", "std"),
                 )
                 .sort_values("avg_tips_per_hour", ascending=False)
             )
+            sh = add_consistency_columns(sh)
             for c in ["total_tips", "avg_tips", "avg_tips_per_hour"]:
                 sh[c] = sh[c].round(2)
-
             start_hour_table_html = sh.to_html(classes="table table-striped table-sm", index=False, border=0)
+
+            # -----------------------------
+            # 3) Breakdown by job type (with consistency metrics)
+            # -----------------------------
+            jt = (
+                df.groupby("job_type", as_index=False)
+                .agg(
+                    shifts=("tips_total", "count"),
+                    total_tips=("tips_total", "sum"),
+                    avg_tips=("tips_total", "mean"),
+                    avg_hours=("hours", "mean"),
+                    avg_tips_per_hour=("tips_per_hour", "mean"),
+                    median_tips_per_hour=("tips_per_hour", "median"),
+                    std_tips_per_hour=("tips_per_hour", "std"),
+                )
+                .sort_values("avg_tips_per_hour", ascending=False)
+            )
+            jt = add_consistency_columns(jt)
+            for c in ["total_tips", "avg_tips", "avg_hours", "avg_tips_per_hour"]:
+                jt[c] = jt[c].round(2)
+            job_type_table_html = jt.to_html(classes="table table-striped table-sm", index=False, border=0)
+
+            # Optional: job type by weekday
+            jtw = (
+                df.groupby(["weekday", "job_type"], as_index=False)
+                .agg(
+                    shifts=("tips_total", "count"),
+                    avg_tips_per_hour=("tips_per_hour", "mean"),
+                    median_tips_per_hour=("tips_per_hour", "median"),
+                    std_tips_per_hour=("tips_per_hour", "std"),
+                )
+                .sort_values(["weekday", "avg_tips_per_hour"], ascending=[True, False])
+            )
+            jtw = add_consistency_columns(jtw)
+            for c in ["avg_tips_per_hour"]:
+                jtw[c] = jtw[c].round(2)
+            weekday_by_job_table_html = jtw.to_html(classes="table table-striped table-sm", index=False, border=0)
+
+            # -----------------------------
+            # 4) Shift length buckets (sweet spot)
+            # -----------------------------
+            df["hours_clamped"] = df["hours"].clip(lower=0)
+            df["duration_bucket"] = pd.cut(
+                df["hours_clamped"],
+                bins=[-0.001, 3, 5, 7, 1000],
+                labels=["0–3", "3–5", "5–7", "7+"],
+            )
+            dur = (
+                df.groupby("duration_bucket", as_index=False)
+                .agg(
+                    shifts=("tips_total", "count"),
+                    total_tips=("tips_total", "sum"),
+                    avg_tips=("tips_total", "mean"),
+                    avg_hours=("hours", "mean"),
+                    avg_tips_per_hour=("tips_per_hour", "mean"),
+                    median_tips_per_hour=("tips_per_hour", "median"),
+                    std_tips_per_hour=("tips_per_hour", "std"),
+                )
+            )
+            dur = add_consistency_columns(dur)
+            for c in ["total_tips", "avg_tips", "avg_hours", "avg_tips_per_hour"]:
+                dur[c] = dur[c].round(2)
+            duration_bucket_table_html = dur.to_html(classes="table table-striped table-sm", index=False, border=0)
+
+            # -----------------------------
+            # 5) Start vs end time + crossed midnight
+            # -----------------------------
+            eh = (
+                df.groupby("end_hour", as_index=False)
+                .agg(
+                    shifts=("tips_total", "count"),
+                    avg_tips_per_hour=("tips_per_hour", "mean"),
+                    median_tips_per_hour=("tips_per_hour", "median"),
+                    std_tips_per_hour=("tips_per_hour", "std"),
+                )
+                .sort_values("avg_tips_per_hour", ascending=False)
+            )
+            eh = add_consistency_columns(eh)
+            for c in ["avg_tips_per_hour"]:
+                eh[c] = eh[c].round(2)
+            end_hour_table_html = eh.to_html(classes="table table-striped table-sm", index=False, border=0)
+
+            md = (
+                df.groupby("crossed_midnight", as_index=False)
+                .agg(
+                    shifts=("tips_total", "count"),
+                    avg_tips_per_hour=("tips_per_hour", "mean"),
+                    median_tips_per_hour=("tips_per_hour", "median"),
+                    std_tips_per_hour=("tips_per_hour", "std"),
+                )
+                .sort_values("avg_tips_per_hour", ascending=False)
+            )
+            md = add_consistency_columns(md)
+            md["crossed_midnight"] = md["crossed_midnight"].map({True: "Yes", False: "No"})
+            for c in ["avg_tips_per_hour"]:
+                md[c] = md[c].round(2)
+            midnight_table_html = md.to_html(classes="table table-striped table-sm", index=False, border=0)
+
+            # -----------------------------
+            # 6) Heatmap: weekday × start hour (avg tips/hr + count)
+            # -----------------------------
+            heat_avg = (
+                df.pivot_table(
+                    index="weekday",
+                    columns="start_hour",
+                    values="tips_per_hour",
+                    aggfunc="mean",
+                )
+                .reindex(weekday_order)
+            )
+            heat_cnt = (
+                df.pivot_table(
+                    index="weekday",
+                    columns="start_hour",
+                    values="tips_per_hour",
+                    aggfunc="count",
+                )
+                .reindex(weekday_order)
+            )
+            heat_avg = heat_avg.round(2)
+
+            if len(heat_avg.columns) > 0:
+                heat_avg = heat_avg.reindex(sorted(heat_avg.columns), axis=1)
+                heat_cnt = heat_cnt.reindex(sorted(heat_cnt.columns), axis=1)
+
+            heatmap_avg_table_html = heat_avg.to_html(classes="table table-striped table-sm", border=0)
+            heatmap_count_table_html = heat_cnt.to_html(classes="table table-striped table-sm", border=0)
+
+            # -----------------------------
+            # 7) Weekly totals + best/worst week + rolling averages (7-shift, 30-day)
+            # -----------------------------
+            df2 = df.copy()
+            df2["tip_date"] = pd.to_datetime(df2["tip_date"])
+            df2 = df2.sort_values(["tip_date", "start_hour"], ascending=[True, True])
+
+            # Weekly summary (week starts Monday)
+            df2["week_start"] = df2["tip_date"].dt.to_period("W-MON").apply(lambda p: p.start_time.date())
+            wk = (
+                df2.groupby("week_start", as_index=False)
+                .agg(
+                    shifts=("tips_total", "count"),
+                    total_tips=("tips_total", "sum"),
+                    avg_tips_per_hour=("tips_per_hour", "mean"),
+                    avg_hours=("hours", "mean"),
+                )
+                .sort_values("week_start", ascending=False)
+            )
+            for c in ["total_tips", "avg_tips_per_hour", "avg_hours"]:
+                wk[c] = wk[c].round(2)
+            weekly_table_html = wk.to_html(classes="table table-striped table-sm", index=False, border=0)
+
+            if not wk.empty:
+                best_row = wk.sort_values(["avg_tips_per_hour", "total_tips"], ascending=[False, False]).iloc[0]
+                worst_row = wk.sort_values(["avg_tips_per_hour", "total_tips"], ascending=[True, True]).iloc[0]
+                best_week_summary = {
+                    "week_start": str(best_row["week_start"]),
+                    "shifts": int(best_row["shifts"]),
+                    "total_tips": float(best_row["total_tips"]),
+                    "avg_tips_per_hour": float(best_row["avg_tips_per_hour"]),
+                }
+                worst_week_summary = {
+                    "week_start": str(worst_row["week_start"]),
+                    "shifts": int(worst_row["shifts"]),
+                    "total_tips": float(worst_row["total_tips"]),
+                    "avg_tips_per_hour": float(worst_row["avg_tips_per_hour"]),
+                }
+
+            # Rolling averages (daily)
+            daily = (
+                df2.groupby(df2["tip_date"].dt.date, as_index=False)
+                .agg(
+                    date=("tip_date", "first"),
+                    shifts=("tips_total", "count"),
+                    total_tips=("tips_total", "sum"),
+                    avg_tips_per_hour=("tips_per_hour", "mean"),
+                )
+                .sort_values("date")
+            )
+            daily["avg_tips_per_hour"] = daily["avg_tips_per_hour"].round(2)
+            daily["total_tips"] = daily["total_tips"].round(2)
+            daily["rolling_30_day_avg_tips_per_hour"] = (
+                daily.set_index("date")["avg_tips_per_hour"]
+                .rolling("30D", min_periods=1)
+                .mean()
+                .round(2)
+                .values
+            )
+
+            trend = daily.tail(45).copy()
+            trend["date"] = trend["date"].dt.date.astype(str)
+            trend_table_html = trend.to_html(classes="table table-striped table-sm", index=False, border=0)
 
     except Exception as e:
         messages.warning(request, f"Analytics error: {e}")
@@ -907,6 +1151,17 @@ def tip_tracker_view(request):
         "entries": entries,
         "weekday_table_html": weekday_table_html,
         "start_hour_table_html": start_hour_table_html,
+        "job_type_table_html": job_type_table_html,
+        "weekday_by_job_table_html": weekday_by_job_table_html,
+        "end_hour_table_html": end_hour_table_html,
+        "midnight_table_html": midnight_table_html,
+        "duration_bucket_table_html": duration_bucket_table_html,
+        "heatmap_avg_table_html": heatmap_avg_table_html,
+        "heatmap_count_table_html": heatmap_count_table_html,
+        "weekly_table_html": weekly_table_html,
+        "trend_table_html": trend_table_html,
+        "best_week_summary": best_week_summary,
+        "worst_week_summary": worst_week_summary,
     }
     return render(request, "core/tip_tracker.html", context)
 
