@@ -827,7 +827,9 @@ def tip_tracker_view(request):
                 shift_end=form.cleaned_data["shift_end"],
                 tips_total=form.cleaned_data["tips_total"],
                 notes=form.cleaned_data.get("notes", "") or "",
+                job_type=form.cleaned_data["job_type"],  # <-- ADD THIS
             )
+
             messages.success(request, "Tip entry saved.")
             return redirect("tip_tracker")
     else:
@@ -908,6 +910,34 @@ def tip_tracker_view(request):
     }
     return render(request, "core/tip_tracker.html", context)
 
+@login_required
+@require_http_methods(["GET", "POST"])
+def tip_entry_delete_view(request, entry_id: int):
+    entry = get_object_or_404(TipEntry, id=entry_id)
+
+    # Permission check: owner of company (or superuser), and must match user+company
+    if not (
+        request.user.is_superuser
+        or (entry.company and entry.company.owner == request.user)
+    ):
+        return HttpResponseForbidden("You are not allowed to delete this entry.")
+
+    # Optional: also restrict to same user who created it (recommended for Hailey’s use case)
+    if not request.user.is_superuser and entry.user_id != request.user.id:
+        return HttpResponseForbidden("You are not allowed to delete this entry.")
+
+    if request.method == "POST":
+        confirm = (request.POST.get("confirm") or "").strip().lower()
+        if confirm == "yes":
+            entry.delete()
+            messages.success(request, "Entry deleted.")
+            return redirect("tip_tracker")
+
+        messages.info(request, "Deletion cancelled.")
+        return redirect("tip_tracker")
+
+    # GET = warning/confirmation page
+    return render(request, "core/tip_entry_confirm_delete.html", {"entry": entry})
 
 # -----------------------------
 # YoY apply/unapply logic
