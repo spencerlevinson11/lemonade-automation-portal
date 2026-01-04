@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import Company, Automation, PricingCustomer, PricingQuote, PricingQuoteLine
+from .models import Company, Automation, PricingCustomer, PricingQuote, PricingQuoteLine, TipEntry
+
 
 
 
@@ -28,6 +29,14 @@ class PricingCustomerAdmin(admin.ModelAdmin):
     list_display = ("name", "company")
     search_fields = ("name", "company__name")
     list_filter = ("company",)
+
+@admin.register(TipEntry)
+class TipEntryAdmin(admin.ModelAdmin):
+    list_display = ("tip_date", "company", "user", "shift_start", "shift_end", "tips_total", "created_at")
+    list_filter = ("company", "user", "tip_date")
+    search_fields = ("notes", "user__username", "company__name")
+    date_hierarchy = "tip_date"
+    ordering = ("-tip_date", "-created_at")
 
 
 @admin.register(PricingQuote)
