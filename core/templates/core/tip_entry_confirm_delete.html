@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Delete tip entry</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; padding: 24px;">
+  <h1 style="margin:0 0 10px;">Delete entry?</h1>
+
+  <p style="max-width: 720px;">
+    This will permanently delete this tip entry. This cannot be undone.
+  </p>
+
+  <div style="padding: 12px; border: 1px solid #ddd; border-radius: 10px; max-width: 720px;">
+    <div><strong>Date:</strong> {{ entry.tip_date }}</div>
+    <div><strong>Shift:</strong> {{ entry.shift_start }} – {{ entry.shift_end }}</div>
+    <div><strong>Job:</strong> {{ entry.get_job_type_display }}</div>
+    <div><strong>Tips:</strong> {{ entry.tips_total }}</div>
+    {% if entry.notes %}<div><strong>Notes:</strong> {{ entry.notes }}</div>{% endif %}
+  </div>
+
+  <form method="post" style="margin-top: 16px;">
+    {% csrf_token %}
+    <button name="confirm" value="yes" type="submit"
+            style="background:#dc2626;color:#fff;border:0;padding:10px 14px;border-radius:10px;cursor:pointer;">
+      Yes, delete it
+    </button>
+    <button name="confirm" value="no" type="submit"
+            style="margin-left:10px;background:#e5e7eb;color:#111827;border:0;padding:10px 14px;border-radius:10px;cursor:pointer;">
+      Cancel
+    </button>
+  </form>
+</body>
+</html>
