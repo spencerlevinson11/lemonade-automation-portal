@@ -133,13 +133,31 @@ class PricingUploadForm(forms.Form):
         help_text="Upload your pricing matrix CSV."
     )
 
+
 class TipEntryForm(forms.Form):
+    # Step 3 edit: job type selector
+    JOB_TYPE_CHOICES = [
+        ("well_bartender", "Well-bartender"),
+        ("bartender", "Bartender"),
+        ("server", "Server"),
+        ("mix_well_server", "Mix of well and serving"),
+        ("mix_bartender_server", "Mix of bartender and serving"),
+    ]
+
     tip_date = forms.DateField(
         label="Tip date",
         required=True,
         widget=forms.DateInput(attrs={"type": "date"}),
         initial=timezone.localdate,
         help_text="Defaults to today, but you can change it.",
+    )
+
+    job_type = forms.ChoiceField(
+        label="Job type",
+        required=True,
+        choices=JOB_TYPE_CHOICES,
+        initial="bartender",
+        help_text="Select what you worked this shift.",
     )
 
     shift_start = forms.TimeField(
@@ -170,6 +188,7 @@ class TipEntryForm(forms.Form):
         required=False,
         widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Any notes about the shift..."}),
     )
+
 
 class PricingPalletQuantityUpdateForm(forms.Form):
     """
