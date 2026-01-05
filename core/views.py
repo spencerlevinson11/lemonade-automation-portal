@@ -868,11 +868,20 @@ def tip_tracker_view(request):
         .order_by("-tip_date", "-created_at")[:60]
     )
 
+    all_time_qs = TipEntry.objects.filter(company=company, user=user)
+
     grand_total_tips = (
-        TipEntry.objects.filter(company=company, user=user)
-        .aggregate(total=Sum("tips_total"))
-        .get("total")
+        all_time_qs.aggregate(total=Sum("tips_total")).get("total")
     ) or Decimal("0")
+
+    # All-time average tips per hour = (sum tips) / (sum hours)
+    # Duration is derived from shift_start/shift_end, so we compute hours in Python.
+    grand_total_hours = sum((e.shift_duration_hours() for e in all_time_qs), 0.0)
+    avg_tips_per_hour_all_time = (
+        float(grand_total_tips) / grand_total_hours
+        if grand_total_hours > 0
+        else 0.0
+    )
 
     # Analytics outputs
     weekday_table_html = None
@@ -1203,6 +1212,7 @@ def tip_tracker_view(request):
         "form": form,
         "entries": entries,
         "grand_total_tips": grand_total_tips,
+        "avg_tips_per_hour_all_time": avg_tips_per_hour_all_time,
         "weekday_table_html": weekday_table_html,
         "start_hour_table_html": start_hour_table_html,
         "job_type_table_html": job_type_table_html,
