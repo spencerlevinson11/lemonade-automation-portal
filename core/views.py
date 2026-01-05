@@ -5,6 +5,8 @@ import re
 import tempfile
 import zipfile
 
+from decimal import Decimal, InvalidOperation
+
 from io import BytesIO
 
 import pandas as pd
@@ -14,6 +16,7 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
+from django.db.models import Sum
 from django.http import FileResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -822,6 +825,25 @@ def tip_tracker_view(request):
     if not company:
         return HttpResponseForbidden("No company is associated with this user.")
 
+    # Two different POSTs hit this route:
+    #   1) Add a new entry (main form)
+    #   2) Inline edit of a prior entry's tips_total
+    if request.method == "POST" and request.POST.get("action") == "update_tip":
+        entry_id = request.POST.get("entry_id")
+        tips_raw = (request.POST.get("tips_total") or "").strip()
+
+        entry = get_object_or_404(TipEntry, id=entry_id, company=company, user=user)
+
+        try:
+            entry.tips_total = Decimal(tips_raw) if tips_raw != "" else Decimal("0")
+        except (InvalidOperation, ValueError):
+            messages.error(request, "Invalid tip amount.")
+            return redirect("tip_tracker")
+
+        entry.save(update_fields=["tips_total"])
+        messages.success(request, "Tip amount updated.")
+        return redirect("tip_tracker")
+
     if request.method == "POST":
         form = TipEntryForm(request.POST)
         if form.is_valid():
@@ -845,6 +867,12 @@ def tip_tracker_view(request):
         .filter(company=company, user=user)
         .order_by("-tip_date", "-created_at")[:60]
     )
+
+    grand_total_tips = (
+        TipEntry.objects.filter(company=company, user=user)
+        .aggregate(total=Sum("tips_total"))
+        .get("total")
+    ) or Decimal("0")
 
     # Analytics outputs
     weekday_table_html = None
@@ -1174,6 +1202,7 @@ def tip_tracker_view(request):
         "company": company,
         "form": form,
         "entries": entries,
+        "grand_total_tips": grand_total_tips,
         "weekday_table_html": weekday_table_html,
         "start_hour_table_html": start_hour_table_html,
         "job_type_table_html": job_type_table_html,
