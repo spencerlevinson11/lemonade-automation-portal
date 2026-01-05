@@ -16,6 +16,24 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
+from django.db.models import Sumfrom __future__ import annotations
+
+import os
+import re
+import tempfile
+import zipfile
+
+from decimal import Decimal, InvalidOperation
+
+from io import BytesIO
+
+import pandas as pd
+import openpyxl
+from openpyxl.styles import Font, PatternFill
+from django.contrib import messages
+from django.contrib.auth import logout
+from django.contrib.auth.decorators import login_required
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.http import FileResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
@@ -2259,18 +2277,64 @@ def pricing_customer_quote_view(request, customer_id):
         return HttpResponseForbidden("No company is associated with this user.")
 
     customer = get_object_or_404(PricingCustomer, id=customer_id, company=company)
-    lines = PricingQuoteLine.objects.filter(
-        company=company,
-        customer=customer,
-        include_in_quote=True,
-    ).order_by("destination", "product_description")
+    # NOTE: We materialize to a list because we compute a pivot grid in-memory for the quote.
+    lines = list(
+        PricingQuoteLine.objects.filter(
+            company=company,
+            customer=customer,
+            include_in_quote=True,
+        ).order_by("destination", "product_description")
+    )
 
     currency_code, currency_symbol = get_currency_for_customer_name(customer.name)
 
     overrides = get_quote_desc_overrides(request, company.id, customer.id)
 
     for line in lines:
-        line.display_product_description = overrides.get(str(line.id), line.product_description)
+        line.display_product_description = overrides.get(
+            str(line.id),
+            line.product_description,
+        )
+
+    # Build pivot axes
+    # X axis: destinations (locations)
+    destinations: list[str] = []
+    seen_dests: set[str] = set()
+    # Y axis: products (descriptions)
+    products: list[str] = []
+    seen_products: set[str] = set()
+
+    for line in lines:
+        d = (line.destination or "").strip() or "(Unspecified)"
+        p = (line.display_product_description or "").strip() or "(Unspecified)"
+
+        if d not in seen_dests:
+            destinations.append(d)
+            seen_dests.add(d)
+
+        if p not in seen_products:
+            products.append(p)
+            seen_products.add(p)
+
+    # grid[product][destination] = PricingQuoteLine | None
+    grid: dict[str, dict[str, PricingQuoteLine | None]] = {
+        p: {d: None for d in destinations} for p in products
+    }
+    for line in lines:
+        d = (line.destination or "").strip() or "(Unspecified)"
+        p = (line.display_product_description or "").strip() or "(Unspecified)"
+        # If duplicates exist, keep the first one (stable with queryset ordering)
+        if p in grid and d in grid[p] and grid[p][d] is None:
+            grid[p][d] = line
+
+    # Precompute a template-friendly structure: one row per product
+    quote_rows = [
+        {
+            "product": p,
+            "cells": [grid[p].get(d) for d in destinations],
+        }
+        for p in products
+    ]
 
     if overrides:
         clear_quote_desc_overrides(request, company.id, customer.id)
@@ -2282,6 +2346,8 @@ def pricing_customer_quote_view(request, customer_id):
             "company": company,
             "customer": customer,
             "lines": lines,
+            "destinations": destinations,
+            "quote_rows": quote_rows,
             "currency_code": currency_code,
             "currency_symbol": currency_symbol,
         },
