@@ -4,32 +4,13 @@ import os
 import re
 import tempfile
 import zipfile
-
 from decimal import Decimal, InvalidOperation
-
 from io import BytesIO
 
-import pandas as pd
 import openpyxl
-from openpyxl.styles import Font, PatternFill
-from django.contrib import messages
-from django.contrib.auth import logout
-from django.contrib.auth.decorators import login_required
-from django.db import IntegrityError, transaction
-from django.db.models import Sumfrom __future__ import annotations
-
-import os
-import re
-import tempfile
-import zipfile
-
-from decimal import Decimal, InvalidOperation
-
-from io import BytesIO
-
 import pandas as pd
-import openpyxl
 from openpyxl.styles import Font, PatternFill
+
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
@@ -47,6 +28,7 @@ from .models import Automation, Company, PricingCustomer, PricingQuoteLine, TipE
 from .rpc_generation import generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
+
 
 
 # -----------------------------
