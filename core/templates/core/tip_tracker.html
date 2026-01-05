@@ -237,6 +237,13 @@
     <div class="grid">
       <div class="card">
         <h2 style="margin:0 0 10px;">Recent entries</h2>
+
+        <div style="margin: 6px 0 14px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(148,163,184,0.20); background: rgba(2,6,23,0.25);">
+          <div style="color: var(--text-muted); font-size: 0.78rem; letter-spacing: .08em; text-transform: uppercase;">Tip grand total</div>
+          <div style="font-size: 2.4rem; font-weight: 900; line-height: 1.05; margin-top: 2px;">${{ grand_total_tips|floatformat:2 }}</div>
+          <div class="muted" style="font-size: 0.85rem; margin-top: 4px;">All-time total across all saved shifts</div>
+        </div>
+
         {% if entries %}
           <div class="scroll-x">
             <table>
@@ -256,7 +263,22 @@
                     <td>{{ e.tip_date }}</td>
                     <td>{{ e.get_job_type_display }}</td>
                     <td>{{ e.shift_start }} → {{ e.shift_end }}</td>
-                    <td>${{ e.tips_total }}</td>
+                    <td>
+                      <form method="post" style="display:flex; gap:8px; align-items:center;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="update_tip">
+                        <input type="hidden" name="entry_id" value="{{ e.id }}">
+                        <input
+                          name="tips_total"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value="{{ e.tips_total }}"
+                          style="width: 120px; padding: 8px 10px; border-radius: 10px;"
+                        />
+                        <button class="btn" type="submit" style="padding: 8px 10px; border-radius: 10px;">Save</button>
+                      </form>
+                    </td>
                     <td class="muted">{{ e.notes|default:"" }}</td>
                     <td class="actions">
                       <a class="btn-danger" href="{% url 'tip_entry_delete' e.id %}">Delete</a>
@@ -389,5 +411,8 @@
   </div>
 </body>
 </html>
+
+
+
 
 
