@@ -28,6 +28,25 @@
       font-size: 13px;
     }
 
+    .table-wrap{
+      overflow-x: auto;
+    }
+
+    .cell-price{
+      font-weight: 700;
+    }
+
+    .cell-qty{
+      margin-top: 2px;
+      color: #444;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .cell-empty{
+      color: #777;
+    }
+
     th, td{
       border: 1px solid #111;
       padding: 8px;
@@ -61,6 +80,10 @@
         display: none !important;
       }
 
+      .table-wrap{
+        overflow: visible;
+      }
+
       body {
         margin: 0;
       }
@@ -81,26 +104,36 @@
     <p>{{ company.name }}</p>
   {% endif %}
 
-  <table>
-    <thead>
-      <tr>
-        <th>Destination</th>
-        <th>Product Description</th>
-        <th class="num">Price (Delivered)</th>
-        <th class="num">Pallet Quantity</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for line in lines %}
+  <div class="table-wrap">
+    <table>
+      <thead>
         <tr>
-          <td>{{ line.destination }}</td>
-          <td>{{ line.display_product_description }}</td>
-          <td class="num">{{ currency_symbol }}{{ line.price_delivered }}</td>
-          <td class="num">{{ line.pallet_quantity_pieces }} pieces</td>
+          <th style="width: 34%;">Product</th>
+          {% for dest in destinations %}
+            <th>{{ dest }}</th>
+          {% endfor %}
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for row in quote_rows %}
+          <tr>
+            <td><strong>{{ row.product }}</strong></td>
+
+            {% for line in row.cells %}
+              <td>
+                {% if line %}
+                  <div class="cell-price">{{ currency_symbol }}{{ line.price_delivered }}</div>
+                  <div class="cell-qty">{{ line.pallet_quantity_pieces }} pcs / pallet</div>
+                {% else %}
+                  <div class="cell-empty">—</div>
+                {% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 
 </body>
 </html>
