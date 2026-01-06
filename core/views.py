@@ -585,7 +585,8 @@ def _append_projection_rows_to_clean_data(
     next_row = last + 1
 
     highlight_fill = PatternFill("solid", fgColor="FFF2CC")  # light yellow
-    italic_font = Font(italic=True, color="1F2937")
+    italic_font = Font(italic=True, color="000000")
+
 
     def write_row(r: int, *, nld, customer, bucket_type, quantity):
         ws.cell(r, c_nld).value = nld
