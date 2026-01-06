@@ -135,5 +135,43 @@
     </table>
   </div>
 
+  {% if grey_quote_rows and grey_quote_rows|length %}
+    <div style="margin-top: 18px;">
+      <h1 style="margin-top: 18px;">Grey Buckets</h1>
+      <p style="margin-top: 0;">(Listed separately from the main pricing sheet)</p>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 34%;">Product</th>
+            {% for dest in destinations %}
+              <th>{{ dest }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in grey_quote_rows %}
+            <tr>
+              <td><strong>{{ row.product }}</strong></td>
+
+              {% for line in row.cells %}
+                <td>
+                  {% if line %}
+                    <div class="cell-price">{{ currency_symbol }}{{ line.price_delivered }}</div>
+                    <div class="cell-qty">{{ line.pallet_quantity_pieces }} pcs / pallet</div>
+                  {% else %}
+                    <div class="cell-empty">—</div>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
 </body>
 </html>
