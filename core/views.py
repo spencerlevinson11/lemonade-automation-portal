@@ -1306,13 +1306,15 @@ def tip_tracker_export_excel(request):
     thin = Side(style="thin", color="1F2937")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    header_fill = PatternFill("solid", fgColor="0B1120")
+    header_fill = PatternFill("solid", fgColor="F3F4F6")  # light gray
     accent_fill = PatternFill("solid", fgColor="FACC15")
 
     title_font = Font(size=18, bold=True, color="FACC15")
-    h_font = Font(size=11, bold=True, color="E5E7EB")
-    normal_font = Font(size=11, color="E5E7EB")
-    muted_font = Font(size=10, color="9CA3AF")
+    h_font = Font(size=11, bold=True, color="000000")
+    normal_font = Font(size=11, color="000000")
+
+    muted_font = Font(size=10, color="000000")
+
 
     # Background columns (make sheet look consistent with your dark UI)
     # Excel doesn't support whole-sheet background well, so we style headers + key cells.
