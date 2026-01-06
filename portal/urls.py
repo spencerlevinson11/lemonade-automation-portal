@@ -47,6 +47,8 @@ urlpatterns = [
     # Tip Tracker
     path("automations/tips/", core_views.tip_tracker_view, name="tip_tracker"),
     path("tips/", core_views.tip_tracker_view, name="tip_tracker"),
+    path("tips/export/", core_views.tip_tracker_export_excel, name="tip_tracker_export_excel"),
+    path("automations/tips/export/", core_views.tip_tracker_export_excel, name="tip_tracker_export_excel"),
     path(
         "tips/delete/<int:entry_id>/",
         core_views.tip_entry_delete_view,
