@@ -174,7 +174,13 @@
         <p class="muted">
           Company: <strong style="color: var(--accent)">{{ company.name }}</strong>
         </p>
-      </div>
+      
+        <div style="margin-top: 10px; display:flex; gap:10px; flex-wrap: wrap;">
+          <a class="btn" style="width:auto; text-decoration:none;" href="{% url 'tip_tracker_export_excel' %}?company_id={{ company.id }}">
+            Export to Excel / PDF
+          </a>
+        </div>
+</div>
       <div class="pill">
         <a href="{% url 'dashboard' %}">← Back to dashboard</a>
       </div>
@@ -420,6 +426,8 @@
   </div>
 </body>
 </html>
+
+
 
 
 
