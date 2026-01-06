@@ -2310,12 +2310,26 @@ def pricing_customer_quote_view(request, customer_id):
             grid[p][d] = line
 
     # Precompute a template-friendly structure: one row per product
+    def _is_grey_product(product_name: str) -> bool:
+        return "grey" in (product_name or "").strip().lower()
+
+    products_non_grey = [p for p in products if not _is_grey_product(p)]
+    products_grey = [p for p in products if _is_grey_product(p)]
+
     quote_rows = [
         {
             "product": p,
             "cells": [grid[p].get(d) for d in destinations],
         }
-        for p in products
+        for p in products_non_grey
+    ]
+
+    grey_quote_rows = [
+        {
+            "product": p,
+            "cells": [grid[p].get(d) for d in destinations],
+        }
+        for p in products_grey
     ]
 
     if overrides:
@@ -2330,6 +2344,7 @@ def pricing_customer_quote_view(request, customer_id):
             "lines": lines,
             "destinations": destinations,
             "quote_rows": quote_rows,
+            "grey_quote_rows": grey_quote_rows,
             "currency_code": currency_code,
             "currency_symbol": currency_symbol,
         },
