@@ -9,7 +9,8 @@ from io import BytesIO
 
 import openpyxl
 import pandas as pd
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 from django.contrib import messages
 from django.contrib.auth import logout
@@ -1230,6 +1231,301 @@ def tip_tracker_view(request):
     }
     return render(request, "core/tip_tracker.html", context)
 
+
+@login_required
+@require_http_methods(["GET"])
+def tip_tracker_export_excel(request):
+    """
+    Export a polished Excel tip report that also prints cleanly to PDF.
+    Includes:
+      - Summary (grand total, averages)
+      - Recent entries table (all entries for the user/company)
+      - Key analytics tables already computed in tip_tracker_view (weekday/job type)
+    """
+    user = request.user
+
+    company_id = request.GET.get("company_id")
+    if company_id:
+        company = get_object_or_404(Company, pk=company_id)
+    else:
+        company = Company.objects.first()
+
+    # Safety: enforce company scoping if your app requires it
+    # If you have per-user company access rules, apply them here.
+    if company is None:
+        return HttpResponseForbidden("No company found.")
+
+    all_time_qs = TipEntry.objects.filter(company=company, user=user).order_by("tip_date", "created_at")
+
+    # Build a DataFrame for nicer grouping/analytics
+    rows = []
+    for e in all_time_qs:
+        duration = e.shift_duration_hours()
+        tips_total = float(e.tips_total or 0)
+        tips_hr = float(e.tips_per_hour() or 0)
+        rows.append({
+            "Date": e.tip_date,
+            "Job type": e.get_job_type_display() if hasattr(e, "get_job_type_display") else getattr(e, "job_type", ""),
+            "Start": e.shift_start,
+            "End": e.shift_end,
+            "Hours": duration,
+            "Tips": tips_total,
+            "Tips/hr": tips_hr,
+            "Notes": e.notes or "",
+        })
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["Weekday"] = pd.to_datetime(df["Date"]).dt.day_name()
+
+    grand_total = Decimal("0")
+    try:
+        grand_total = (all_time_qs.aggregate(total=Sum("tips_total")).get("total")) or Decimal("0")
+    except Exception:
+        grand_total = Decimal("0")
+
+    avg_tips = float(df["Tips"].mean()) if not df.empty else 0.0
+    avg_tips_hr = float(df["Tips/hr"].mean()) if not df.empty else 0.0
+    total_shifts = int(len(df)) if not df.empty else 0
+
+    # --- Workbook ---
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tip Report"
+
+    # Print/PDF friendly page setup
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.page_margins.left = 0.35
+    ws.page_margins.right = 0.35
+    ws.page_margins.top = 0.5
+    ws.page_margins.bottom = 0.5
+
+    thin = Side(style="thin", color="1F2937")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    header_fill = PatternFill("solid", fgColor="0B1120")
+    accent_fill = PatternFill("solid", fgColor="FACC15")
+
+    title_font = Font(size=18, bold=True, color="FACC15")
+    h_font = Font(size=11, bold=True, color="E5E7EB")
+    normal_font = Font(size=11, color="E5E7EB")
+    muted_font = Font(size=10, color="9CA3AF")
+
+    # Background columns (make sheet look consistent with your dark UI)
+    # Excel doesn't support whole-sheet background well, so we style headers + key cells.
+
+    # --- Title / Summary ---
+    ws["A1"] = "Tip Tracker Report"
+    ws["A1"].font = title_font
+    ws.merge_cells("A1:H1")
+
+    ws["A2"] = f"Company: {company.name}"
+    ws["A2"].font = muted_font
+    ws.merge_cells("A2:H2")
+
+    ws["A3"] = f"Generated: {timezone.localtime(timezone.now()).strftime('%Y-%m-%d %I:%M %p')}"
+    ws["A3"].font = muted_font
+    ws.merge_cells("A3:H3")
+
+    # KPI row
+    kpis = [
+        ("Grand total tips", float(grand_total)),
+        ("Total shifts", total_shifts),
+        ("Avg tips/shift", avg_tips),
+        ("Avg tips/hr", avg_tips_hr),
+    ]
+    start_row = 5
+    col = 1
+    for label, value in kpis:
+        c1 = ws.cell(row=start_row, column=col, value=label)
+        c2 = ws.cell(row=start_row + 1, column=col, value=value)
+        ws.merge_cells(start_row=start_row, start_column=col, end_row=start_row, end_column=col+1)
+        ws.merge_cells(start_row=start_row+1, start_column=col, end_row=start_row+1, end_column=col+1)
+
+        c1 = ws.cell(row=start_row, column=col)
+        c2 = ws.cell(row=start_row + 1, column=col)
+
+        c1.fill = header_fill
+        c1.font = h_font
+        c1.alignment = Alignment(horizontal="center", vertical="center")
+        c1.border = border
+
+        c2.fill = PatternFill("solid", fgColor="111827")
+        c2.font = Font(size=14, bold=True, color="E5E7EB")
+        c2.number_format = "#,##0.00" if isinstance(value, float) else "0"
+        c2.alignment = Alignment(horizontal="center", vertical="center")
+        c2.border = border
+
+        # apply border to merged partner cell
+        ws.cell(row=start_row, column=col+1).border = border
+        ws.cell(row=start_row+1, column=col+1).border = border
+
+        col += 2
+
+    current_row = start_row + 3
+
+    # --- Entries table ---
+    ws["A{}".format(current_row)] = "Entries"
+    ws["A{}".format(current_row)].font = Font(size=13, bold=True, color="E5E7EB")
+    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=8)
+    current_row += 1
+
+    columns = ["Date", "Weekday", "Job type", "Start", "End", "Hours", "Tips", "Tips/hr", "Notes"]
+    # We'll print Notes last but keep width reasonable by truncating.
+    columns = ["Date", "Weekday", "Job type", "Start", "End", "Hours", "Tips", "Tips/hr", "Notes"]
+
+    # Header row
+    for ci, name in enumerate(columns, start=1):
+        cell = ws.cell(row=current_row, column=ci, value=name)
+        cell.fill = header_fill
+        cell.font = h_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+    current_row += 1
+
+    def _safe_note(s: str, max_len: int = 120) -> str:
+        s = (s or "").strip()
+        if len(s) <= max_len:
+            return s
+        return s[:max_len-1] + "…"
+
+    # Data rows
+    if df.empty:
+        ws.cell(row=current_row, column=1, value="No entries yet.").font = muted_font
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=9)
+        current_row += 2
+    else:
+        for _, r in df.iterrows():
+            values = [
+                r.get("Date"),
+                r.get("Weekday"),
+                r.get("Job type"),
+                r.get("Start"),
+                r.get("End"),
+                float(r.get("Hours") or 0),
+                float(r.get("Tips") or 0),
+                float(r.get("Tips/hr") or 0),
+                _safe_note(str(r.get("Notes") or "")),
+            ]
+            for ci, v in enumerate(values, start=1):
+                cell = ws.cell(row=current_row, column=ci, value=v)
+                cell.font = normal_font
+                cell.border = border
+                cell.alignment = Alignment(horizontal="left" if ci in (3,9) else "center", vertical="top", wrap_text=(ci==9))
+                if ci in (6,7,8):
+                    cell.number_format = "#,##0.00"
+            current_row += 1
+        current_row += 2
+
+    # Freeze panes at the entries header
+    ws.freeze_panes = "A{}".format(start_row + 3)
+
+    # Column widths (PDF friendly)
+    widths = {
+        1: 11,  # Date
+        2: 12,  # Weekday
+        3: 22,  # Job type
+        4: 9,   # Start
+        5: 9,   # End
+        6: 9,   # Hours
+        7: 10,  # Tips
+        8: 10,  # Tips/hr
+        9: 40,  # Notes
+    }
+    for c, w in widths.items():
+        ws.column_dimensions[get_column_letter(c)].width = w
+
+    # --- Quick analytics (if data exists) ---
+    if not df.empty:
+        # Weekday summary
+        ws["A{}".format(current_row)] = "Weekday summary"
+        ws["A{}".format(current_row)].font = Font(size=13, bold=True, color="E5E7EB")
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=4)
+        current_row += 1
+
+        wd = (
+            df.groupby("Weekday")
+              .agg(shifts=("Tips", "count"), total_tips=("Tips", "sum"), avg_tips=("Tips", "mean"), avg_tips_hr=("Tips/hr", "mean"))
+              .reset_index()
+        )
+        wd_cols = ["Weekday", "shifts", "total_tips", "avg_tips", "avg_tips_hr"]
+        for ci, name in enumerate(wd_cols, start=1):
+            cell = ws.cell(row=current_row, column=ci, value=name.replace("_", " ").title())
+            cell.fill = header_fill
+            cell.font = h_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border
+        current_row += 1
+
+        for _, r in wd.iterrows():
+            vals = [r["Weekday"], int(r["shifts"]), float(r["total_tips"]), float(r["avg_tips"]), float(r["avg_tips_hr"])]
+            for ci, v in enumerate(vals, start=1):
+                cell = ws.cell(row=current_row, column=ci, value=v)
+                cell.font = normal_font
+                cell.border = border
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                if ci >= 3:
+                    cell.number_format = "#,##0.00"
+            current_row += 1
+
+        current_row += 2
+
+        # Job type summary
+        ws["A{}".format(current_row)] = "Job type summary"
+        ws["A{}".format(current_row)].font = Font(size=13, bold=True, color="E5E7EB")
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=4)
+        current_row += 1
+
+        jt = (
+            df.groupby("Job type")
+              .agg(shifts=("Tips", "count"), total_tips=("Tips", "sum"), avg_tips=("Tips", "mean"), avg_tips_hr=("Tips/hr", "mean"))
+              .reset_index()
+              .sort_values("avg_tips_hr", ascending=False)
+        )
+        jt_cols = ["Job type", "shifts", "total_tips", "avg_tips", "avg_tips_hr"]
+        for ci, name in enumerate(jt_cols, start=1):
+            cell = ws.cell(row=current_row, column=ci, value=name.replace("_", " ").title())
+            cell.fill = header_fill
+            cell.font = h_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border
+        current_row += 1
+
+        for _, r in jt.iterrows():
+            vals = [r["Job type"], int(r["shifts"]), float(r["total_tips"]), float(r["avg_tips"]), float(r["avg_tips_hr"])]
+            for ci, v in enumerate(vals, start=1):
+                cell = ws.cell(row=current_row, column=ci, value=v)
+                cell.font = normal_font
+                cell.border = border
+                cell.alignment = Alignment(horizontal="left" if ci == 1 else "center", vertical="center")
+                if ci >= 3:
+                    cell.number_format = "#,##0.00"
+            current_row += 1
+
+        current_row += 1
+
+    # Set print area to used range
+    ws.print_area = f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
+
+    # Repeat header rows (title + company + generated + blank + KPI labels/values)
+    ws.print_title_rows = "1:6"
+
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+
+    filename = f"tip_report_{company.name}_{timezone.localtime(timezone.now()).strftime('%Y%m%d_%H%M')}.xlsx"
+    filename = re.sub(r"[^A-Za-z0-9_.-]+", "_", filename)
+
+    return FileResponse(
+        out,
+        as_attachment=True,
+        filename=filename,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def tip_entry_delete_view(request, entry_id: int):
@@ -2349,3 +2645,4 @@ def pricing_customer_quote_view(request, customer_id):
             "currency_symbol": currency_symbol,
         },
     )
+
