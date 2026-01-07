@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 from django.contrib.auth.models import User
 from decimal import Decimal
 from django.core.validators import MinValueValidator
@@ -17,7 +18,22 @@ class Company(models.Model):
         blank=True,
     )
 
-    def __str__(self):
+def due_date(self):
+    """Return a due date if weeks_to_complete is set (Urgent projects)."""
+    if not self.weeks_to_complete:
+        return None
+    return self.created_at + datetime.timedelta(weeks=int(self.weeks_to_complete))
+
+def weeks_remaining(self):
+    """Number of whole weeks remaining until due_date (can be negative)."""
+    due = self.due_date()
+    if due is None:
+        return None
+    delta = due - timezone.now()
+    return int(delta.days // 7)
+
+def __str__
+(self):
         return self.name
 
 
@@ -32,6 +48,17 @@ class Automation(models.Model):
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     last_run_at = models.DateTimeField(null=True, blank=True)
+
+# If urgent, how many weeks do you have to complete it?
+weeks_to_complete = models.PositiveIntegerField(
+    null=True,
+    blank=True,
+    help_text="If priority is Urgent, number of weeks to complete the project.",
+)
+
+completed = models.BooleanField(default=False)
+completed_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
