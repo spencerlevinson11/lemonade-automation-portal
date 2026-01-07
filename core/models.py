@@ -214,3 +214,60 @@ class PricingQuoteLine(models.Model):
 
 
 
+
+class ProjectPlanEntry(models.Model):
+    PRIORITY_LOW = 1
+    PRIORITY_MEDIUM = 2
+    PRIORITY_HIGH = 3
+    PRIORITY_URGENT = 4
+
+    PRIORITY_CHOICES = [
+        (PRIORITY_LOW, "Low"),
+        (PRIORITY_MEDIUM, "Medium"),
+        (PRIORITY_HIGH, "High"),
+        (PRIORITY_URGENT, "Urgent"),
+    ]
+
+    # 1 (easy) → 5 (very hard)
+    DIFFICULTY_CHOICES = [(i, str(i)) for i in range(1, 6)]
+
+    # 1 (low risk) → 5 (high risk)
+    RISK_CHOICES = [(i, str(i)) for i in range(1, 6)]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="project_plans")
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="project_plans")
+
+    project_name = models.CharField(max_length=255)
+    notes = models.TextField(blank=True)
+
+    estimated_cost = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=Decimal("0.00"),
+    )
+
+    estimated_time_hours = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=Decimal("0.00"),
+        help_text="Estimated total hours.",
+    )
+
+    estimated_difficulty = models.IntegerField(choices=DIFFICULTY_CHOICES, default=3)
+    priority_level = models.IntegerField(choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM)
+    risk_factor = models.IntegerField(choices=RISK_CHOICES, default=3, help_text="Overall risk factor (1-5).")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-priority_level", "-updated_at", "-created_at"]
+
+    def __str__(self):
+        return f"{self.project_name} ({self.company.name})"
+
+
+
+
