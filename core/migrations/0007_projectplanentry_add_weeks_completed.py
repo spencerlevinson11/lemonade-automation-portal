@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("core", "0006_projectplanentry"),  # <-- CHANGE this if your create-model migration has a different number/name
+        ("core", "0006_projectplanentry"),
     ]
 
     operations = [
