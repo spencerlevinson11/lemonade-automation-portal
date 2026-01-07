@@ -297,6 +297,7 @@
               <th><a href="?sort=estimated_time_hours&dir={% if sort == 'estimated_time_hours' and dir == 'asc' %}desc{% else %}asc{% endif %}">Hours</a></th>
               <th><a href="?sort=estimated_difficulty&dir={% if sort == 'estimated_difficulty' and dir == 'asc' %}desc{% else %}asc{% endif %}">Difficulty</a></th>
               <th><a href="?sort=risk_factor&dir={% if sort == 'risk_factor' and dir == 'asc' %}desc{% else %}asc{% endif %}">Risk</a></th>
+              <th class="muted">Weeks</th>
               <th class="muted">Notes</th>
               <th class="muted">Actions</th>
             </tr>
@@ -320,11 +321,16 @@
                 <td>{{ p.estimated_time_hours }}</td>
                 <td>{{ p.estimated_difficulty }}</td>
                 <td>{{ p.risk_factor }}</td>
+                <td>{% if p.priority_level == 4 %}{{ p.weeks_to_complete|default:"—" }}{% else %}—{% endif %}</td>
                 <td style="max-width: 340px;">
                   <span class="muted">{% if p.notes %}{{ p.notes }}{% else %}—{% endif %}</span>
                 </td>
                 <td>
                   <div class="actions">
+                    <form method="post" action="{% url 'project_plan_complete' p.id %}" style="display:inline;">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-secondary" style="padding:6px 10px; border-radius:10px;">Complete</button>
+                    </form>
                     <a href="?edit={{ p.id }}">Edit</a>
                     <span class="muted">|</span>
                     <a href="{% url 'project_plan_delete' p.id %}">Delete</a>
@@ -332,11 +338,69 @@
                 </td>
               </tr>
             {% empty %}
-              <tr><td colspan="8" class="muted">No projects yet — click “Add new project”.</td></tr>
+              <tr><td colspan="9" class="muted">No projects yet — click “Add new project”.</td></tr>
             {% endfor %}
           </tbody>
       </table>
+    
+
+<div class="card" style="margin-top:14px;">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h2 style="margin-bottom:6px;">Completed projects</h2>
+      <p class="help" style="margin-bottom:0;">Projects you marked complete.</p>
     </div>
+  </div>
+
+  <div class="table-wrap" style="margin-top:14px;">
+    <table>
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Priority</th>
+            <th>Cost</th>
+            <th>Hours</th>
+            <th>Difficulty</th>
+            <th>Risk</th>
+            <th>Weeks</th>
+            <th>Completed</th>
+            <th class="muted">Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in completed_projects %}
+            <tr>
+              <td><strong>{{ p.project_name }}</strong></td>
+              <td>
+                {% if p.priority_level == 4 %}
+                  <span class="pill pill-urgent">Urgent</span>
+                {% elif p.priority_level == 3 %}
+                  <span class="pill pill-high">High</span>
+                {% elif p.priority_level == 2 %}
+                  <span class="pill pill-med">Medium</span>
+                {% else %}
+                  <span class="pill pill-low">Low</span>
+                {% endif %}
+              </td>
+              <td>${{ p.estimated_cost }}</td>
+              <td>{{ p.estimated_time_hours }}</td>
+              <td>{{ p.estimated_difficulty }}</td>
+              <td>{{ p.risk_factor }}</td>
+              <td>{% if p.priority_level == 4 %}{{ p.weeks_to_complete|default:"—" }}{% else %}—{% endif %}</td>
+              <td class="muted">{% if p.completed_at %}{{ p.completed_at|date:"Y-m-d" }}{% else %}—{% endif %}</td>
+              <td style="max-width: 340px;">
+                <span class="muted">{% if p.notes %}{{ p.notes }}{% else %}—{% endif %}</span>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="9" class="muted">No completed projects yet.</td></tr>
+          {% endfor %}
+        </tbody>
+    </table>
+  </div>
+</div>
+
+</div>
   </div>
 
   <!-- Wizard modal -->
@@ -417,8 +481,20 @@
             </div>
           </div>
 
-          <!-- Step 7 -->
-          <div class="wizard-step" data-step="6" style="display:none;">
+          
+
+<!-- Step 7 -->
+<div class="wizard-step" data-step="6" style="display:none;">
+  <p class="wizard-question">How many weeks do you have to complete it?</p>
+  <p class="wizard-sub">Only required for Urgent projects.</p>
+  <div class="field">
+    <label for="{{ form.weeks_to_complete.id_for_label }}">Weeks to complete</label>
+    {{ form.weeks_to_complete }}
+  </div>
+</div>
+
+          <!-- Step 8 -->
+          <div class="wizard-step" data-step="7" style="display:none;">
             <p class="wizard-question">Any notes?</p>
             <p class="wizard-sub">Optional, but helpful (materials, links, measurements, etc.).</p>
             <div class="field">
@@ -445,136 +521,192 @@
   </div>
 
   <script>
-    (function(){
-      const overlay = document.getElementById('wizardOverlay');
-      const openBtn = document.getElementById('openWizardBtn');
-      const closeBtn = document.getElementById('closeWizardBtn');
-      const cancelBtn = document.getElementById('wizardCancelBtn');
-      const backBtn = document.getElementById('wizardBackBtn');
-      const nextBtn = document.getElementById('wizardNextBtn');
-      const saveBtn = document.getElementById('wizardSaveBtn');
-      const stepsText = document.getElementById('wizardStepsText');
-      const bar = document.getElementById('wizardProgressBar');
-      const serverErr = document.getElementById('wizardServerError');
-      const steps = Array.from(document.querySelectorAll('.wizard-step'));
+  (function(){
+    const overlay = document.getElementById('wizardOverlay');
+    const openBtn = document.getElementById('openWizardBtn');
+    const closeBtn = document.getElementById('closeWizardBtn');
+    const cancelBtn = document.getElementById('wizardCancelBtn');
+    const backBtn = document.getElementById('wizardBackBtn');
+    const nextBtn = document.getElementById('wizardNextBtn');
+    const saveBtn = document.getElementById('wizardSaveBtn');
+    const stepsText = document.getElementById('wizardStepsText');
+    const bar = document.getElementById('wizardProgressBar');
+    const serverErr = document.getElementById('wizardServerError');
+    const steps = Array.from(document.querySelectorAll('.wizard-step'));
 
-      const fieldByStep = [
-        document.getElementById('{{ form.project_name.id_for_label }}'),
-        document.getElementById('{{ form.estimated_cost.id_for_label }}'),
-        document.getElementById('{{ form.estimated_time_hours.id_for_label }}'),
-        document.getElementById('{{ form.estimated_difficulty.id_for_label }}'),
-        document.getElementById('{{ form.risk_factor.id_for_label }}'),
-        document.getElementById('{{ form.priority_level.id_for_label }}'),
-        document.getElementById('{{ form.notes.id_for_label }}'),
-      ];
+    // Step index mapping:
+    // 0 name, 1 cost, 2 hours, 3 difficulty, 4 risk, 5 priority, 6 weeks, 7 notes
+    const fields = [
+      document.getElementById('{{ form.project_name.id_for_label }}'),
+      document.getElementById('{{ form.estimated_cost.id_for_label }}'),
+      document.getElementById('{{ form.estimated_time_hours.id_for_label }}'),
+      document.getElementById('{{ form.estimated_difficulty.id_for_label }}'),
+      document.getElementById('{{ form.risk_factor.id_for_label }}'),
+      document.getElementById('{{ form.priority_level.id_for_label }}'),
+      document.getElementById('{{ form.weeks_to_complete.id_for_label }}'),
+      document.getElementById('{{ form.notes.id_for_label }}'),
+    ];
 
-      let idx = 0;
-      const total = steps.length;
+    function isUrgent(){
+      const pr = fields[5];
+      return pr && String(pr.value) === "4";
+    }
 
-      function open(){
-        overlay.classList.add('is-open');
-        overlay.setAttribute('aria-hidden', 'false');
-        document.body.style.overflow = 'hidden';
-        setTimeout(() => {
-          const el = fieldByStep[idx];
-          if (el && el.focus) el.focus();
-        }, 50);
-      }
-      function close(){
-        overlay.classList.remove('is-open');
-        overlay.setAttribute('aria-hidden', 'true');
-        document.body.style.overflow = '';
-      }
-      function showStep(n){
-        idx = Math.max(0, Math.min(total - 1, n));
-        steps.forEach((s, i) => s.style.display = i === idx ? 'block' : 'none');
+    // Active step order depends on priority selection (Urgent includes weeks step)
+    function getActiveOrder(){
+      const base = [0,1,2,3,4,5,6,7];
+      if (isUrgent()) return base;
+      return base.filter(i => i !== 6);
+    }
 
-        backBtn.style.visibility = idx === 0 ? 'hidden' : 'visible';
-        nextBtn.style.display = idx === total - 1 ? 'none' : 'inline-flex';
-        saveBtn.style.display = idx === total - 1 ? 'inline-flex' : 'none';
+    let pos = 0; // position in activeOrder (not raw step index)
 
-        stepsText.textContent = `Step ${idx + 1} of ${total}`;
-        bar.style.width = `${Math.round(((idx + 1) / total) * 100)}%`;
+    function open(){
+      overlay.classList.add('is-open');
+      overlay.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      setTimeout(() => {
+        const order = getActiveOrder();
+        const stepIdx = order[pos] ?? order[0];
+        const el = fields[stepIdx];
+        if (el && el.focus) el.focus();
+      }, 50);
+    }
+    function close(){
+      overlay.classList.remove('is-open');
+      overlay.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+    }
 
-        if (serverErr) serverErr.style.display = 'none';
+    function showPos(newPos){
+      const active = getActiveOrder();
+      const total = active.length;
 
-        const el = fieldByStep[idx];
-        if (el && el.focus) setTimeout(() => el.focus(), 50);
-      }
+      pos = Math.max(0, Math.min(total - 1, newPos));
+      const activeStepIdx = active[pos];
 
-      function valueIsEmpty(el){
-        if (!el) return true;
-        const v = (el.value || '').trim();
-        return v.length === 0;
-      }
+      // Show only the active step
+      steps.forEach((s, i) => s.style.display = i === activeStepIdx ? 'block' : 'none');
 
-      function validateCurrent(){
-        const el = fieldByStep[idx];
-        // Notes is optional
-        if (idx === total - 1) return true;
-        if (valueIsEmpty(el)){
-          if (serverErr){
-            serverErr.textContent = 'Please enter a value to continue.';
-            serverErr.style.display = 'block';
-          }
-          if (el && el.focus) el.focus();
-          return false;
+      backBtn.style.visibility = pos === 0 ? 'hidden' : 'visible';
+      nextBtn.style.display = pos === total - 1 ? 'none' : 'inline-flex';
+      saveBtn.style.display = pos === total - 1 ? 'inline-flex' : 'none';
+
+      stepsText.textContent = `Step ${pos + 1} of ${total}`;
+      bar.style.width = `${Math.round(((pos + 1) / total) * 100)}%`;
+
+      if (serverErr) serverErr.style.display = 'none';
+
+      const el = fields[activeStepIdx];
+      if (el && el.focus) setTimeout(() => el.focus(), 50);
+    }
+
+    function valueIsEmpty(el){
+      if (!el) return true;
+      const v = (el.value || '').trim();
+      return v.length === 0;
+    }
+
+    function validateCurrent(){
+      const active = getActiveOrder();
+      const stepIdx = active[pos];
+
+      // Notes optional
+      if (stepIdx === 7) return true;
+
+      // Weeks required only if urgent (and step exists only when urgent)
+      if (stepIdx === 6 && !isUrgent()) return true;
+
+      const el = fields[stepIdx];
+      if (valueIsEmpty(el)){
+        if (serverErr){
+          serverErr.textContent = 'Please enter a value to continue.';
+          serverErr.style.display = 'block';
         }
-        return true;
+        if (el && el.focus) el.focus();
+        return false;
       }
+      return true;
+    }
 
-      function resetForNew(){
-        fieldByStep.forEach((el) => {
-          if (!el) return;
-          if (el.tagName === 'SELECT') el.selectedIndex = 0;
-          else el.value = '';
-        });
-        const entryId = document.querySelector('#wizardForm input[name="entry_id"]');
-        if (entryId) entryId.value = '';
-        showStep(0);
-      }
+    function resetForNew(){
+      fields.forEach((el) => {
+        if (!el) return;
+        if (el.tagName === 'SELECT') el.selectedIndex = 0;
+        else el.value = '';
+      });
+      const entryId = document.querySelector('#wizardForm input[name="entry_id"]');
+      if (entryId) entryId.value = '';
+      pos = 0;
+      showPos(0);
+    }
 
-      if (openBtn) openBtn.addEventListener('click', () => { resetForNew(); open(); });
-      if (closeBtn) closeBtn.addEventListener('click', close);
-      if (cancelBtn) cancelBtn.addEventListener('click', close);
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-      document.addEventListener('keydown', (e) => { if (overlay.classList.contains('is-open') && e.key === 'Escape') close(); });
+    // Wire buttons
+    if (openBtn) openBtn.addEventListener('click', () => { resetForNew(); open(); });
+    if (closeBtn) closeBtn.addEventListener('click', close);
+    if (cancelBtn) cancelBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', (e) => { if (overlay.classList.contains('is-open') && e.key === 'Escape') close(); });
 
-      backBtn.addEventListener('click', () => showStep(idx - 1));
-      nextBtn.addEventListener('click', () => { if (validateCurrent()) showStep(idx + 1); });
+    backBtn.addEventListener('click', () => showPos(pos - 1));
+    nextBtn.addEventListener('click', () => { if (validateCurrent()) showPos(pos + 1); });
 
-      // Auto-open on edit or server errors
-      const hasServerErrors = {% if form.errors %}true{% else %}false{% endif %};
-      const isEdit = {% if edit_instance %}true{% else %}false{% endif %};
+    // If user changes priority away from urgent, automatically skip/we-clear weeks UI state.
+    const priorityEl = fields[5];
+    if (priorityEl){
+      priorityEl.addEventListener('change', () => {
+        // If we were on the weeks step and they changed away from urgent, jump to notes
+        const active = getActiveOrder();
+        const currentStepIdx = active[pos];
+        if (currentStepIdx === 6 && !isUrgent()){
+          showPos(pos); // recompute and clamp
+        } else {
+          // just recompute totals/progress
+          showPos(pos);
+        }
+      });
+    }
 
-      if (hasServerErrors || isEdit){
-        // FIX: reliably pick the first field that has errors
-        let startIdx = 0;
-        const errorMap = {
-          'project_name': 0,
-          'estimated_cost': 1,
-          'estimated_time_hours': 2,
-          'estimated_difficulty': 3,
-          'risk_factor': 4,
-          'priority_level': 5,
-          'notes': 6,
-        };
-        {% if form.errors %}
-          {% for field in form %}
-            {% if field.errors %}
-              if (startIdx === 0 && errorMap['{{ field.name }}'] !== undefined){
-                startIdx = errorMap['{{ field.name }}'];
-              }
-            {% endif %}
-          {% endfor %}
-        {% endif %}
-        showStep(startIdx);
-        open();
-      } else {
-        showStep(0);
-      }
-    })();
-  </script>
+    // Auto-open on edit or server errors
+    const hasServerErrors = {% if form.errors %}true{% else %}false{% endif %};
+    const isEdit = {% if edit_instance %}true{% else %}false{% endif %};
+
+    if (hasServerErrors || isEdit){
+      // Choose the first field that has an error
+      const errorMap = {
+        'project_name': 0,
+        'estimated_cost': 1,
+        'estimated_time_hours': 2,
+        'estimated_difficulty': 3,
+        'risk_factor': 4,
+        'priority_level': 5,
+        'weeks_to_complete': 6,
+        'notes': 7,
+      };
+
+      let desiredStep = 0;
+      {% if form.errors %}
+        {% for field in form %}
+          {% if field.errors %}
+            if (desiredStep === 0 && errorMap['{{ field.name }}'] !== undefined){
+              desiredStep = errorMap['{{ field.name }}'];
+            }
+          {% endif %}
+        {% endfor %}
+      {% endif %}
+
+      // Convert desired raw step -> position within activeOrder
+      const active = getActiveOrder();
+      const desiredPos = Math.max(0, active.indexOf(desiredStep));
+      pos = desiredPos === -1 ? 0 : desiredPos;
+      showPos(pos);
+      open();
+    } else {
+      showPos(0);
+    }
+  })();
+</script>
 </div>
 </body>
 </html>
+
