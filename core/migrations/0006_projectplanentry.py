@@ -21,7 +21,7 @@ def create_table_if_missing(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("core", "0005_pricingquoteline_pricingquote"),
+        ("core", "0005_tipentry_job_type"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
