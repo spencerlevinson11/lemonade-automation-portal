@@ -212,6 +212,9 @@ class PricingQuoteLine(models.Model):
 
 
 class ProjectPlanEntry(models.Model):
+    # IMPORTANT: Explicit id to match the existing migration that created this table with AutoField
+    id = models.AutoField(primary_key=True)
+
     PRIORITY_LOW = 1
     PRIORITY_MEDIUM = 2
     PRIORITY_HIGH = 3
@@ -302,4 +305,3 @@ class ProjectPlanEntry(models.Model):
 
     def __str__(self) -> str:
         return f"{self.project_name} ({self.company.name})"
-
