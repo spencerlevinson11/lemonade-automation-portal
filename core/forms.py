@@ -207,6 +207,20 @@ class PricingPalletQuantityUpdateForm(forms.Form):
 class ProjectPlanEntryForm(forms.ModelForm):
     entry_id = forms.IntegerField(required=False, widget=forms.HiddenInput())
 
+def clean(self):
+    cleaned = super().clean()
+    priority = cleaned.get("priority_level")
+    weeks = cleaned.get("weeks_to_complete")
+    # Priority 4 = Urgent (see model constants)
+    if priority == ProjectPlanEntry.PRIORITY_URGENT:
+        if not weeks:
+            self.add_error("weeks_to_complete", "For Urgent projects, please enter how many weeks you have to complete it.")
+    else:
+        # Not urgent: clear any value
+        cleaned["weeks_to_complete"] = None
+    return cleaned
+
+
     class Meta:
         model = ProjectPlanEntry
         fields = [
@@ -216,10 +230,13 @@ class ProjectPlanEntryForm(forms.ModelForm):
             "estimated_difficulty",
             "risk_factor",
             "priority_level",
+            "weeks_to_complete",
             "notes",
         ]
         widgets = {
             "project_name": forms.TextInput(attrs={"placeholder": "e.g., Replace bathroom faucet"}),
             "notes": forms.Textarea(attrs={"rows": 3, "placeholder": "Optional notes / parts needed / links"}),
         }
+
+
 
