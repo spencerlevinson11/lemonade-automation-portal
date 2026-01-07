@@ -24,8 +24,8 @@ from django.views.decorators.http import require_http_methods
 
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
 from .bol_generation import generate_bol_from_form, generate_bol_from_templates
-from .forms import BOLForm, PricingUploadForm, TipEntryForm
-from .models import Automation, Company, PricingCustomer, PricingQuoteLine, TipEntry
+from .forms import BOLForm, PricingUploadForm, TipEntryForm, ProjectPlanEntryForm
+from .models import Automation, Company, PricingCustomer, PricingQuoteLine, TipEntry, ProjectPlanEntry
 from .rpc_generation import generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
@@ -2212,6 +2212,11 @@ def run_automation(request, pk):
     if "pricing quote" in name_normalized or "pricing" in name_normalized:
         return redirect("pricing_upload")
 
+
+# --- Branch: Project Planner ---
+if "project planner" in name_normalized or "project planning" in name_normalized:
+    return redirect("project_planner")
+
     # --- Default: BOL generator ---
     if request.method == "POST":
         form = BOLForm(request.POST)
@@ -2235,6 +2240,120 @@ def run_automation(request, pk):
 
 
 @login_required
+
+
+@login_required
+def project_planner_view(request):
+    """
+    Project Planner:
+      - Create + edit project ideas with cost/time/difficulty/risk/priority
+      - Sort by priority/cost/time/difficulty/risk/name/created/updated
+    """
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        try:
+            company = Company.objects.get(owner=user)
+        except Company.DoesNotExist:
+            company = None
+
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    # Sorting
+    sort_key = (request.GET.get("sort") or "priority").strip().lower()
+    sort_dir = (request.GET.get("dir") or "desc").strip().lower()
+
+    sort_map = {
+        "priority": "priority_level",
+        "priority_level": "priority_level",
+        "cost": "estimated_cost",
+        "estimated_cost": "estimated_cost",
+        "time": "estimated_time_hours",
+        "hours": "estimated_time_hours",
+        "estimated_time_hours": "estimated_time_hours",
+        "difficulty": "estimated_difficulty",
+        "estimated_difficulty": "estimated_difficulty",
+        "risk": "risk_factor",
+        "risk_factor": "risk_factor",
+        "name": "project_name",
+        "project_name": "project_name",
+        "created": "created_at",
+        "created_at": "created_at",
+        "updated": "updated_at",
+        "updated_at": "updated_at",
+    }
+
+    field = sort_map.get(sort_key, "priority_level")
+    prefix = "-" if sort_dir != "asc" else ""
+    ordering = [f"{prefix}{field}", "-updated_at", "-created_at"]
+
+    projects = ProjectPlanEntry.objects.filter(company=company).order_by(*ordering)
+
+    # Load edit instance (via ?edit=<id>)
+    edit_id = request.GET.get("edit")
+    instance = None
+    if edit_id:
+        instance = get_object_or_404(ProjectPlanEntry, id=edit_id, company=company)
+
+    if request.method == "POST":
+        entry_id = request.POST.get("entry_id") or None
+        if entry_id:
+            instance = get_object_or_404(ProjectPlanEntry, id=entry_id, company=company)
+
+        form = ProjectPlanEntryForm(request.POST, instance=instance)
+        if form.is_valid():
+            obj = form.save(commit=False)
+            obj.company = company
+            obj.user = user
+            obj.save()
+            messages.success(request, "Project saved.")
+            return redirect("project_planner")
+    else:
+        form = ProjectPlanEntryForm(instance=instance)
+        if instance:
+            form.initial["entry_id"] = instance.id
+
+    context = {
+        "automation_name": "Project Planner",
+        "company": company,
+        "projects": projects,
+        "form": form,
+        "sort": sort_key,
+        "dir": sort_dir,
+        "edit_instance": instance,
+    }
+    return render(request, "core/project_planner.html", context)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def project_plan_delete_view(request, pk: int):
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        try:
+            company = Company.objects.get(owner=user)
+        except Company.DoesNotExist:
+            company = None
+
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    project = get_object_or_404(ProjectPlanEntry, id=pk, company=company)
+
+    if request.method == "POST":
+        project.delete()
+        messages.success(request, "Project deleted.")
+        return redirect("project_planner")
+
+    return render(request, "core/project_plan_confirm_delete.html", {"project": project, "automation_name": "Project Planner"})
+
+
 def bucket_metrics_view(request, automation_id=None):
     context = {
         "automation_name": "Bucket Metrics from Prognosis Spreadsheet",
@@ -2648,4 +2767,5 @@ def pricing_customer_quote_view(request, customer_id):
             "currency_symbol": currency_symbol,
         },
     )
+
 
