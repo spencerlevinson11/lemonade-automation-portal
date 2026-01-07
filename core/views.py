@@ -2213,9 +2213,10 @@ def run_automation(request, pk):
         return redirect("pricing_upload")
 
 
-# --- Branch: Project Planner ---
-if "project planner" in name_normalized or "project planning" in name_normalized:
-    return redirect("project_planner")
+    # --- Branch: Project Planner ---
+    if "project planner" in name_normalized or "project planning" in name_normalized:
+        return redirect("project_planner")
+
 
     # --- Default: BOL generator ---
     if request.method == "POST":
