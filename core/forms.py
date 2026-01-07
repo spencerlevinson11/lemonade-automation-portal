@@ -205,20 +205,40 @@ class PricingPalletQuantityUpdateForm(forms.Form):
 
 
 class ProjectPlanEntryForm(forms.ModelForm):
+    # Used for editing existing entries (your view reads this)
     entry_id = forms.IntegerField(required=False, widget=forms.HiddenInput())
 
-def clean(self):
-    cleaned = super().clean()
-    priority = cleaned.get("priority_level")
-    weeks = cleaned.get("weeks_to_complete")
-    # Priority 4 = Urgent (see model constants)
-    if priority == ProjectPlanEntry.PRIORITY_URGENT:
-        if not weeks:
-            self.add_error("weeks_to_complete", "For Urgent projects, please enter how many weeks you have to complete it.")
-    else:
-        # Not urgent: clear any value
-        cleaned["weeks_to_complete"] = None
-    return cleaned
+    class Meta:
+        model = ProjectPlanEntry
+        fields = [
+            "project_name",
+            "estimated_cost",
+            "estimated_time_hours",
+            "estimated_difficulty",
+            "risk_factor",
+            "priority_level",
+            "weeks_to_complete",
+            "notes",
+        ]
+        widgets = {
+            "notes": forms.Textarea(attrs={"rows": 4}),
+        }
+
+    def clean(self):
+        cleaned = super().clean()
+
+        priority = cleaned.get("priority_level")
+        weeks = cleaned.get("weeks_to_complete")
+
+        # If urgent, weeks_to_complete is required
+        if priority == ProjectPlanEntry.PRIORITY_URGENT:
+            if weeks in (None, ""):
+                raise ValidationError({"weeks_to_complete": "Required for Urgent projects."})
+        else:
+            # If not urgent, keep it blank so you don't store stale values
+            cleaned["weeks_to_complete"] = None
+
+        return cleaned
 
 
     class Meta:
