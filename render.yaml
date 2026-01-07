@@ -7,10 +7,8 @@ services:
     name: lemonade-automation-portal
     env: python
     plan: free
-    buildCommand: >
-      pip install -r requirements.txt &&
-      python manage.py migrate &&
-      python manage.py collectstatic --noinput
+    buildCommand: pip install -r requirements.txt && python manage.py migrate core 0006_projectplanentry --fake && python manage.py migrate && python manage.py collectstatic --noinput
+
     startCommand: gunicorn portal.wsgi:application
     envVars:
       - key: PYTHON_VERSION
@@ -23,5 +21,6 @@ services:
         fromDatabase:
           name: portal-db
           property: connectionString
+
 
 
