@@ -2,6 +2,8 @@
 from django import forms
 from django.utils import timezone
 
+from .models import ProjectPlanEntry
+
 
 class BOLForm(forms.Form):
     # These labels mirror your "BOL INFORMATION SHEET" rows
@@ -199,3 +201,25 @@ class PricingPalletQuantityUpdateForm(forms.Form):
     # We intentionally don't declare dynamic fields here.
     # We'll read POST keys like pallet_<line_id> in the view.
     pass
+
+
+
+class ProjectPlanEntryForm(forms.ModelForm):
+    entry_id = forms.IntegerField(required=False, widget=forms.HiddenInput())
+
+    class Meta:
+        model = ProjectPlanEntry
+        fields = [
+            "project_name",
+            "estimated_cost",
+            "estimated_time_hours",
+            "estimated_difficulty",
+            "risk_factor",
+            "priority_level",
+            "notes",
+        ]
+        widgets = {
+            "project_name": forms.TextInput(attrs={"placeholder": "e.g., Replace bathroom faucet"}),
+            "notes": forms.Textarea(attrs={"rows": 3, "placeholder": "Optional notes / parts needed / links"}),
+        }
+
