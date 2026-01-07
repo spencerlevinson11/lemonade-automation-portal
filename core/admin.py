@@ -30,9 +30,9 @@ class AutomationAdmin(admin.ModelAdmin):
 
 @admin.register(PricingCustomer)
 class PricingCustomerAdmin(admin.ModelAdmin):
-    list_display = ("name", "company", "is_active", "updated_at")
+    list_display = ("name", "company")
     search_fields = ("name", "company__name")
-    list_filter = ("company", "is_active")
+    list_filter = ("company",)
     ordering = ("company__name", "name")
 
 
@@ -90,4 +90,3 @@ class ProjectPlanEntryAdmin(admin.ModelAdmin):
 admin.site.site_header = "Automation Portal Admin"
 admin.site.site_title = "Automation Portal"
 admin.site.index_title = "Control center for your automations"
-
