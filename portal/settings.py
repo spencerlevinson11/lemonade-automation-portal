@@ -166,3 +166,10 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL",
     "Spencer <spencer@retriever.pro>",
 )
+
+
+# Project Planner reminder recipient
+PROJECT_PLANNER_REMINDER_TO = os.environ.get(
+    "PROJECT_PLANNER_REMINDER_TO",
+    "haileycarlton97@gmail.com",
+)
