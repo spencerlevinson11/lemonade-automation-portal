@@ -1,7 +1,14 @@
 from django.contrib import admin
-from .models import Company, Automation, PricingCustomer, PricingQuote, PricingQuoteLine, TipEntry
 
-
+from .models import (
+    Automation,
+    Company,
+    PricingCustomer,
+    PricingQuote,
+    PricingQuoteLine,
+    TipEntry,
+    ProjectPlanEntry,
+)
 
 
 @admin.register(Company)
@@ -16,44 +23,71 @@ class CompanyAdmin(admin.ModelAdmin):
 @admin.register(Automation)
 class AutomationAdmin(admin.ModelAdmin):
     list_display = ("name", "company", "is_active", "last_run_at", "created_at")
-    list_filter = ("company", "is_active", "created_at")
-    search_fields = ("name", "description", "company__name")
-    date_hierarchy = "created_at"
-    ordering = ("-created_at",)
-    list_per_page = 25
+    search_fields = ("name", "company__name")
+    list_filter = ("is_active", "company")
+    ordering = ("company__name", "name")
 
-    # Optional: make company clickable instead of name only
-    list_display_links = ("name",)
+
 @admin.register(PricingCustomer)
 class PricingCustomerAdmin(admin.ModelAdmin):
-    list_display = ("name", "company")
+    list_display = ("name", "company", "is_active", "updated_at")
     search_fields = ("name", "company__name")
-    list_filter = ("company",)
-
-@admin.register(TipEntry)
-class TipEntryAdmin(admin.ModelAdmin):
-    list_display = ("tip_date", "company", "user", "shift_start", "shift_end", "tips_total", "created_at")
-    list_filter = ("company", "user", "tip_date")
-    search_fields = ("notes", "user__username", "company__name")
-    date_hierarchy = "tip_date"
-    ordering = ("-tip_date", "-created_at")
+    list_filter = ("company", "is_active")
+    ordering = ("company__name", "name")
 
 
 @admin.register(PricingQuote)
 class PricingQuoteAdmin(admin.ModelAdmin):
-    list_display = ("title", "company", "customer", "updated_at")
-    search_fields = ("title", "company__name", "customer__name")
-    list_filter = ("company",)
+    list_display = ("company", "customer", "created_at")
+    search_fields = ("customer__name", "company__name")
+    list_filter = ("company", "customer")
+    ordering = ("-created_at",)
 
 
 @admin.register(PricingQuoteLine)
 class PricingQuoteLineAdmin(admin.ModelAdmin):
-    list_display = ("company", "customer", "destination", "product_description", "price_delivered", "pallet_quantity_pieces", "updated_at")
+    list_display = (
+        "company",
+        "customer",
+        "destination",
+        "product_description",
+        "price_delivered",
+        "pallet_quantity_pieces",
+        "include_in_quote",
+        "updated_at",
+    )
     search_fields = ("customer__name", "destination", "product_description", "company__name")
-    list_filter = ("company", "customer")
+    list_filter = ("company", "customer", "include_in_quote")
+    ordering = ("company__name", "customer__name", "destination", "product_description")
+
+
+@admin.register(TipEntry)
+class TipEntryAdmin(admin.ModelAdmin):
+    list_display = ("company", "user", "tip_date", "job_type", "tips_total", "updated_at")
+    list_filter = ("company", "job_type", "tip_date")
+    search_fields = ("user__username", "notes", "company__name")
+    ordering = ("-tip_date", "-updated_at")
+
+
+@admin.register(ProjectPlanEntry)
+class ProjectPlanEntryAdmin(admin.ModelAdmin):
+    list_display = (
+        "company",
+        "project_name",
+        "priority_level",
+        "risk_factor",
+        "estimated_cost",
+        "estimated_time_hours",
+        "estimated_difficulty",
+        "updated_at",
+    )
+    list_filter = ("company", "priority_level", "risk_factor", "estimated_difficulty")
+    search_fields = ("project_name", "notes", "company__name")
+    ordering = ("-priority_level", "-updated_at")
 
 
 # ---- Global admin branding (no "Lemonade Stand") ----
 admin.site.site_header = "Automation Portal Admin"
 admin.site.site_title = "Automation Portal"
 admin.site.index_title = "Control center for your automations"
+
