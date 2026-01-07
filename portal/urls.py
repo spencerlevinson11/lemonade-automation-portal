@@ -55,6 +55,14 @@ urlpatterns = [
         name="tip_entry_delete",
     ),
 
+    # Project Planner
+    path("automations/project-planner/", core_views.project_planner_view, name="project_planner"),
+    path(
+        "automations/project-planner/delete/<int:pk>/",
+        core_views.project_plan_delete_view,
+        name="project_plan_delete",
+    ),
+
     # Bucket Metrics
     path("automations/bucket-metrics/", core_views.bucket_metrics_view, name="bucket_metrics"),
 ]
@@ -89,3 +97,4 @@ if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
             name="bucket_adjusted_prognosis_export",
         ),
     ]
+
