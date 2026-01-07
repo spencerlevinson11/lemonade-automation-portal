@@ -5,19 +5,6 @@ from decimal import Decimal
 from django.core.validators import MinValueValidator
 
 
-def create_table_if_missing(apps, schema_editor):
-    """
-    Create core_projectplanentry only if it doesn't already exist.
-    This prevents DuplicateTable errors on Render deploys where the table exists
-    but django_migrations doesn't show 0006 as applied.
-    """
-    ProjectPlanEntry = apps.get_model("core", "ProjectPlanEntry")
-    existing_tables = schema_editor.connection.introspection.table_names()
-    if ProjectPlanEntry._meta.db_table in existing_tables:
-        return
-    schema_editor.create_model(ProjectPlanEntry)
-
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -27,9 +14,32 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.SeparateDatabaseAndState(
+            # --- DATABASE: create table only if missing (Postgres-safe) ---
             database_operations=[
-                migrations.RunPython(create_table_if_missing, reverse_code=migrations.RunPython.noop),
+                migrations.RunSQL(
+                    sql="""
+                    CREATE TABLE IF NOT EXISTS core_projectplanentry (
+                        id SERIAL PRIMARY KEY,
+                        project_name varchar(255) NOT NULL,
+                        notes text NOT NULL,
+                        estimated_cost numeric(12, 2) NOT NULL DEFAULT 0.00,
+                        estimated_time_hours numeric(8, 2) NOT NULL DEFAULT 0.00,
+                        estimated_difficulty integer NOT NULL DEFAULT 3,
+                        priority_level integer NOT NULL DEFAULT 2,
+                        risk_factor integer NOT NULL DEFAULT 3,
+                        created_at timestamptz NOT NULL DEFAULT NOW(),
+                        updated_at timestamptz NOT NULL DEFAULT NOW(),
+                        company_id bigint NOT NULL
+                            REFERENCES core_company(id) DEFERRABLE INITIALLY DEFERRED,
+                        user_id integer NULL
+                            REFERENCES auth_user(id) DEFERRABLE INITIALLY DEFERRED
+                    );
+                    """,
+                    reverse_sql=migrations.RunSQL.noop,
+                ),
             ],
+
+            # --- STATE: tell Django the model exists (normal CreateModel) ---
             state_operations=[
                 migrations.CreateModel(
                     name="ProjectPlanEntry",
@@ -54,4 +64,3 @@ class Migration(migrations.Migration):
             ],
         ),
     ]
-
