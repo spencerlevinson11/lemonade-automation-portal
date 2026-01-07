@@ -2291,7 +2291,8 @@ def project_planner_view(request):
     prefix = "-" if sort_dir != "asc" else ""
     ordering = [f"{prefix}{field}", "-updated_at", "-created_at"]
 
-    projects = ProjectPlanEntry.objects.filter(company=company).order_by(*ordering)
+    projects = ProjectPlanEntry.objects.filter(company=company, completed=False).order_by(*ordering)
+    completed_projects = ProjectPlanEntry.objects.filter(company=company, completed=True).order_by('-completed_at', '-updated_at')
 
     # Load edit instance (via ?edit=<id>)
     edit_id = request.GET.get("edit")
@@ -2321,6 +2322,7 @@ def project_planner_view(request):
         "automation_name": "Project Planner",
         "company": company,
         "projects": projects,
+        "completed_projects": completed_projects,
         "form": form,
         "sort": sort_key,
         "dir": sort_dir,
@@ -2331,6 +2333,37 @@ def project_planner_view(request):
 
 @login_required
 @require_http_methods(["GET", "POST"])
+
+
+@login_required
+@require_http_methods(["POST"])
+def project_plan_complete_view(request, pk: int):
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        try:
+            company = Company.objects.get(owner=user)
+        except Company.DoesNotExist:
+            company = None
+
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    project = get_object_or_404(ProjectPlanEntry, id=pk, company=company)
+
+    if not project.completed:
+        project.completed = True
+        project.completed_at = timezone.now()
+        project.save(update_fields=["completed", "completed_at", "updated_at"])
+        messages.success(request, f"Completed: {project.project_name}")
+    else:
+        messages.info(request, f"Already completed: {project.project_name}")
+
+    return redirect("project_planner")
+
+
 def project_plan_delete_view(request, pk: int):
     user = request.user
 
@@ -2768,5 +2801,7 @@ def pricing_customer_quote_view(request, customer_id):
             "currency_symbol": currency_symbol,
         },
     )
+
+
 
 
