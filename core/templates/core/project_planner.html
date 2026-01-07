@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ automation_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root{
+      --bg-main:#020617;
+      --bg-card:#0b1120;
+      --accent:#facc15;
+      --accent-strong:#fbbf24;
+      --text:#e5e7eb;
+      --muted:#9ca3af;
+      --border:#1f2937;
+      --good:#4ade80;
+      --danger:#f97373;
+      --input: rgba(2, 6, 23, 0.6);
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0; padding:24px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
+      color:var(--text);
+    }
+    .container{ max-width:1100px; margin:0 auto; }
+    .topbar{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:16px; margin-bottom:16px;
+    }
+    .title{
+      display:flex; align-items:center; gap:12px;
+    }
+    .badge{
+      background: rgba(250,204,21,0.14);
+      border:1px solid rgba(250,204,21,0.25);
+      color: var(--accent-strong);
+      padding:6px 10px;
+      border-radius:999px;
+      font-weight:700;
+      font-size:12px;
+      letter-spacing: .4px;
+      text-transform: uppercase;
+    }
+    a{ color: var(--accent); text-decoration:none; }
+    a:hover{ text-decoration:underline; }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:14px;
+    }
+    @media (min-width: 980px){
+      .grid{ grid-template-columns: 420px 1fr; align-items:start; }
+    }
+
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00)) var(--bg-card);
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:16px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+    }
+    .card h2{
+      margin:0 0 10px;
+      font-size:18px;
+      letter-spacing: .2px;
+    }
+    .help{
+      color:var(--muted);
+      font-size:13px;
+      margin:0 0 14px;
+      line-height:1.35;
+    }
+
+    label{
+      display:block;
+      font-size:12px;
+      color: var(--muted);
+      margin-bottom:6px;
+      text-transform: uppercase;
+      letter-spacing:.4px;
+    }
+    input, select, textarea{
+      width:100%;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background: var(--input);
+      color: var(--text);
+      outline:none;
+    }
+    textarea{ resize:vertical; }
+    .row{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .row3{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; }
+    .field{ margin-bottom:10px; }
+
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      gap:10px;
+      padding:10px 14px;
+      border-radius:12px;
+      border:1px solid rgba(250,204,21,0.35);
+      background: rgba(250,204,21,0.14);
+      color: var(--accent-strong);
+      font-weight:800;
+      cursor:pointer;
+    }
+    .btn:hover{ background: rgba(250,204,21,0.18); }
+    .btn-secondary{
+      border-color: var(--border);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      font-weight:700;
+    }
+    .btn-secondary:hover{ background: rgba(255,255,255,0.05); }
+
+    .table-wrap{ overflow:auto; border-radius:14px; border:1px solid var(--border); }
+    table{ width:100%; border-collapse:collapse; min-width: 920px; }
+    th, td{ padding:12px 12px; border-bottom:1px solid rgba(31,41,55,0.65); text-align:left; vertical-align:top; }
+    th{
+      font-size:12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .45px;
+      background: rgba(255,255,255,0.02);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    tr:hover td{ background: rgba(250,204,21,0.04); }
+    .pill{
+      display:inline-flex; align-items:center; gap:6px;
+      border-radius:999px;
+      padding:4px 10px;
+      border:1px solid var(--border);
+      font-size:12px;
+      color: var(--text);
+      white-space:nowrap;
+    }
+    .pill-high{ border-color: rgba(74,222,128,0.35); background: rgba(74,222,128,0.10); }
+    .pill-med{ border-color: rgba(250,204,21,0.35); background: rgba(250,204,21,0.10); }
+    .pill-low{ border-color: rgba(148,163,184,0.25); background: rgba(148,163,184,0.08); }
+    .pill-urgent{ border-color: rgba(249,115,115,0.35); background: rgba(249,115,115,0.10); }
+
+    .actions{ display:flex; gap:10px; white-space:nowrap; }
+    .muted{ color:var(--muted); font-size:13px; }
+    .flash{ margin-bottom:14px; }
+    .flash .msg{
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      margin-bottom:8px;
+    }
+  </style>
+</head>
+
+<body>
+<div class="container">
+  <div class="topbar">
+    <div class="title">
+      <div class="badge">Automation</div>
+      <h1 style="margin:0; font-size:22px;">{{ automation_name }}</h1>
+    </div>
+    <div class="muted">
+      <a href="{% url 'dashboard' %}">← Back to dashboard</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    <div class="flash">
+      {% for message in messages %}
+        <div class="msg">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="grid">
+    <div class="card">
+      <h2>{% if edit_instance %}Edit Project{% else %}Add a Project{% endif %}</h2>
+      <p class="help">
+        Track project ideas with estimated cost, time, difficulty, risk, and priority. Use “Run now” from the dashboard to open this page.
+      </p>
+
+      <form method="post">
+        {% csrf_token %}
+        {{ form.entry_id }}
+
+        <div class="field">
+          <label for="{{ form.project_name.id_for_label }}">Project</label>
+          {{ form.project_name }}
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="{{ form.estimated_cost.id_for_label }}">Estimated cost</label>
+            {{ form.estimated_cost }}
+          </div>
+          <div class="field">
+            <label for="{{ form.estimated_time_hours.id_for_label }}">Estimated hours</label>
+            {{ form.estimated_time_hours }}
+          </div>
+        </div>
+
+        <div class="row3">
+          <div class="field">
+            <label for="{{ form.estimated_difficulty.id_for_label }}">Difficulty (1-5)</label>
+            {{ form.estimated_difficulty }}
+          </div>
+          <div class="field">
+            <label for="{{ form.risk_factor.id_for_label }}">Risk (1-5)</label>
+            {{ form.risk_factor }}
+          </div>
+          <div class="field">
+            <label for="{{ form.priority_level.id_for_label }}">Priority</label>
+            {{ form.priority_level }}
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="{{ form.notes.id_for_label }}">Notes</label>
+          {{ form.notes }}
+        </div>
+
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn" type="submit">Save</button>
+          {% if edit_instance %}
+            <a class="btn btn-secondary" href="{% url 'project_planner' %}">Cancel edit</a>
+          {% endif %}
+        </div>
+
+        {% if form.errors %}
+          <div style="margin-top:12px; color: var(--danger);">
+            Please fix the errors above.
+          </div>
+        {% endif %}
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Projects</h2>
+      <p class="help">Sort by clicking headers. Priority is numeric under the hood (Urgent &gt; High &gt; Medium &gt; Low).</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><a href="?sort=project_name&dir={% if sort == 'project_name' and dir == 'asc' %}desc{% else %}asc{% endif %}">Project</a></th>
+              <th><a href="?sort=priority&dir={% if sort == 'priority' and dir == 'asc' %}desc{% else %}asc{% endif %}">Priority</a></th>
+              <th><a href="?sort=estimated_cost&dir={% if sort == 'estimated_cost' and dir == 'asc' %}desc{% else %}asc{% endif %}">Cost</a></th>
+              <th><a href="?sort=estimated_time_hours&dir={% if sort == 'estimated_time_hours' and dir == 'asc' %}desc{% else %}asc{% endif %}">Hours</a></th>
+              <th><a href="?sort=estimated_difficulty&dir={% if sort == 'estimated_difficulty' and dir == 'asc' %}desc{% else %}asc{% endif %}">Difficulty</a></th>
+              <th><a href="?sort=risk_factor&dir={% if sort == 'risk_factor' and dir == 'asc' %}desc{% else %}asc{% endif %}">Risk</a></th>
+              <th class="muted">Notes</th>
+              <th class="muted">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in projects %}
+              <tr>
+                <td><strong>{{ p.project_name }}</strong></td>
+                <td>
+                  {% if p.priority_level == 4 %}
+                    <span class="pill pill-urgent">Urgent</span>
+                  {% elif p.priority_level == 3 %}
+                    <span class="pill pill-high">High</span>
+                  {% elif p.priority_level == 2 %}
+                    <span class="pill pill-med">Medium</span>
+                  {% else %}
+                    <span class="pill pill-low">Low</span>
+                  {% endif %}
+                </td>
+                <td>${{ p.estimated_cost }}</td>
+                <td>{{ p.estimated_time_hours }}</td>
+                <td>{{ p.estimated_difficulty }}</td>
+                <td>{{ p.risk_factor }}</td>
+                <td style="max-width: 340px;">
+                  <span class="muted">{% if p.notes %}{{ p.notes }}{% else %}—{% endif %}</span>
+                </td>
+                <td>
+                  <div class="actions">
+                    <a href="?edit={{ p.id }}">Edit</a>
+                    <span class="muted">|</span>
+                    <a href="{% url 'project_plan_delete' p.id %}">Delete</a>
+                  </div>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="8" class="muted">No projects yet — add one on the left.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>
