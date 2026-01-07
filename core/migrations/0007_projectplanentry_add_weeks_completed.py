@@ -1,38 +1,6 @@
 from django.db import migrations, models
 
 
-def add_columns_if_missing(apps, schema_editor):
-    """
-    Add completed, completed_at, weeks_to_complete only if the columns are missing.
-    Prevents DuplicateColumn errors if those columns already exist in the DB.
-    """
-    ProjectPlanEntry = apps.get_model("core", "ProjectPlanEntry")
-    table = ProjectPlanEntry._meta.db_table
-
-    existing_cols = set()
-    with schema_editor.connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = %s
-            """,
-            [table],
-        )
-        existing_cols = {row[0] for row in cursor.fetchall()}
-
-    # Helper to add a field safely
-    def safe_add(field_name):
-        if field_name in existing_cols:
-            return
-        field = ProjectPlanEntry._meta.get_field(field_name)
-        schema_editor.add_field(ProjectPlanEntry, field)
-
-    safe_add("weeks_to_complete")
-    safe_add("completed")
-    safe_add("completed_at")
-
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -41,9 +9,22 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.SeparateDatabaseAndState(
+            # --- DATABASE: add columns only if missing ---
             database_operations=[
-                migrations.RunPython(add_columns_if_missing, reverse_code=migrations.RunPython.noop),
+                migrations.RunSQL(
+                    sql="""
+                    ALTER TABLE core_projectplanentry
+                        ADD COLUMN IF NOT EXISTS weeks_to_complete integer NULL;
+                    ALTER TABLE core_projectplanentry
+                        ADD COLUMN IF NOT EXISTS completed boolean NOT NULL DEFAULT false;
+                    ALTER TABLE core_projectplanentry
+                        ADD COLUMN IF NOT EXISTS completed_at timestamptz NULL;
+                    """,
+                    reverse_sql=migrations.RunSQL.noop,
+                ),
             ],
+
+            # --- STATE: normal Django AddField ops ---
             state_operations=[
                 migrations.AddField(
                     model_name="projectplanentry",
@@ -58,7 +39,11 @@ class Migration(migrations.Migration):
                 migrations.AddField(
                     model_name="projectplanentry",
                     name="weeks_to_complete",
-                    field=models.PositiveIntegerField(blank=True, help_text="If priority is Urgent, number of weeks to complete the project.", null=True),
+                    field=models.PositiveIntegerField(
+                        blank=True,
+                        help_text="If priority is Urgent, number of weeks to complete the project.",
+                        null=True,
+                    ),
                 ),
             ],
         ),
