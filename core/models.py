@@ -212,3 +212,5 @@ class PricingQuoteLine(models.Model):
     def __str__(self):
         return f"{self.customer.name} | {self.destination} | {self.product_description}"
 
+
+
