@@ -18,22 +18,7 @@ class Company(models.Model):
         blank=True,
     )
 
-def due_date(self):
-    """Return a due date if weeks_to_complete is set (Urgent projects)."""
-    if not self.weeks_to_complete:
-        return None
-    return self.created_at + datetime.timedelta(weeks=int(self.weeks_to_complete))
-
-def weeks_remaining(self):
-    """Number of whole weeks remaining until due_date (can be negative)."""
-    due = self.due_date()
-    if due is None:
-        return None
-    delta = due - timezone.now()
-    return int(delta.days // 7)
-
-def __str__
-(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -49,25 +34,11 @@ class Automation(models.Model):
     is_active = models.BooleanField(default=True)
     last_run_at = models.DateTimeField(null=True, blank=True)
 
-# If urgent, how many weeks do you have to complete it?
-weeks_to_complete = models.PositiveIntegerField(
-    null=True,
-    blank=True,
-    help_text="If priority is Urgent, number of weeks to complete the project.",
-)
-
-completed = models.BooleanField(default=False)
-completed_at = models.DateTimeField(null=True, blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} ({self.company.name})"
 
-
-# =========================
-# Pricing Quote Data Models
-# =========================
 
 # =========================
 # Pricing Quote Data Models
@@ -87,7 +58,7 @@ class PricingCustomer(models.Model):
     class Meta:
         unique_together = ("company", "name")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} ({self.company.name})"
 
 
@@ -109,7 +80,7 @@ class PricingQuote(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.customer.name} - {self.company.name}"
 
 
@@ -170,7 +141,7 @@ class TipEntry(models.Model):
     class Meta:
         ordering = ["-tip_date", "-created_at"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.user.username} {self.tip_date} ${self.tips_total}"
 
     def shift_duration_hours(self) -> float:
@@ -236,10 +207,8 @@ class PricingQuoteLine(models.Model):
     class Meta:
         unique_together = ("company", "customer", "destination", "product_description")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.customer.name} | {self.destination} | {self.product_description}"
-
-
 
 
 class ProjectPlanEntry(models.Model):
@@ -261,8 +230,18 @@ class ProjectPlanEntry(models.Model):
     # 1 (low risk) → 5 (high risk)
     RISK_CHOICES = [(i, str(i)) for i in range(1, 6)]
 
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="project_plans")
-    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="project_plans")
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="project_plans",
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="project_plans",
+    )
 
     project_name = models.CharField(max_length=255)
     notes = models.TextField(blank=True)
@@ -286,15 +265,41 @@ class ProjectPlanEntry(models.Model):
     priority_level = models.IntegerField(choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM)
     risk_factor = models.IntegerField(choices=RISK_CHOICES, default=3, help_text="Overall risk factor (1-5).")
 
+    # If urgent, how many weeks do you have to complete it?
+    weeks_to_complete = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="If priority is Urgent, number of weeks to complete the project.",
+    )
+
+    completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-priority_level", "-updated_at", "-created_at"]
 
-    def __str__(self):
+    def due_date(self):
+        """
+        Return a due date if weeks_to_complete is set (Urgent projects).
+        """
+        if not self.weeks_to_complete:
+            return None
+        # Use created_at as the start point (consistent & always present)
+        return self.created_at + timedelta(weeks=int(self.weeks_to_complete))
+
+    def weeks_remaining(self):
+        """
+        Number of whole weeks remaining until due_date (can be negative).
+        """
+        due = self.due_date()
+        if due is None:
+            return None
+        delta = due - timezone.now()
+        return int(delta.days // 7)
+
+    def __str__(self) -> str:
         return f"{self.project_name} ({self.company.name})"
-
-
-
 
