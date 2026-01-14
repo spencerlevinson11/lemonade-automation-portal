@@ -77,6 +77,12 @@ urlpatterns = [
         core_views.order_container_edit_view,
         name="order_container_edit",
     ),
+    
+    path(
+        "automations/orders/<int:container_id>/delete/",
+        core_views.order_container_delete_view,
+        name="order_container_delete",
+    ),
 
     # Bucket Metrics
     path("automations/bucket-metrics/", core_views.bucket_metrics_view, name="bucket_metrics"),
