@@ -68,6 +68,16 @@ urlpatterns = [
         name="project_plan_delete",
     ),
 
+
+    # Order Tracker
+    path("automations/orders/", core_views.order_tracker_view, name="order_tracker"),
+    path("automations/orders/new/", core_views.order_container_edit_view, name="order_container_new"),
+    path(
+        "automations/orders/<int:container_id>/",
+        core_views.order_container_edit_view,
+        name="order_container_edit",
+    ),
+
     # Bucket Metrics
     path("automations/bucket-metrics/", core_views.bucket_metrics_view, name="bucket_metrics"),
 ]
@@ -102,4 +112,5 @@ if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
             name="bucket_adjusted_prognosis_export",
         ),
     ]
+
 
