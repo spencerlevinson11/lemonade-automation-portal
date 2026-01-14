@@ -46,7 +46,7 @@
     .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
     .field { flex: 1; min-width: 220px; }
     label { display:block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; }
-    input, select {
+    input, select, textarea {
       width: 100%;
       padding: 10px 10px;
       border-radius: 10px;
@@ -55,6 +55,7 @@
       color: var(--text-main);
       outline: none;
     }
+    textarea { min-height: 40px; resize: vertical; }
 
     .btn {
       display:inline-flex; align-items:center; justify-content:center;
@@ -68,6 +69,13 @@
       text-decoration:none;
     }
     .btn:hover { background: rgba(250,204,21,0.18); text-decoration:none; }
+
+    .btn-danger {
+      border: 1px solid rgba(249,115,115,0.55);
+      background: rgba(249,115,115,0.10);
+      color: #fecaca;
+    }
+    .btn-danger:hover { background: rgba(249,115,115,0.16); }
 
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 10px 8px; border-bottom: 1px solid rgba(148,163,184,0.16); vertical-align: top; }
@@ -84,6 +92,39 @@
       color: var(--text-main);
       white-space: nowrap;
     }
+
+    /* Collapsible add form */
+    details { border-radius: 14px; }
+    summary {
+      cursor: pointer;
+      list-style: none;
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 12px;
+      font-weight: 800;
+      user-select: none;
+    }
+    summary::-webkit-details-marker { display:none; }
+    .summary-left { display:flex; align-items:center; gap:10px; }
+    .chev {
+      width: 10px; height: 10px;
+      border-right: 2px solid rgba(250,204,21,0.9);
+      border-bottom: 2px solid rgba(250,204,21,0.9);
+      transform: rotate(-45deg);
+      transition: transform 160ms ease;
+      margin-top: 2px;
+    }
+    details[open] .chev { transform: rotate(45deg); }
+    .hint { font-size: 0.85rem; color: var(--text-muted); margin-top: 6px; }
+
+    .divider {
+      height: 1px;
+      background: rgba(148,163,184,0.16);
+      margin: 14px 0;
+    }
+
+    .actions { display:flex; gap:10px; flex-wrap:wrap; }
   </style>
 </head>
 
@@ -94,9 +135,117 @@
         <h1>Order Tracker</h1>
         <p class="muted">{{ company.name }} • Track sea containers by customer + location</p>
       </div>
-      <div>
-        <a class="btn" href="{% url 'order_container_new' %}">+ New container</a>
+      <div class="actions">
+        <!-- Keep your existing "full edit page" flow available -->
+        <a class="btn" href="{% url 'order_container_new' %}">Open full editor</a>
       </div>
+    </div>
+
+    {% if messages %}
+      <div class="card">
+        {% for message in messages %}
+          <div class="{% if message.tags %}{{ message.tags }}{% endif %}" style="margin-bottom:6px;">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <!-- NEW: Inline "Add container" form (collapsible) -->
+    <div class="card">
+      <details {% if request.method == "POST" %}open{% endif %}>
+        <summary>
+          <div class="summary-left">
+            <span class="chev"></span>
+            <span>+ Add a new container</span>
+          </div>
+          <span class="badge">Quick add</span>
+        </summary>
+        <div class="hint">Creates a container fast — you can open it afterward to add line items, documents, etc.</div>
+
+        <div class="divider"></div>
+
+        <!--
+          Posts to your existing "new container" view.
+          This assumes that URL exists and accepts POST for creation.
+        -->
+        <form method="post" action="{% url 'order_container_new' %}">
+          {% csrf_token %}
+
+          <div class="row">
+            <div class="field">
+              <label>Customer</label>
+              <input name="customer_name" placeholder="e.g., Native, Falcon, Designers Choice" required />
+            </div>
+            <div class="field">
+              <label>Location</label>
+              <input name="location_name" placeholder="e.g., City of Industry, Miami, Lebanon" />
+            </div>
+            <div class="field" style="max-width:260px;">
+              <label>Owner</label>
+              <select name="assigned_to">
+                <option value="" selected>—</option>
+                <option value="Spencer">Spencer</option>
+                <option value="Jaime">Jaime</option>
+              </select>
+            </div>
+            <div class="field" style="max-width:260px;">
+              <label>Status</label>
+              <input name="status" placeholder="e.g., booked, on water, customs..." />
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field">
+              <label>PO#</label>
+              <input name="po_number" placeholder="PO number" />
+            </div>
+            <div class="field">
+              <label>RPC#</label>
+              <input name="rpc_number" placeholder="RPC number" />
+            </div>
+            <div class="field">
+              <label>Booking #</label>
+              <input name="booking_number" placeholder="Booking number" />
+            </div>
+            <div class="field">
+              <label>BOL #</label>
+              <input name="bill_of_lading_number" placeholder="Bill of Lading number" />
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field" style="max-width:220px;">
+              <label>Loading date</label>
+              <input type="date" name="loading_date" />
+            </div>
+            <div class="field" style="max-width:220px;">
+              <label>ETD</label>
+              <input type="date" name="etd" />
+            </div>
+            <div class="field" style="max-width:220px;">
+              <label>ETA</label>
+              <input type="date" name="eta" />
+            </div>
+            <div class="field" style="max-width:260px;">
+              <label>Estimated delivery</label>
+              <input type="date" name="estimated_delivery_date" />
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field" style="min-width: 320px;">
+              <label>Notes (optional)</label>
+              <textarea name="notes" placeholder="Anything important (forwarder, port, issues, etc.)"></textarea>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
+            <button class="btn" type="submit">Create container</button>
+            <a class="btn btn-danger" href="{% url 'order_tracker' %}">Cancel</a>
+          </div>
+        </form>
+      </details>
     </div>
 
     <div class="card">
@@ -187,7 +336,7 @@
             </tr>
           {% empty %}
             <tr>
-              <td colspan="9" class="muted">No containers yet. Click “New container” to add your first one.</td>
+              <td colspan="9" class="muted">No containers yet. Use “Add a new container” above to create your first one.</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -200,3 +349,4 @@
   </div>
 </body>
 </html>
+
