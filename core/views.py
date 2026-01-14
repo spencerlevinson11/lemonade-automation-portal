@@ -2841,8 +2841,15 @@ def pricing_customer_quote_view(request, customer_id):
 @require_POST
 @login_required
 def order_container_delete_view(request, container_id: int):
-    company = get_object_or_404(Company, user=request.user)
-    container = get_object_or_404(OrderContainer, id=container_id, company=company)
+    user = request.user
+
+    if user.is_superuser:
+        # Superusers can delete any container by ID
+        container = get_object_or_404(OrderContainer, id=container_id)
+    else:
+        # Normal users are scoped to their Company via Company.owner
+        company = get_object_or_404(Company, owner=user)
+        container = get_object_or_404(OrderContainer, id=container_id, company=company)
 
     # This will cascade-delete lines + documents if your FKs are CASCADE (they should be).
     container.delete()
@@ -3000,6 +3007,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
+
 
 
 
