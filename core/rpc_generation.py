@@ -403,3 +403,4 @@ Bensenville, IL, 60106<br>
     email_status = " ".join(status_parts) if status_parts else "No email was sent."
 
     return files, email_status
+
