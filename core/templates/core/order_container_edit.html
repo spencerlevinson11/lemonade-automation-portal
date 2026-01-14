@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ automation_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root {
+      --bg-main: #020617;
+      --bg-card: #0b1120;
+      --accent: #facc15;
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+      --border-subtle: #1f2937;
+      --success: #4ade80;
+      --danger: #f97373;
+      --input: rgba(2, 6, 23, 0.6);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
+      color: var(--text-main);
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; }
+    .top {
+      display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+      margin-bottom: 14px;
+    }
+    .title h1 { margin:0; font-size: 1.25rem; }
+    .title p { margin:4px 0 0; color: var(--text-muted); font-size: 0.9rem; }
+    a { color: var(--accent); text-decoration:none; }
+    a:hover { text-decoration: underline; }
+
+    .card {
+      background: rgba(11,17,32,0.9);
+      border: 1px solid rgba(31,41,55,0.9);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 22px 60px rgba(0,0,0,0.55);
+    }
+
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
+
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
+    .field { flex: 1; min-width: 240px; }
+    label { display:block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; }
+    input, textarea, select {
+      width: 100%;
+      padding: 10px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(148,163,184,0.25);
+      background: var(--input);
+      color: var(--text-main);
+      outline: none;
+    }
+    textarea { resize: vertical; }
+
+    .btn {
+      display:inline-flex; align-items:center; justify-content:center;
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(250,204,21,0.45);
+      background: rgba(250,204,21,0.12);
+      color: var(--accent);
+      cursor:pointer;
+      font-weight: 800;
+      text-decoration:none;
+    }
+    .btn:hover { background: rgba(250,204,21,0.18); text-decoration:none; }
+
+    .btn2 {
+      display:inline-flex; align-items:center; justify-content:center;
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.25);
+      background: rgba(15,23,42,0.55);
+      color: var(--text-main);
+      cursor:pointer;
+      font-weight: 700;
+      text-decoration:none;
+    }
+
+    .errorlist { margin: 6px 0 0; padding: 0; list-style: none; color: var(--danger); font-size: 0.85rem; }
+    .muted { color: var(--text-muted); }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 8px; border-bottom: 1px solid rgba(148,163,184,0.16); vertical-align: top; }
+    th { text-align:left; font-size: 0.85rem; color: var(--text-muted); font-weight: 800; }
+    td { font-size: 0.95rem; }
+
+    .right { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+    .tiny { font-size: 0.85rem; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="title">
+        <h1>{% if container %}Edit container{% else %}New container{% endif %}</h1>
+        <p class="muted">{{ company.name }} • Everything is editable — update as the container moves.</p>
+      </div>
+      <div class="right">
+        <a class="btn2" href="{% url 'order_tracker' %}">← Back</a>
+        <button class="btn" form="mainForm" type="submit">Save</button>
+      </div>
+    </div>
+
+    <form id="mainForm" method="post">
+      {% csrf_token %}
+
+      <div class="card">
+        <div class="grid">
+          <div class="field">
+            <label>Customer name</label>
+            {{ form.customer_name }}
+            {{ form.customer_name.errors }}
+          </div>
+          <div class="field">
+            <label>Location</label>
+            {{ form.location_name }}
+            {{ form.location_name.errors }}
+          </div>
+
+          <div class="field">
+            <label>PO#</label>
+            {{ form.po_number }}
+            {{ form.po_number.errors }}
+          </div>
+          <div class="field">
+            <label>Requested date</label>
+            {{ form.requested_date }}
+            {{ form.requested_date.errors }}
+          </div>
+
+          <div class="field">
+            <label>Status</label>
+            {{ form.status }}
+            {{ form.status.errors }}
+          </div>
+          <div class="field">
+            <label>RPC#</label>
+            {{ form.rpc_number }}
+            {{ form.rpc_number.errors }}
+          </div>
+
+          <div class="field">
+            <label>Loading date</label>
+            {{ form.loading_date }}
+            {{ form.loading_date.errors }}
+          </div>
+          <div class="field">
+            <label>Booking #</label>
+            {{ form.booking_number }}
+            {{ form.booking_number.errors }}
+          </div>
+
+          <div class="field">
+            <label>Bill of lading #</label>
+            {{ form.bill_of_lading_number }}
+            {{ form.bill_of_lading_number.errors }}
+          </div>
+          <div class="field">
+            <label>ETD</label>
+            {{ form.etd }}
+            {{ form.etd.errors }}
+          </div>
+
+          <div class="field">
+            <label>ETA</label>
+            {{ form.eta }}
+            {{ form.eta.errors }}
+          </div>
+          <div class="field">
+            <label>Estimated delivery date</label>
+            {{ form.estimated_delivery_date }}
+            {{ form.estimated_delivery_date.errors }}
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:14px;">
+          <label>Notes</label>
+          {{ form.notes }}
+          {{ form.notes.errors }}
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+          <div>
+            <div style="font-weight:900;">Contents (mixed containers supported)</div>
+            <div class="muted tiny">Add one line per item: pallets × units/pallet. Total units auto-calculates on save.</div>
+          </div>
+          <button class="btn2" type="button" id="addLineBtn">+ Add line</button>
+        </div>
+
+        {{ formset.management_form }}
+
+        <table id="linesTable">
+          <thead>
+            <tr>
+              <th style="width:52%;">Item</th>
+              <th style="width:14%;">Pallets</th>
+              <th style="width:18%;">Units / pallet</th>
+              <th style="width:16%;">Delete</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in formset.forms %}
+              <tr class="lineRow">
+                <td>
+                  {{ f.item_description }}
+                  {{ f.item_description.errors }}
+                  {{ f.id }}
+                </td>
+                <td>
+                  {{ f.pallets }}
+                  {{ f.pallets.errors }}
+                </td>
+                <td>
+                  {{ f.units_per_pallet }}
+                  {{ f.units_per_pallet.errors }}
+                </td>
+                <td>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    {{ f.DELETE }} <span class="muted tiny">mark</span>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <template id="emptyFormTemplate">
+          <tr class="lineRow">
+            <td>
+              __ITEM__
+              __ID__
+            </td>
+            <td>__PALLETS__</td>
+            <td>__UPP__</td>
+            <td>
+              <div style="display:flex; align-items:center; gap:8px;">
+                __DEL__ <span class="muted tiny">mark</span>
+              </div>
+            </td>
+          </tr>
+        </template>
+      </div>
+
+      <div class="muted" style="margin-top:16px;">
+        <a href="{% url 'order_tracker' %}">← Back to Order Tracker</a>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    (function () {
+      const addBtn = document.getElementById("addLineBtn");
+      const totalFormsInput = document.getElementById("id_lines-TOTAL_FORMS") || document.querySelector('input[name$="-TOTAL_FORMS"]');
+      const tbody = document.querySelector("#linesTable tbody");
+      const tpl = document.getElementById("emptyFormTemplate");
+
+      if (!addBtn || !totalFormsInput || !tbody || !tpl) return;
+
+      function newRowHtml(formIndex) {
+        // Build a minimal form row matching the formset prefix (lines)
+        // NOTE: prefix is auto-generated by Django inlineformset_factory. In our view it will be "lines".
+        const prefix = totalFormsInput.name.replace("-TOTAL_FORMS", "");
+        const item = `<input type="text" name="${prefix}-${formIndex}-item_description" class="input" placeholder="e.g., 5 liter vase" />`;
+        const pallets = `<input type="number" min="0" name="${prefix}-${formIndex}-pallets" class="input" inputmode="numeric" value="0" />`;
+        const upp = `<input type="number" min="0" name="${prefix}-${formIndex}-units_per_pallet" class="input" inputmode="numeric" value="0" />`;
+        const del = `<input type="checkbox" name="${prefix}-${formIndex}-DELETE" />`;
+        const id = `<input type="hidden" name="${prefix}-${formIndex}-id" />`;
+
+        let html = tpl.innerHTML;
+        html = html.replace("__ITEM__", item);
+        html = html.replace("__PALLETS__", pallets);
+        html = html.replace("__UPP__", upp);
+        html = html.replace("__DEL__", del);
+        html = html.replace("__ID__", id);
+        return html;
+      }
+
+      addBtn.addEventListener("click", function () {
+        const current = parseInt(totalFormsInput.value || "0", 10);
+        tbody.insertAdjacentHTML("beforeend", newRowHtml(current));
+        totalFormsInput.value = String(current + 1);
+      });
+    })();
+  </script>
+</body>
+</html>
