@@ -8,6 +8,9 @@ from .models import (
     PricingQuoteLine,
     TipEntry,
     ProjectPlanEntry,
+    OrderContainer,
+    OrderContainerLine,
+    OrderContainerDocument,
 )
 
 
@@ -84,6 +87,43 @@ class ProjectPlanEntryAdmin(admin.ModelAdmin):
     list_filter = ("company", "priority_level", "risk_factor", "estimated_difficulty")
     search_fields = ("project_name", "notes", "company__name")
     ordering = ("-priority_level", "-updated_at")
+
+
+class OrderContainerLineInline(admin.TabularInline):
+    model = OrderContainerLine
+    extra = 0
+
+
+class OrderContainerDocumentInline(admin.TabularInline):
+    model = OrderContainerDocument
+    extra = 0
+
+
+@admin.register(OrderContainer)
+class OrderContainerAdmin(admin.ModelAdmin):
+    list_display = (
+        "company",
+        "customer_name",
+        "location_name",
+        "po_number",
+        "assigned_to",
+        "status",
+        "loading_date",
+        "estimated_delivery_date",
+        "updated_at",
+    )
+    list_filter = ("company", "assigned_to")
+    search_fields = (
+        "customer_name",
+        "location_name",
+        "po_number",
+        "rpc_number",
+        "booking_number",
+        "bill_of_lading_number",
+        "status",
+    )
+    ordering = ("-updated_at",)
+    inlines = [OrderContainerLineInline, OrderContainerDocumentInline]
 
 
 # ---- Global admin branding (no "Lemonade Stand") ----
