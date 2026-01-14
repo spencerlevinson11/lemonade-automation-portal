@@ -316,25 +316,7 @@ class OrderContainer(models.Model):
     Customer + Location are stored as plain text so "Elite Flower Group - Miami"
     can remain separate from "Elite Flower Group - Lebanon".
     """
-    STATUS_PLANNED = "planned"
-    STATUS_BOOKED = "booked"
-    STATUS_LOADED = "loaded"
-    STATUS_SAILED = "sailed"
-    STATUS_ARRIVED_PORT = "arrived_port"
-    STATUS_CUSTOMS = "customs"
-    STATUS_DELIVERED = "delivered"
-    STATUS_CANCELLED = "cancelled"
-
-    STATUS_CHOICES = [
-        (STATUS_PLANNED, "Planned"),
-        (STATUS_BOOKED, "Booked"),
-        (STATUS_LOADED, "Loaded"),
-        (STATUS_SAILED, "Sailed / In transit"),
-        (STATUS_ARRIVED_PORT, "Arrived (port)"),
-        (STATUS_CUSTOMS, "Customs / Hold"),
-        (STATUS_DELIVERED, "Delivered"),
-        (STATUS_CANCELLED, "Cancelled"),
-    ]
+    # Status is free-text (user requested custom status).
 
     company = models.ForeignKey(
         Company,
@@ -355,11 +337,10 @@ class OrderContainer(models.Model):
     po_number = models.CharField(max_length=64, blank=True)
     requested_date = models.DateField(null=True, blank=True)
 
-    status = models.CharField(
-        max_length=32,
-        choices=STATUS_CHOICES,
-        default=STATUS_PLANNED,
-    )
+    status = models.CharField(max_length=128, blank=True)
+
+    # Who owns this order?
+    assigned_to = models.CharField(max_length=32, blank=True)
 
     rpc_number = models.CharField(max_length=64, blank=True)  # your internal RPC#
     loading_date = models.DateField(null=True, blank=True)
@@ -419,4 +400,25 @@ class OrderContainerLine(models.Model):
 
     def __str__(self) -> str:
         return f"{self.item_description} ({self.pallets} x {self.units_per_pallet})"
+
+
+class OrderContainerDocument(models.Model):
+    """PDF or other document attached to an OrderContainer."""
+
+    container = models.ForeignKey(
+        OrderContainer,
+        on_delete=models.CASCADE,
+        related_name="documents",
+    )
+
+    file = models.FileField(upload_to="order_docs/")
+    label = models.CharField(max_length=255, blank=True)
+
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at", "-id"]
+
+    def __str__(self) -> str:
+        return self.label or (self.file.name if self.file else "Document")
 
