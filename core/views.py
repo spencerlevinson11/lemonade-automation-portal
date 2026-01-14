@@ -16,15 +16,16 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.http import FileResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+from django.forms import inlineformset_factory
 
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
 from .bol_generation import generate_bol_from_form, generate_bol_from_templates
-from .forms import BOLForm, PricingUploadForm, TipEntryForm, ProjectPlanEntryForm
+from .forms import BOLForm, PricingUploadForm, TipEntryForm, ProjectPlanEntryForm, OrderContainerForm, OrderContainerLineForm
 from .models import Automation, Company, PricingCustomer, PricingQuoteLine, TipEntry, ProjectPlanEntry
 from .rpc_generation import generate_rpc_from_form
 from .rpcforms import RpcOrderForm
@@ -2217,6 +2218,10 @@ def run_automation(request, pk):
     if "project planner" in name_normalized or "project planning" in name_normalized:
         return redirect("project_planner")
 
+    # --- Branch: Order Tracker ---
+    if "order tracker" in name_normalized or "container tracker" in name_normalized or "order tracking" in name_normalized:
+        return redirect("order_tracker")
+
 
     # --- Default: BOL generator ---
     if request.method == "POST":
@@ -2801,6 +2806,113 @@ def pricing_customer_quote_view(request, customer_id):
             "currency_symbol": currency_symbol,
         },
     )
+
+
+@login_required
+def order_tracker_view(request):
+    """
+    Sea container / order tracking dashboard.
+    Shows containers scoped to the user's company (owner) and allows create/edit.
+    """
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        company = get_object_or_404(Company, owner=user)
+
+    q = (request.GET.get("q") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+
+    containers = OrderContainer.objects.filter(company=company)
+
+    if q:
+        containers = containers.filter(
+            Q(customer_name__icontains=q)
+            | Q(location_name__icontains=q)
+            | Q(po_number__icontains=q)
+            | Q(rpc_number__icontains=q)
+            | Q(booking_number__icontains=q)
+            | Q(bill_of_lading_number__icontains=q)
+        )
+
+    if status:
+        containers = containers.filter(status=status)
+
+    containers = containers.order_by("-updated_at", "-created_at")
+
+    return render(
+        request,
+        "core/order_tracker.html",
+        {
+            "automation_name": "Order Tracker",
+            "company": company,
+            "containers": containers,
+            "q": q,
+            "status": status,
+            "status_choices": OrderContainer.STATUS_CHOICES,
+        },
+    )
+
+
+@login_required
+def order_container_edit_view(request, container_id: int | None = None):
+    """
+    Create or edit a container + its content lines (inline formset).
+    """
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        company = get_object_or_404(Company, owner=user)
+
+    if container_id is None:
+        container = None
+    else:
+        container = get_object_or_404(OrderContainer, pk=container_id, company=company)
+
+    LineFormSet = inlineformset_factory(
+        parent_model=OrderContainer,
+        model=OrderContainerLine,
+        form=OrderContainerLineForm,
+        extra=3,
+        can_delete=True,
+    )
+
+    if request.method == "POST":
+        form = OrderContainerForm(request.POST, instance=container)
+        formset = LineFormSet(request.POST, instance=container, prefix="lines")
+        if form.is_valid() and formset.is_valid():
+            obj: OrderContainer = form.save(commit=False)
+            obj.company = company
+            if obj.created_by_id is None:
+                obj.created_by = user
+            obj.save()
+
+            formset.instance = obj
+            formset.save()
+
+            messages.success(request, "Container saved.")
+            return redirect("order_container_edit", container_id=obj.id)
+        else:
+            messages.error(request, "Please fix the errors below and try again.")
+    else:
+        form = OrderContainerForm(instance=container)
+        formset = LineFormSet(instance=container, prefix="lines")
+
+    return render(
+        request,
+        "core/order_container_edit.html",
+        {
+            "automation_name": "Order Tracker",
+            "company": company,
+            "container": container,
+            "form": form,
+            "formset": formset,
+        },
+    )
+
 
 
 
