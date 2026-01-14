@@ -2,7 +2,7 @@
 from django import forms
 from django.utils import timezone
 
-from .models import ProjectPlanEntry, OrderContainer, OrderContainerLine
+from .models import ProjectPlanEntry, OrderContainer, OrderContainerLine, OrderContainerDocument
 
 
 class BOLForm(forms.Form):
@@ -264,6 +264,12 @@ class ProjectPlanEntryForm(forms.ModelForm):
 # =========================
 
 class OrderContainerForm(forms.ModelForm):
+    assigned_to = forms.ChoiceField(
+        required=False,
+        choices=[("", "—"), ("Spencer", "Spencer"), ("Jaime", "Jaime")],
+        widget=forms.RadioSelect,
+    )
+
     class Meta:
         model = OrderContainer
         fields = [
@@ -272,6 +278,7 @@ class OrderContainerForm(forms.ModelForm):
             "po_number",
             "requested_date",
             "status",
+            "assigned_to",
             "rpc_number",
             "loading_date",
             "etd",
@@ -282,12 +289,23 @@ class OrderContainerForm(forms.ModelForm):
             "notes",
         ]
         widgets = {
+            "status": forms.TextInput(attrs={"placeholder": "e.g., Booked, On water, Customs hold, Delivered..."}),
             "requested_date": forms.DateInput(attrs={"type": "date"}),
             "loading_date": forms.DateInput(attrs={"type": "date"}),
             "etd": forms.DateInput(attrs={"type": "date"}),
             "eta": forms.DateInput(attrs={"type": "date"}),
             "estimated_delivery_date": forms.DateInput(attrs={"type": "date"}),
+            "status": forms.TextInput(attrs={"placeholder": "e.g., booked, on water, customs hold, delivered"}),
             "notes": forms.Textarea(attrs={"rows": 3, "placeholder": "Optional notes..."}),
+        }
+
+
+class OrderContainerDocumentForm(forms.ModelForm):
+    class Meta:
+        model = OrderContainerDocument
+        fields = ["file", "label"]
+        widgets = {
+            "label": forms.TextInput(attrs={"placeholder": "Optional label (e.g., BOL, Booking, Invoice)"}),
         }
 
 
