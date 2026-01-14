@@ -107,12 +107,15 @@
             <input name="q" value="{{ q }}" placeholder="Customer, location, PO#, RPC#, booking, BOL..." />
           </div>
           <div class="field" style="max-width:260px;">
-            <label>Status</label>
-            <select name="status">
-              <option value="">All</option>
-              {% for val, label in status_choices %}
-                <option value="{{ val }}" {% if status == val %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
+            <label>Status (type anything)</label>
+            <input name="status" value="{{ status }}" placeholder="e.g., booked, on water, customs..." />
+          </div>
+          <div class="field" style="max-width:260px;">
+            <label>Owner</label>
+            <select name="assigned_to">
+              <option value="" {% if not assigned_to %}selected{% endif %}>All</option>
+              <option value="Spencer" {% if assigned_to == "Spencer" %}selected{% endif %}>Spencer</option>
+              <option value="Jaime" {% if assigned_to == "Jaime" %}selected{% endif %}>Jaime</option>
             </select>
           </div>
           <div style="display:flex; gap:10px;">
@@ -127,12 +130,34 @@
       <table>
         <thead>
           <tr>
-            <th>Customer / Location</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=customer&dir={% if sort == 'customer' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Customer
+              </a>
+              /
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=location&dir={% if sort == 'location' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Location
+              </a>
+            </th>
             <th>PO#</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=assigned_to&dir={% if sort == 'assigned_to' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Owner
+              </a>
+            </th>
             <th>Status</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=loading&dir={% if sort == 'loading' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Loading Date
+              </a>
+            </th>
             <th>ETD</th>
             <th>ETA</th>
-            <th>Est. Delivery</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=est_delivery&dir={% if sort == 'est_delivery' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Est. Delivery
+              </a>
+            </th>
             <th>Updated</th>
           </tr>
         </thead>
@@ -152,7 +177,9 @@
                 </div>
               </td>
               <td>{% if c.po_number %}{{ c.po_number }}{% else %}<span class="muted">—</span>{% endif %}</td>
-              <td><span class="badge">{{ c.get_status_display }}</span></td>
+              <td>{% if c.assigned_to %}<span class="badge">{{ c.assigned_to }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{% if c.status %}<span class="badge">{{ c.status }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{% if c.loading_date %}{{ c.loading_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.etd %}{{ c.etd }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.eta %}{{ c.eta }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
@@ -160,7 +187,7 @@
             </tr>
           {% empty %}
             <tr>
-              <td colspan="7" class="muted">No containers yet. Click “New container” to add your first one.</td>
+              <td colspan="9" class="muted">No containers yet. Click “New container” to add your first one.</td>
             </tr>
           {% endfor %}
         </tbody>
