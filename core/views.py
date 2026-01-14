@@ -2838,7 +2838,18 @@ def pricing_customer_quote_view(request, customer_id):
         },
     )
 
+@require_POST
+@login_required
+def order_container_delete_view(request, container_id: int):
+    company = get_object_or_404(Company, user=request.user)
+    container = get_object_or_404(OrderContainer, id=container_id, company=company)
 
+    # This will cascade-delete lines + documents if your FKs are CASCADE (they should be).
+    container.delete()
+
+    messages.success(request, "Order deleted.")
+    return redirect("order_tracker")
+    
 @login_required
 def order_tracker_view(request):
     """
