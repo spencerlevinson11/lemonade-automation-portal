@@ -2,7 +2,7 @@
 from django import forms
 from django.utils import timezone
 
-from .models import ProjectPlanEntry
+from .models import ProjectPlanEntry, OrderContainer, OrderContainerLine
 
 
 class BOLForm(forms.Form):
@@ -256,6 +256,49 @@ class ProjectPlanEntryForm(forms.ModelForm):
         widgets = {
             "project_name": forms.TextInput(attrs={"placeholder": "e.g., Replace bathroom faucet"}),
             "notes": forms.Textarea(attrs={"rows": 3, "placeholder": "Optional notes / parts needed / links"}),
+        }
+
+
+# =========================
+# Order Tracking Forms
+# =========================
+
+class OrderContainerForm(forms.ModelForm):
+    class Meta:
+        model = OrderContainer
+        fields = [
+            "customer_name",
+            "location_name",
+            "po_number",
+            "requested_date",
+            "status",
+            "rpc_number",
+            "loading_date",
+            "etd",
+            "eta",
+            "estimated_delivery_date",
+            "booking_number",
+            "bill_of_lading_number",
+            "notes",
+        ]
+        widgets = {
+            "requested_date": forms.DateInput(attrs={"type": "date"}),
+            "loading_date": forms.DateInput(attrs={"type": "date"}),
+            "etd": forms.DateInput(attrs={"type": "date"}),
+            "eta": forms.DateInput(attrs={"type": "date"}),
+            "estimated_delivery_date": forms.DateInput(attrs={"type": "date"}),
+            "notes": forms.Textarea(attrs={"rows": 3, "placeholder": "Optional notes..."}),
+        }
+
+
+class OrderContainerLineForm(forms.ModelForm):
+    class Meta:
+        model = OrderContainerLine
+        fields = ["item_description", "pallets", "units_per_pallet"]
+        widgets = {
+            "item_description": forms.TextInput(attrs={"placeholder": "e.g., 5 liter vase"}),
+            "pallets": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
+            "units_per_pallet": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
         }
 
 
