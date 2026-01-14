@@ -26,7 +26,17 @@ from django.forms import inlineformset_factory
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
 from .bol_generation import generate_bol_from_form, generate_bol_from_templates
 from .forms import BOLForm, PricingUploadForm, TipEntryForm, ProjectPlanEntryForm, OrderContainerForm, OrderContainerLineForm
-from .models import Automation, Company, PricingCustomer, PricingQuoteLine, TipEntry, ProjectPlanEntry
+from .models import (
+    Automation,
+    Company,
+    PricingCustomer,
+    PricingQuoteLine,
+    TipEntry,
+    ProjectPlanEntry,
+    OrderContainer,
+    OrderContainerLine,
+)
+
 from .rpc_generation import generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
