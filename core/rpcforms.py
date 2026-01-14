@@ -157,6 +157,32 @@ class RpcOrderForm(forms.Form):
             attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
         ),
     )
+    b_8_liter_round_bucket = forms.IntegerField(
+        label="8 liter round bucket",
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
+        ),
+    )
+
+    b_8_liter_round_ng_bucket = forms.IntegerField(
+        label="8 liter round NG bucket",
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
+        ),
+    )
+
+    b_3_liter_round_bucket = forms.IntegerField(
+        label="3 liter round bucket",
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
+        ),
+    )
     b_10_liter_wide_classic_hq = forms.IntegerField(
         label="10 liter wide classic HQ#",
         required=False,
