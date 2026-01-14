@@ -25,7 +25,15 @@ from django.forms import inlineformset_factory
 
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
 from .bol_generation import generate_bol_from_form, generate_bol_from_templates
-from .forms import BOLForm, PricingUploadForm, TipEntryForm, ProjectPlanEntryForm, OrderContainerForm, OrderContainerLineForm
+from .forms import (
+    BOLForm,
+    PricingUploadForm,
+    TipEntryForm,
+    ProjectPlanEntryForm,
+    OrderContainerForm,
+    OrderContainerLineForm,
+    OrderContainerDocumentForm,
+)
 from .models import (
     Automation,
     Company,
@@ -35,6 +43,7 @@ from .models import (
     ProjectPlanEntry,
     OrderContainer,
     OrderContainerLine,
+    OrderContainerDocument,
 )
 
 from .rpc_generation import generate_rpc_from_form
@@ -2833,6 +2842,10 @@ def order_tracker_view(request):
 
     q = (request.GET.get("q") or "").strip()
     status = (request.GET.get("status") or "").strip()
+    assigned_to = (request.GET.get("assigned_to") or "").strip()
+
+    sort = (request.GET.get("sort") or "").strip()
+    direction = (request.GET.get("dir") or "desc").strip().lower()
 
     containers = OrderContainer.objects.filter(company=company)
 
@@ -2847,9 +2860,30 @@ def order_tracker_view(request):
         )
 
     if status:
-        containers = containers.filter(status=status)
+        # status is free text; treat filter as "contains" so you can search partial statuses
+        containers = containers.filter(status__icontains=status)
 
-    containers = containers.order_by("-updated_at", "-created_at")
+    if assigned_to:
+        containers = containers.filter(assigned_to__iexact=assigned_to)
+
+    # Sorting (whitelisted)
+    sort_map = {
+        "customer": "customer_name",
+        "location": "location_name",
+        "est_delivery": "estimated_delivery_date",
+        "loading": "loading_date",
+        "assigned_to": "assigned_to",
+    }
+    sort_field = sort_map.get(sort)
+
+    if direction not in {"asc", "desc"}:
+        direction = "desc"
+
+    if sort_field:
+        prefix = "" if direction == "asc" else "-"
+        containers = containers.order_by(f"{prefix}{sort_field}", "-updated_at", "-created_at")
+    else:
+        containers = containers.order_by("-updated_at", "-created_at")
 
     return render(
         request,
@@ -2860,7 +2894,9 @@ def order_tracker_view(request):
             "containers": containers,
             "q": q,
             "status": status,
-            "status_choices": OrderContainer.STATUS_CHOICES,
+            "assigned_to": assigned_to,
+            "sort": sort,
+            "dir": direction,
         },
     )
 
@@ -2890,10 +2926,24 @@ def order_container_edit_view(request, container_id: int | None = None):
         can_delete=True,
     )
 
+    DocumentFormSet = inlineformset_factory(
+        parent_model=OrderContainer,
+        model=OrderContainerDocument,
+        form=OrderContainerDocumentForm,
+        extra=1,
+        can_delete=True,
+    )
+
     if request.method == "POST":
         form = OrderContainerForm(request.POST, instance=container)
         formset = LineFormSet(request.POST, instance=container, prefix="lines")
-        if form.is_valid() and formset.is_valid():
+        doc_formset = DocumentFormSet(
+            request.POST,
+            request.FILES,
+            instance=container,
+            prefix="docs",
+        )
+        if form.is_valid() and formset.is_valid() and doc_formset.is_valid():
             obj: OrderContainer = form.save(commit=False)
             obj.company = company
             if obj.created_by_id is None:
@@ -2903,6 +2953,9 @@ def order_container_edit_view(request, container_id: int | None = None):
             formset.instance = obj
             formset.save()
 
+            doc_formset.instance = obj
+            doc_formset.save()
+
             messages.success(request, "Container saved.")
             return redirect("order_container_edit", container_id=obj.id)
         else:
@@ -2910,6 +2963,7 @@ def order_container_edit_view(request, container_id: int | None = None):
     else:
         form = OrderContainerForm(instance=container)
         formset = LineFormSet(instance=container, prefix="lines")
+        doc_formset = DocumentFormSet(instance=container, prefix="docs")
 
     return render(
         request,
@@ -2920,8 +2974,11 @@ def order_container_edit_view(request, container_id: int | None = None):
             "container": container,
             "form": form,
             "formset": formset,
+            "doc_formset": doc_formset,
         },
     )
+
+
 
 
 
