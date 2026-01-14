@@ -305,3 +305,118 @@ class ProjectPlanEntry(models.Model):
 
     def __str__(self) -> str:
         return f"{self.project_name} ({self.company.name})"
+
+# =========================
+# Sea Container Order Tracking
+# =========================
+
+class OrderContainer(models.Model):
+    """
+    Tracks an in-transit sea container order, scoped to a Company.
+    Customer + Location are stored as plain text so "Elite Flower Group - Miami"
+    can remain separate from "Elite Flower Group - Lebanon".
+    """
+    STATUS_PLANNED = "planned"
+    STATUS_BOOKED = "booked"
+    STATUS_LOADED = "loaded"
+    STATUS_SAILED = "sailed"
+    STATUS_ARRIVED_PORT = "arrived_port"
+    STATUS_CUSTOMS = "customs"
+    STATUS_DELIVERED = "delivered"
+    STATUS_CANCELLED = "cancelled"
+
+    STATUS_CHOICES = [
+        (STATUS_PLANNED, "Planned"),
+        (STATUS_BOOKED, "Booked"),
+        (STATUS_LOADED, "Loaded"),
+        (STATUS_SAILED, "Sailed / In transit"),
+        (STATUS_ARRIVED_PORT, "Arrived (port)"),
+        (STATUS_CUSTOMS, "Customs / Hold"),
+        (STATUS_DELIVERED, "Delivered"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="order_containers",
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_order_containers",
+    )
+
+    customer_name = models.CharField(max_length=255)
+    location_name = models.CharField(max_length=255, blank=True)
+
+    po_number = models.CharField(max_length=64, blank=True)
+    requested_date = models.DateField(null=True, blank=True)
+
+    status = models.CharField(
+        max_length=32,
+        choices=STATUS_CHOICES,
+        default=STATUS_PLANNED,
+    )
+
+    rpc_number = models.CharField(max_length=64, blank=True)  # your internal RPC#
+    loading_date = models.DateField(null=True, blank=True)
+
+    etd = models.DateField(null=True, blank=True)
+    eta = models.DateField(null=True, blank=True)
+    estimated_delivery_date = models.DateField(null=True, blank=True)
+
+    booking_number = models.CharField(max_length=128, blank=True)
+    bill_of_lading_number = models.CharField(max_length=128, blank=True)
+
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-created_at"]
+
+    def __str__(self) -> str:
+        loc = f" - {self.location_name}" if self.location_name else ""
+        base = f"{self.customer_name}{loc}"
+        if self.po_number:
+            base += f" | PO {self.po_number}"
+        return base
+
+
+class OrderContainerLine(models.Model):
+    """
+    One content line inside a container (supports mixed containers).
+    Example: "5 liter vase (12 x 6210) = 74520"
+    """
+    container = models.ForeignKey(
+        OrderContainer,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+
+    item_description = models.CharField(max_length=255)
+    pallets = models.PositiveIntegerField(default=0)
+    units_per_pallet = models.PositiveIntegerField(default=0)
+    total_units = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["id"]
+
+    def save(self, *args, **kwargs):
+        # Auto-calc total if both inputs present
+        try:
+            self.total_units = int(self.pallets or 0) * int(self.units_per_pallet or 0)
+        except Exception:
+            pass
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.item_description} ({self.pallets} x {self.units_per_pallet})"
+
