@@ -49,6 +49,7 @@ from .models import (
 from .rpc_generation import generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
+from .services.order_tracker import upsert_container_from_rpc_order
 
 
 
@@ -2207,6 +2208,17 @@ def run_automation(request, pk):
             if form.is_valid():
                 files, outlook_status = generate_rpc_from_form(form.cleaned_data)
 
+                # Auto-create/update an Order Tracker container from this RPC order
+                try:
+                    upsert_container_from_rpc_order(
+                        company=automation.company,
+                        created_by=request.user,
+                        rpc_data=form.cleaned_data,
+                    )
+                except Exception as e:
+                    # Don't fail the RPC download if tracking import fails
+                    messages.warning(request, f"RPC generated, but Order Tracker auto-add failed: {e}")
+
                 automation.last_run_at = timezone.now()
                 automation.save(update_fields=["last_run_at"])
 
@@ -2977,7 +2989,6 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
-
 
 
 
