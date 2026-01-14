@@ -111,7 +111,7 @@
       </div>
     </div>
 
-    <form id="mainForm" method="post">
+    <form id="mainForm" method="post" enctype="multipart/form-data">
       {% csrf_token %}
 
       <div class="card">
@@ -142,6 +142,13 @@
             <label>Status</label>
             {{ form.status }}
             {{ form.status.errors }}
+          </div>
+          <div class="field">
+            <label>Owner (Jaime / Spencer)</label>
+            <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; padding:6px 0;">
+              {{ form.assigned_to }}
+            </div>
+            {{ form.assigned_to.errors }}
           </div>
           <div class="field">
             <label>RPC#</label>
@@ -188,6 +195,66 @@
           {{ form.notes }}
           {{ form.notes.errors }}
         </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+          <div>
+            <div style="font-weight:900;">Documents (PDFs, BOL, booking, etc.)</div>
+            <div class="muted tiny">Attach one or more PDFs to this container. You can add more rows as needed.</div>
+          </div>
+          <button class="btn2" type="button" id="addDocBtn">+ Add document</button>
+        </div>
+
+        {{ doc_formset.management_form }}
+
+        <table id="docsTable">
+          <thead>
+            <tr>
+              <th style="width:55%;">File</th>
+              <th style="width:30%;">Label</th>
+              <th style="width:15%;">Delete</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in doc_formset.forms %}
+              <tr class="docRow">
+                <td>
+                  {% if d.instance and d.instance.file %}
+                    <div style="margin-bottom:6px;">
+                      <a href="{{ d.instance.file.url }}" target="_blank">View current file</a>
+                      <span class="muted tiny">({{ d.instance.file.name }})</span>
+                    </div>
+                  {% endif %}
+                  {{ d.file }}
+                  {{ d.file.errors }}
+                  {{ d.id }}
+                </td>
+                <td>
+                  {{ d.label }}
+                  {{ d.label.errors }}
+                </td>
+                <td>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    {{ d.DELETE }} <span class="muted tiny">mark</span>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <template id="emptyDocTemplate">
+          <tr class="docRow">
+            <td>__FILE____ID__</td>
+            <td>__LABEL__</td>
+            <td>
+              <div style="display:flex; align-items:center; gap:8px;">
+                __DEL__ <span class="muted tiny">mark</span>
+              </div>
+            </td>
+          </tr>
+        </template>
       </div>
 
       <div class="card">
@@ -261,6 +328,35 @@
 
   <script>
     (function () {
+      // Docs formset
+      const addDocBtn = document.getElementById("addDocBtn");
+      const docsTotalForms = document.getElementById("id_docs-TOTAL_FORMS") || document.querySelector('input[name="docs-TOTAL_FORMS"]') || document.querySelector('input[name$="docs-TOTAL_FORMS"]');
+      const docsTbody = document.querySelector("#docsTable tbody");
+      const docTpl = document.getElementById("emptyDocTemplate");
+
+      function newDocRowHtml(formIndex) {
+        const prefix = docsTotalForms.name.replace("-TOTAL_FORMS", "");
+        const file = `<input type="file" name="${prefix}-${formIndex}-file" accept="application/pdf" />`;
+        const label = `<input type="text" name="${prefix}-${formIndex}-label" class="input" placeholder="Optional label (e.g., BOL, Booking, Invoice)" />`;
+        const del = `<input type="checkbox" name="${prefix}-${formIndex}-DELETE" />`;
+        const id = `<input type="hidden" name="${prefix}-${formIndex}-id" />`;
+
+        let html = docTpl.innerHTML;
+        html = html.replace("__FILE__", file);
+        html = html.replace("__LABEL__", label);
+        html = html.replace("__DEL__", del);
+        html = html.replace("__ID__", id);
+        return html;
+      }
+
+      if (addDocBtn && docsTotalForms && docsTbody && docTpl) {
+        addDocBtn.addEventListener("click", function () {
+          const current = parseInt(docsTotalForms.value || "0", 10);
+          docsTbody.insertAdjacentHTML("beforeend", newDocRowHtml(current));
+          docsTotalForms.value = String(current + 1);
+        });
+      }
+
       const addBtn = document.getElementById("addLineBtn");
       const totalFormsInput = document.getElementById("id_lines-TOTAL_FORMS") || document.querySelector('input[name$="-TOTAL_FORMS"]');
       const tbody = document.querySelector("#linesTable tbody");
@@ -296,3 +392,4 @@
   </script>
 </body>
 </html>
+
