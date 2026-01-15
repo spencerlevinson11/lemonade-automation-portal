@@ -2209,9 +2209,15 @@ def run_automation(request, pk):
                 files, outlook_status = generate_rpc_from_form(form.cleaned_data)
 
                 # Auto-create/update an Order Tracker container from this RPC order
+                ot_company = automation.company
+                if not request.user.is_superuser:
+                    owned_company = Company.objects.filter(owner=request.user).order_by("id").first()
+                    if owned_company and (ot_company is None or ot_company.owner_id != request.user.id):
+                        ot_company = owned_company
+
                 try:
                     upsert_container_from_rpc_order(
-                        company=automation.company,
+                        company=ot_company,
                         created_by=request.user,
                         rpc_data=form.cleaned_data,
                     )
@@ -3007,6 +3013,8 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
+
+
 
 
 
