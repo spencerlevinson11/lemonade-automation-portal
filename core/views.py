@@ -2201,8 +2201,26 @@ def run_automation(request, pk):
     if name_normalized in {"tip tracker", "tips tracker", "tip tracking", "tips"}:
         return redirect("tip_tracker")
 
-    # --- Branch: Retriever RPC Order ---
-    if name_normalized == "retriever rpc order":
+    # --- Branch: RPC Order Generator ---
+    # In production the Automation.name may vary ("Retriever RPC Order", "RPC Order Generator", etc.).
+    # Use a robust match so the RPC form + Order Tracker auto-add always runs.
+    rpc_name_hits = {
+        "retriever rpc order",
+        "rpc order",
+        "rpc order generator",
+        "rpc generator",
+        "rpc order form",
+    }
+
+    is_rpc_order_automation = (
+        name_normalized in rpc_name_hits
+        or (
+            "rpc" in name_normalized
+            and ("order" in name_normalized or "generator" in name_normalized)
+        )
+    )
+
+    if is_rpc_order_automation:
         if request.method == "POST":
             form = RpcOrderForm(request.POST)
             if form.is_valid():
@@ -3013,9 +3031,6 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
-
-
-
 
 
 
