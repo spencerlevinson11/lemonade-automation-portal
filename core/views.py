@@ -2962,15 +2962,21 @@ def order_container_edit_view(request, container_id: int | None = None):
     """
     user = request.user
 
+    # IMPORTANT FIX:
+    # Superusers can edit any container, so infer company from the container when editing.
     if user.is_superuser:
-        company = Company.objects.order_by("id").first()
+        if container_id is None:
+            company = Company.objects.order_by("id").first()
+            container = None
+        else:
+            container = get_object_or_404(OrderContainer, pk=container_id)
+            company = container.company
     else:
         company = get_object_or_404(Company, owner=user)
-
-    if container_id is None:
-        container = None
-    else:
-        container = get_object_or_404(OrderContainer, pk=container_id, company=company)
+        if container_id is None:
+            container = None
+        else:
+            container = get_object_or_404(OrderContainer, pk=container_id, company=company)
 
     LineFormSet = inlineformset_factory(
         parent_model=OrderContainer,
