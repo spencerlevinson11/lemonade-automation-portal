@@ -2337,6 +2337,19 @@ def run_automation(request, pk):
         return redirect("order_tracker")
 
 
+    # --- Branch: RPC -> Master Sheet Formatter ---
+    # This project currently dispatches from the dashboard by Automation.name (there is no slug
+    # field on the Automation model). If this doesn't match, the request falls through to the
+    # default BOL generator.
+    is_rpc_master_formatter = (
+        ("rpc" in name_normalized and "master" in name_normalized)
+        or ("rpc" in name_normalized and "formatter" in name_normalized)
+        or ("master" in name_normalized and "formatter" in name_normalized)
+    )
+    if is_rpc_master_formatter:
+        return redirect("rpc_master_formatter")
+
+
     # --- Default: BOL generator ---
     if request.method == "POST":
         form = BOLForm(request.POST)
@@ -3159,6 +3172,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
+
 
 
 
