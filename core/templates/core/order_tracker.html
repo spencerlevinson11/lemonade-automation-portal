@@ -133,7 +133,7 @@
     <div class="top">
       <div class="title">
         <h1>Order Tracker</h1>
-        <p class="muted">{{ company.name }} • Track sea containers by customer + location</p>
+        <p class="muted">{{ company_display }} • Track sea containers by customer + location</p>
       </div>
       <div class="actions">
         <!-- Keep your existing "full edit page" flow available -->
@@ -276,6 +276,13 @@
     </div>
 
     <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:900;">Active Orders</div>
+          <div class="muted tiny">Use “Mark delivered” once an order has arrived — it will move to the Delivered section below.</div>
+        </div>
+      </div>
+
       <table>
         <thead>
           <tr>
@@ -289,6 +296,11 @@
               </a>
             </th>
             <th>PO#</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=requested&dir={% if sort == 'requested' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Requested
+              </a>
+            </th>
             <th>
               <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=assigned_to&dir={% if sort == 'assigned_to' and dir == 'asc' %}desc{% else %}asc{% endif %}">
                 Owner
@@ -308,6 +320,7 @@
               </a>
             </th>
             <th>Updated</th>
+            <th style="width:140px;">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -326,6 +339,7 @@
                 </div>
               </td>
               <td>{% if c.po_number %}{{ c.po_number }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{% if c.requested_date %}{{ c.requested_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.assigned_to %}<span class="badge">{{ c.assigned_to }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.status %}<span class="badge">{{ c.status }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.loading_date %}{{ c.loading_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
@@ -333,14 +347,90 @@
               <td>{% if c.eta %}{{ c.eta }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
+              <td>
+                <form method="post" action="{% url 'order_container_toggle_delivered' c.id %}" style="display:inline;">
+                  {% csrf_token %}
+                  <button class="btn" type="submit" onclick="return confirm('Mark this order as Delivered?');">Mark delivered</button>
+                </form>
+              </td>
             </tr>
           {% empty %}
             <tr>
-              <td colspan="9" class="muted">No containers yet. Use “Add a new container” above to create your first one.</td>
+              <td colspan="11" class="muted">No active orders. (Delivered orders show below.)</td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>
+          <div class="summary-left">
+            <span class="chev"></span>
+            <span>Delivered Orders ({{ delivered_containers|length }})</span>
+          </div>
+          <span class="badge">Archive</span>
+        </summary>
+
+        <div class="hint">These are orders whose status is <strong>Delivered</strong>. You can reopen an order if needed.</div>
+        <div class="divider"></div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Customer / Location</th>
+              <th>PO#</th>
+              <th>Requested</th>
+              <th>Owner</th>
+              <th>Status</th>
+              <th>Loading Date</th>
+              <th>ETD</th>
+              <th>ETA</th>
+              <th>Est. Delivery</th>
+              <th>Updated</th>
+              <th style="width:140px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in delivered_containers %}
+              <tr>
+                <td>
+                  <div style="font-weight:800;">
+                    <a href="{% url 'order_container_edit' container_id=c.id %}">
+                      {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
+                    </a>
+                  </div>
+                  <div class="muted" style="font-size:0.85rem; margin-top:2px;">
+                    {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
+                    {% if c.booking_number %}Booking: {{ c.booking_number }} • {% endif %}
+                    {% if c.bill_of_lading_number %}BOL: {{ c.bill_of_lading_number }}{% endif %}
+                  </div>
+                </td>
+                <td>{% if c.po_number %}{{ c.po_number }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>{% if c.requested_date %}{{ c.requested_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>{% if c.assigned_to %}<span class="badge">{{ c.assigned_to }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td><span class="badge">{{ c.status }}</span></td>
+                <td>{% if c.loading_date %}{{ c.loading_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>{% if c.etd %}{{ c.etd }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>{% if c.eta %}{{ c.eta }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
+                <td>
+                  <form method="post" action="{% url 'order_container_toggle_delivered' c.id %}" style="display:inline;">
+                    {% csrf_token %}
+                    <button class="btn" type="submit" onclick="return confirm('Move this order back to Active?');">Reopen</button>
+                  </form>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="11" class="muted">No delivered orders yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
     </div>
 
     <div class="muted" style="margin-top:16px;">
