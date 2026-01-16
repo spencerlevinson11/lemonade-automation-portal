@@ -7,6 +7,7 @@ from io import BytesIO
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import openpyxl
+from openpyxl.styles import Font, PatternFill
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,11 @@ BUCKETTYPE_TO_COLUMN: Dict[str, int] = {
     "10ltr Conical": 17,
     "10ltr Conical NG": 18,
     "13ltr Conical": 19,
+    # NOTE: In your master sheet, the blank header column between
+    # "13 Conical" and "8 liter round NG" is the standard 8 liter round.
+    "8 liter round": 20,
+    "8 ltr round": 20,
+    "8ltr round": 20,
     "8 ltr round NG": 21,
     "8 liter round NG": 21,
     "13ltr NG": 22,
@@ -93,6 +99,43 @@ BUCKETTYPE_TO_COLUMN: Dict[str, int] = {
     # Other
     "Amalia Buckets": 25,
 }
+
+
+# Bucket Type cell colors (matches your "bucket types and corresponding colors.xlsx").
+# Any rgb value of "00000000" in the source sheet indicates no explicit fill; we skip those.
+BUCKETTYPE_COLOR_RGB: Dict[str, str] = {
+    "10ltr Wide Classic": "FFFCE4D6",
+    "Next Gen 10ltr": "FFD9E1F2",
+    "Next Gen 10ltr HQ": "FFF4B084",
+    "5ltr Round": "FFFF33CC",
+    "5ltr Vase": "FFD0CECE",
+    "7 ltr vase HQ": "FF00B050",
+    "10ltr Conical": "FFFFF2CC",
+    "10ltr Conical NG": "FF9999FF",
+    "13ltr Conical": "FF00B0F0",
+    "8 liter round": "FF66FFCC",
+    "8 ltr round": "FF66FFCC",
+    "8ltr round": "FF66FFCC",
+    "8 ltr round NG": "FFC65911",
+    "8 liter round NG": "FFC65911",
+    "13ltr NG": "FF0070C0",
+    "3 liter round": "FFC6E0B4",
+    "Maxima Buckets": "FFFF9999",
+    "Maxima Lids": "FFFF9999",
+    "Maxima Sets": "FFFF9999",
+    "Amalia Buckets": "FFFF9999",
+}
+
+
+def _apply_bucket_type_style(cell) -> None:
+    """Apply the bucket-type color + readable font (matches your example master file)."""
+    if not cell.value:
+        return
+    rgb = BUCKETTYPE_COLOR_RGB.get(str(cell.value).strip())
+    if not rgb or rgb == "00000000":
+        return
+    cell.fill = PatternFill(patternType="solid", fgColor=rgb)
+    cell.font = Font(color="FF000000")
 
 
 def _safe_int(x) -> Optional[int]:
@@ -447,8 +490,6 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
     for i, r in enumerate(rows):
         rr = start_row + i
 
-        avg_days, fastest_days = get_transit_times(r.city)
-
         if r.nld_date:
             ws.cell(rr, 1).value = dt.datetime.combine(r.nld_date, dt.time.min)
         ws.cell(rr, 2).value = r.nld_week
@@ -465,16 +506,14 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
 
         # HOLD mirrors the quantity
         ws.cell(rr, 26).value = r.quantity
-        ws.cell(rr, 27).value = r.bucket_type
+        bt_cell = ws.cell(rr, 27)
+        bt_cell.value = r.bucket_type
+        _apply_bucket_type_style(bt_cell)
         if r.due_by:
             ws.cell(rr, 28).value = dt.datetime.combine(r.due_by, dt.time.min)
         ws.cell(rr, 29).value = r.due_week
 
         # Transit times
-        ws.cell(rr, 30).value = avg_days
-        ws.cell(rr, 31).value = fastest_days
-
-        # Transit time columns (Average Transit, Fastest Delivery)
         avg_days, fastest_days = get_transit_times(r.city)
         ws.cell(rr, 30).value = avg_days
         ws.cell(rr, 31).value = fastest_days
@@ -482,3 +521,4 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
+
