@@ -472,6 +472,9 @@ def parse_rpc_order_xlsx(file_bytes: bytes) -> Tuple[Dict[str, object], List[Mas
             continue
         totals_by_type[bucket_type] = totals_by_type.get(bucket_type, 0) + qty
 
+    # "MIX" is only present when the RPC includes multiple bucket types.
+    mix_flag = "MIX" if len(totals_by_type) > 1 else ""
+
     rows: List[MasterRow] = []
     for bucket_type, qty in sorted(totals_by_type.items(), key=lambda x: x[0].lower()):
         rows.append(
@@ -482,7 +485,7 @@ def parse_rpc_order_xlsx(file_bytes: bytes) -> Tuple[Dict[str, object], List[Mas
                 rpc_number=rpc_number,
                 city=city,
                 customer_name=customer_name,
-                mix_flag="MIX",
+                mix_flag=mix_flag,
                 bucket_type=bucket_type,
                 quantity=int(qty),
                 due_by=due_by,
@@ -547,7 +550,12 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
         ws.cell(rr, 6).value = r.city
         ws.cell(rr, 7).value = r.customer_name
 
-        # IMPORTANT: Column 8 has no header in your master sheet; do not populate it.
+        # "MIX" flag (col 8) is only present when the RPC includes multiple bucket types.
+        if r.mix_flag:
+            mix_cell = ws.cell(rr, 8)
+            mix_cell.value = r.mix_flag
+            mix_cell.alignment = Alignment(horizontal="center")
+            mix_cell.font = Font(bold=True)
 
         # bucket quantity into the mapped column
         qty_col = BUCKETTYPE_TO_COLUMN.get(r.bucket_type)
@@ -581,5 +589,6 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
+
 
 
