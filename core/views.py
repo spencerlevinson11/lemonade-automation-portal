@@ -2880,6 +2880,35 @@ def order_container_delete_view(request, container_id: int):
 
     messages.success(request, "Order deleted.")
     return redirect("order_tracker")
+
+
+@require_POST
+@login_required
+def order_container_toggle_delivered_view(request, container_id: int):
+    """Toggle an order between Active and Delivered.
+
+    Delivered is represented by status == 'Delivered' (case-insensitive).
+    When toggling from Delivered -> Active, we set status to 'In transit' (safe default).
+    """
+    user = request.user
+
+    if user.is_superuser:
+        container = get_object_or_404(OrderContainer, id=container_id)
+    else:
+        company = get_object_or_404(Company, owner=user)
+        container = get_object_or_404(OrderContainer, id=container_id, company=company)
+
+    if (container.status or "").strip().lower() == "delivered":
+        container.status = "In transit"
+        container.save(update_fields=["status", "updated_at"])
+        messages.success(request, "Order moved back to Active.")
+    else:
+        container.status = "Delivered"
+        container.save(update_fields=["status", "updated_at"])
+        messages.success(request, "Order marked Delivered.")
+
+    # Return to where the user was (keep filters), fall back to tracker.
+    return redirect(request.META.get("HTTP_REFERER") or "order_tracker")
     
 @login_required
 def order_tracker_view(request):
@@ -2889,10 +2918,13 @@ def order_tracker_view(request):
     """
     user = request.user
 
+    # Superusers see ALL containers across companies.
     if user.is_superuser:
-        company = Company.objects.order_by("id").first()
+        company = None
+        containers = OrderContainer.objects.all()
     else:
         company = get_object_or_404(Company, owner=user)
+        containers = OrderContainer.objects.filter(company=company)
 
     q = (request.GET.get("q") or "").strip()
     status = (request.GET.get("status") or "").strip()
@@ -2900,8 +2932,6 @@ def order_tracker_view(request):
 
     sort = (request.GET.get("sort") or "").strip()
     direction = (request.GET.get("dir") or "desc").strip().lower()
-
-    containers = OrderContainer.objects.filter(company=company)
 
     if q:
         containers = containers.filter(
@@ -2924,6 +2954,7 @@ def order_tracker_view(request):
     sort_map = {
         "customer": "customer_name",
         "location": "location_name",
+        "requested": "requested_date",
         "est_delivery": "estimated_delivery_date",
         "loading": "loading_date",
         "assigned_to": "assigned_to",
@@ -2939,13 +2970,20 @@ def order_tracker_view(request):
     else:
         containers = containers.order_by("-updated_at", "-created_at")
 
+    # Split active vs delivered (delivered means status == "Delivered" case-insensitive)
+    delivered_q = Q(status__iexact="delivered")
+    delivered_containers = containers.filter(delivered_q)
+    active_containers = containers.exclude(delivered_q)
+
     return render(
         request,
         "core/order_tracker.html",
         {
             "automation_name": "Order Tracker",
             "company": company,
-            "containers": containers,
+            "company_display": (company.name if company else "All Companies"),
+            "containers": active_containers,
+            "delivered_containers": delivered_containers,
             "q": q,
             "status": status,
             "assigned_to": assigned_to,
@@ -2953,6 +2991,31 @@ def order_tracker_view(request):
             "dir": direction,
         },
     )
+
+
+@login_required
+@require_http_methods(["POST"])
+def order_container_toggle_delivered_view(request, container_id: int):
+    """Toggle an OrderContainer between Delivered and Active."""
+    user = request.user
+
+    if user.is_superuser:
+        container = get_object_or_404(OrderContainer, pk=container_id)
+    else:
+        company = get_object_or_404(Company, owner=user)
+        container = get_object_or_404(OrderContainer, pk=container_id, company=company)
+
+    current = (container.status or "").strip()
+    if current.lower() == "delivered":
+        # Re-open as active
+        container.status = "In transit"
+        messages.success(request, "Order marked active.")
+    else:
+        container.status = "Delivered"
+        messages.success(request, "Order marked delivered.")
+
+    container.save(update_fields=["status", "updated_at"])
+    return redirect("order_tracker")
 
 
 @login_required
@@ -3037,9 +3100,5 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
-
-
-
-
 
 
