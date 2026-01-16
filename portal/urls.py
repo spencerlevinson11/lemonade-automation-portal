@@ -95,6 +95,10 @@ urlpatterns = [
 
     # RPC -> Master Spreadsheet Formatter
     path("automations/rpc-master/", core_views.rpc_master_formatter_view, name="rpc_master_formatter"),
+    # Microsoft Graph OAuth
+    path("microsoft/connect/", core_views.microsoft_connect_view, name="microsoft_connect"),
+    path("microsoft/callback/", core_views.microsoft_callback_view, name="microsoft_callback"),
+
 ]
 
 # Bucket Projections (optional): only register if the views exist in this deploy
@@ -127,6 +131,7 @@ if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
             name="bucket_adjusted_prognosis_export",
         ),
     ]
+
 
 
 
