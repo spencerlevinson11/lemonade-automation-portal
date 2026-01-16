@@ -177,3 +177,27 @@ PROJECT_PLANNER_REMINDER_TO = os.environ.get(
     "PROJECT_PLANNER_REMINDER_TO",
     "haileycarlton97@gmail.com",
 )
+
+
+# -----------------------------
+# Microsoft Graph (OneDrive Business)
+# -----------------------------
+# Used for writing RPC Master rows directly into your master workbook.
+#
+# Required env vars:
+#   MICROSOFT_GRAPH_CLIENT_ID
+#   MICROSOFT_GRAPH_CLIENT_SECRET
+#   MICROSOFT_GRAPH_TENANT_ID
+#   MICROSOFT_GRAPH_REDIRECT_URI  (e.g. https://your-domain.com/microsoft/callback/)
+#   RPC_MASTER_ONEDRIVE_SHARE_URL (your master workbook share link)
+#
+MICROSOFT_GRAPH_CLIENT_ID = os.environ.get('MICROSOFT_GRAPH_CLIENT_ID')
+MICROSOFT_GRAPH_CLIENT_SECRET = os.environ.get('MICROSOFT_GRAPH_CLIENT_SECRET')
+MICROSOFT_GRAPH_TENANT_ID = os.environ.get('MICROSOFT_GRAPH_TENANT_ID', 'common')
+MICROSOFT_GRAPH_REDIRECT_URI = os.environ.get('MICROSOFT_GRAPH_REDIRECT_URI')
+
+# Share link to the master workbook in OneDrive Business/SharePoint.
+RPC_MASTER_ONEDRIVE_SHARE_URL = os.environ.get('RPC_MASTER_ONEDRIVE_SHARE_URL')
+
+# Optional: worksheet name (default: first worksheet)
+RPC_MASTER_SHEET_NAME = os.environ.get('RPC_MASTER_SHEET_NAME')
