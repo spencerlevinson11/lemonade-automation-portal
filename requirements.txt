@@ -1,4 +1,4 @@
-﻿asgiref==3.10.0
+asgiref==3.10.0
 dj-database-url==3.0.1
 Django==5.2.8
 et_xmlfile==2.0.0
@@ -7,9 +7,10 @@ openpyxl==3.1.5
 packaging==25.0
 psycopg2-binary==2.9.11
 
+msal>=1.27.0
+requests>=2.31.0
+
 sqlparse==0.5.3
 tzdata==2025.2
 xlwings==0.33.16
 pandas>=2.2.0
-
-
