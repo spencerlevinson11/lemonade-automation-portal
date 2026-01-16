@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ automation_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root {
+      --bg-main: #020617;
+      --bg-card: #0b1120;
+      --accent: #facc15;
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+      --border-subtle: #1f2937;
+      --success: #4ade80;
+      --danger: #f97373;
+      --input: rgba(2, 6, 23, 0.6);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
+      color: var(--text-main);
+    }
+    a { color: inherit; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+    .muted { color: var(--text-muted); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(250, 204, 21, 0.35);
+      background: rgba(250, 204, 21, 0.10);
+      color: var(--text-main);
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .btn:hover { background: rgba(250, 204, 21, 0.16); }
+    .card {
+      background: rgba(11, 17, 32, 0.92);
+      border: 1px solid var(--border-subtle);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 16px;
+      align-items: start;
+    }
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    label { display:block; font-weight: 700; margin-bottom: 6px; }
+    input[type=file] {
+      width: 100%;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+      background: var(--input);
+      color: var(--text-main);
+    }
+    .help { margin-top: 6px; color: var(--text-muted); font-size: 13px; }
+    .messages { margin: 12px 0 0; }
+    .msg {
+      padding: 10px 12px;
+      border-radius: 12px;
+      margin: 8px 0;
+      border: 1px solid var(--border-subtle);
+      background: rgba(2, 6, 23, 0.6);
+    }
+    .msg.success { border-color: rgba(74, 222, 128, 0.35); }
+    .msg.error { border-color: rgba(249, 115, 115, 0.35); }
+    .kv {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 8px 12px;
+      font-size: 14px;
+      padding-top: 8px;
+    }
+    .kv div { padding: 4px 0; }
+    .kv .k { color: var(--text-muted); }
+    .note {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px dashed rgba(250, 204, 21, 0.35);
+      border-radius: 14px;
+      background: rgba(250, 204, 21, 0.06);
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div>
+      <div class="title">RPC → Master Formatter</div>
+      <div class="muted">Upload an RPC order spreadsheet and download a copy/paste-ready master-format worksheet.</div>
+    </div>
+    <a class="btn" href="/">Back to dashboard</a>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <label for="id_file">RPC order spreadsheet (.xlsx)</label>
+        {{ form.file }}
+        {% if form.file.help_text %}
+          <div class="help">{{ form.file.help_text }}</div>
+        {% endif %}
+
+        <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
+          <button class="btn" type="submit">Generate master-format file</button>
+        </div>
+      </form>
+
+      {% if messages %}
+        <div class="messages">
+          {% for message in messages %}
+            <div class="msg {% if message.tags %}{{ message.tags }}{% endif %}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="note">
+        Notes:
+        <ul style="margin:8px 0 0 18px; padding:0;">
+          <li>Totals are aggregated by bucket type (one row per bucket type).</li>
+          <li>Best-effort bucket mapping: it preserves HQ ("#" / "HQ") and NextGen vs Classic when detectable.</li>
+          <li>The output downloads immediately after you upload.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:800; margin-bottom:10px;">What gets filled</div>
+      <div class="muted" style="margin-bottom:8px;">These fields are pulled from the RPC sheet when available:</div>
+      <div class="kv">
+        <div class="k">NLD date / week</div><div>Parsed from the “NLD …” line (aligned to the prior Friday).</div>
+        <div class="k">Customer PO#</div><div>Parsed from “Customer PO# …”.</div>
+        <div class="k">RPC#</div><div>Parsed from the title line.</div>
+        <div class="k">City</div><div>Parsed from the title line or the address block.</div>
+        <div class="k">Customer</div><div>Parsed from the customer address block.</div>
+        <div class="k">Bucket qty</div><div>Sum of the “Totaal” column for each bucket type.</div>
+        <div class="k">Bucket Type</div><div>Mapped bucket taxonomy (e.g., “10ltr Wide Classic”, “Maxima Buckets”).</div>
+        <div class="k">Due By / week</div><div>Parsed from the “Delivery …” line.</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
