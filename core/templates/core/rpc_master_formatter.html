@@ -113,7 +113,7 @@
   <div class="topbar">
     <div>
       <div class="title">RPC → Master Formatter</div>
-      <div class="muted">Upload an RPC order spreadsheet and download a copy/paste-ready master-format worksheet.</div>
+      <div class="muted">Upload an RPC order spreadsheet and either download a master-format file or insert the rows directly into your OneDrive master sheet.</div>
     </div>
     <a class="btn" href="/">Back to dashboard</a>
   </div>
@@ -129,7 +129,21 @@
         {% endif %}
 
         <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
-          <button class="btn" type="submit">Generate master-format file</button>
+          {% if ms_connected %}
+            <div class="muted" style="font-size:13px;">Microsoft: <span style="color: var(--success); font-weight:800;">Connected</span></div>
+          {% else %}
+            <a class="btn" href="{{ ms_connect_url }}">Connect Microsoft</a>
+            <div class="muted" style="font-size:13px;">Connect once to enable automatic insertion into your master workbook.</div>
+          {% endif %}
+        
+          {% if ms_connected %}
+            <label style="display:flex; gap:10px; align-items:center; font-weight:800;">
+              <input type="checkbox" name="insert_into_master" value="1" style="transform: scale(1.2);" />
+              Insert into OneDrive master (keeps sheet sorted by NLD date)
+            </label>
+          {% endif %}
+
+          <button class="btn" type="submit">Generate / Insert</button>
         </div>
       </form>
 
@@ -146,7 +160,8 @@
         <ul style="margin:8px 0 0 18px; padding:0;">
           <li>Totals are aggregated by bucket type (one row per bucket type).</li>
           <li>Best-effort bucket mapping: it preserves HQ ("#" / "HQ") and NextGen vs Classic when detectable.</li>
-          <li>The output downloads immediately after you upload.</li>
+          <li>If “Insert into OneDrive master” is checked and Microsoft is connected, the rows are inserted into your master workbook automatically (and sorted by NLD date).</li>
+          <li>Otherwise, the output downloads immediately after you upload.</li>
         </ul>
       </div>
     </div>
@@ -155,7 +170,7 @@
       <div style="font-weight:800; margin-bottom:10px;">What gets filled</div>
       <div class="muted" style="margin-bottom:8px;">These fields are pulled from the RPC sheet when available:</div>
       <div class="kv">
-        <div class="k">NLD date / week</div><div>Parsed from the “NLD …” line (aligned to the prior Friday).</div>
+        <div class="k">NLD date / week</div><div>Parsed from the “NLD …” line (exact date/week as shown on the RPC order).</div>
         <div class="k">Customer PO#</div><div>Parsed from “Customer PO# …”.</div>
         <div class="k">RPC#</div><div>Parsed from the title line.</div>
         <div class="k">City</div><div>Parsed from the title line or the address block.</div>
@@ -169,3 +184,4 @@
 
 </body>
 </html>
+
