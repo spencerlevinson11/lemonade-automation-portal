@@ -2454,6 +2454,23 @@ def run_automation(request, pk):
     if "pricing quote" in name_normalized or "pricing" in name_normalized:
         return redirect("pricing_upload")
 
+    # --- Branch: RPC -> Master Sheet Formatter ---
+    # The dashboard launches automations via /automations/<pk>/run/. Our Automation model
+    # doesn't have a slug/route field in admin, so we dispatch by a robust name match.
+    # This prevents falling through to the default BOL screen.
+    is_rpc_master_formatter = (
+        ("rpc" in name_normalized)
+        and (
+            "master" in name_normalized
+            or "formatter" in name_normalized
+            or "reformatter" in name_normalized
+            or "master sheet" in name_normalized
+        )
+    )
+
+    if is_rpc_master_formatter:
+        return redirect("rpc_master_formatter")
+
 
     # --- Branch: Project Planner ---
     if "project planner" in name_normalized or "project planning" in name_normalized:
@@ -3286,6 +3303,8 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
+
+
 
 
 
