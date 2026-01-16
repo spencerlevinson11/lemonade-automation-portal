@@ -28,6 +28,7 @@ from .bol_generation import generate_bol_from_form, generate_bol_from_templates
 from .forms import (
     BOLForm,
     PricingUploadForm,
+    RpcMasterFormatUploadForm,
     TipEntryForm,
     ProjectPlanEntryForm,
     OrderContainerForm,
@@ -50,6 +51,7 @@ from .rpc_generation import generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
 from .services.order_tracker import upsert_container_from_rpc_order
+from .services.rpc_master_formatter import parse_rpc_order_xlsx, build_master_format_workbook
 
 
 
@@ -808,6 +810,63 @@ def dashboard(request):
 def custom_logout(request):
     logout(request)
     return redirect("login")
+
+
+# -----------------------------
+# RPC Order -> Master Spreadsheet Formatter
+# -----------------------------
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def rpc_master_formatter_view(request):
+    """
+    Upload an RPC order spreadsheet (.xlsx) and return an output workbook
+    that matches the row layout of your master spreadsheet.
+
+    Output:
+      - headers on row 3
+      - data starting row 4
+      - one row per bucket type (aggregated totals)
+    """
+    if request.method == "POST":
+        form = RpcMasterFormatUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            f = form.cleaned_data["file"]
+            file_bytes = f.read()
+
+            meta, rows = parse_rpc_order_xlsx(file_bytes)
+            if not rows:
+                messages.error(
+                    request,
+                    "Could not find any line items in that RPC spreadsheet. Make sure it's the standard RPC template.",
+                )
+                return render(
+                    request,
+                    "core/rpc_master_formatter.html",
+                    {"automation_name": "RPC → Master Formatter", "form": form, "meta": meta, "rows": rows},
+                )
+
+            out_bytes = build_master_format_workbook(rows)
+
+            # return as downloadable .xlsx
+            tmp_path = os.path.join(tempfile.gettempdir(), f"rpc_master_format_{request.user.id}.xlsx")
+            with open(tmp_path, "wb") as fh:
+                fh.write(out_bytes)
+
+            rpc_number = meta.get("rpc_number") or "rpc"
+            return FileResponse(
+                open(tmp_path, "rb"),
+                as_attachment=True,
+                filename=f"RPC_{rpc_number}_master_format.xlsx",
+            )
+    else:
+        form = RpcMasterFormatUploadForm()
+
+    return render(
+        request,
+        "core/rpc_master_formatter.html",
+        {"automation_name": "RPC → Master Formatter", "form": form},
+    )
 
 
 # -----------------------------
@@ -3100,5 +3159,6 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
+
 
 
