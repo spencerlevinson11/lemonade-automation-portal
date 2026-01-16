@@ -531,7 +531,7 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
         if r.nld_date:
             nld_cell = ws.cell(rr, 1)
             nld_cell.value = dt.datetime.combine(r.nld_date, dt.time.min)
-            nld_cell.number_format = "d-mmm-yy"
+            nld_cell.number_format = "d-mmm-yyyy"
             nld_cell.alignment = Alignment(horizontal="left")
             nld_cell.font = Font(bold=True)
             _apply_cell_fill(nld_cell, NLD_CELL_RGB)
@@ -575,7 +575,7 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
         if r.due_by:
             due_cell = ws.cell(rr, 28)
             due_cell.value = dt.datetime.combine(r.due_by, dt.time.min)
-            due_cell.number_format = "d-mmm-yy"
+            due_cell.number_format = "d-mmm-yyyy"
             due_cell.alignment = Alignment(horizontal="right")
         due_week_cell = ws.cell(rr, 29)
         due_week_cell.value = r.due_week
