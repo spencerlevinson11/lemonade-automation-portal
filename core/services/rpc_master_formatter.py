@@ -126,6 +126,18 @@ BUCKETTYPE_COLOR_RGB: Dict[str, str] = {
     "Amalia Buckets": "FFFF9999",
 }
 
+# Row highlight fills from your example master spreadsheet
+NLD_CELL_RGB = "FFE2EFDA"      # light green used on NLD date cells
+RPCNUM_CELL_RGB = "FFC6E0B4"   # light green used on RPC# cells
+
+
+def _apply_cell_fill(cell, rgb: str) -> None:
+    """Apply a solid fill + black font."""
+    if not rgb:
+        return
+    cell.fill = PatternFill(patternType="solid", fgColor=rgb)
+    cell.font = Font(color="FF000000")
+
 
 def _apply_bucket_type_style(cell) -> None:
     """Apply the bucket-type color + readable font (matches your example master file)."""
@@ -491,10 +503,14 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
         rr = start_row + i
 
         if r.nld_date:
-            ws.cell(rr, 1).value = dt.datetime.combine(r.nld_date, dt.time.min)
+            nld_cell = ws.cell(rr, 1)
+            nld_cell.value = dt.datetime.combine(r.nld_date, dt.time.min)
+            _apply_cell_fill(nld_cell, NLD_CELL_RGB)
         ws.cell(rr, 2).value = r.nld_week
         ws.cell(rr, 4).value = _safe_int(r.customer_po) if r.customer_po else r.customer_po
-        ws.cell(rr, 5).value = r.rpc_number
+        rpc_cell = ws.cell(rr, 5)
+        rpc_cell.value = r.rpc_number
+        _apply_cell_fill(rpc_cell, RPCNUM_CELL_RGB)
         ws.cell(rr, 6).value = r.city
         ws.cell(rr, 7).value = r.customer_name
         ws.cell(rr, 8).value = r.mix_flag
@@ -521,4 +537,5 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
+
 
