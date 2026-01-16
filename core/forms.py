@@ -136,6 +136,17 @@ class PricingUploadForm(forms.Form):
     )
 
 
+# =========================
+# RPC -> Master Spreadsheet Formatter
+# =========================
+
+class RpcMasterFormatUploadForm(forms.Form):
+    file = forms.FileField(
+        label="RPC order spreadsheet (.xlsx)",
+        help_text="Upload the RPC order Excel file you received/generated (e.g., RPC#5670 Miami.xlsx).",
+    )
+
+
 class TipEntryForm(forms.Form):
     # Step 3 edit: job type selector
     JOB_TYPE_CHOICES = [
@@ -318,6 +329,8 @@ class OrderContainerLineForm(forms.ModelForm):
             "pallets": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
             "units_per_pallet": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
         }
+
+
 
 
 
