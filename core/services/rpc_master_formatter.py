@@ -7,7 +7,7 @@ from io import BytesIO
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import openpyxl
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill
 
 
 @dataclass(frozen=True)
@@ -136,7 +136,16 @@ def _apply_cell_fill(cell, rgb: str) -> None:
     if not rgb:
         return
     cell.fill = PatternFill(patternType="solid", fgColor=rgb)
-    cell.font = Font(color="FF000000")
+    # Keep any existing font attributes (bold, size, etc.) and just force black.
+    cell.font = Font(
+        name=cell.font.name,
+        sz=cell.font.sz,
+        b=cell.font.b,
+        i=cell.font.i,
+        u=cell.font.u,
+        strike=cell.font.strike,
+        color="FF000000",
+    )
 
 
 def _apply_bucket_type_style(cell) -> None:
@@ -147,7 +156,15 @@ def _apply_bucket_type_style(cell) -> None:
     if not rgb or rgb == "00000000":
         return
     cell.fill = PatternFill(patternType="solid", fgColor=rgb)
-    cell.font = Font(color="FF000000")
+    cell.font = Font(
+        name=cell.font.name,
+        sz=cell.font.sz,
+        b=cell.font.b,
+        i=cell.font.i,
+        u=cell.font.u,
+        strike=cell.font.strike,
+        color="FF000000",
+    )
 
 
 def _safe_int(x) -> Optional[int]:
@@ -492,6 +509,11 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
     ws = wb.active
     ws.title = "Master Format"
 
+    # Column widths matter because Excel will show dates as "#####" if the column is too narrow.
+    # These match your example "what the cells should look like" workbook.
+    ws.column_dimensions["A"].width = 25.28515625   # NLD
+    ws.column_dimensions["AB"].width = 26.28515625  # Due By
+
     # leave rows 1-2 blank to match your example
     for col_idx, header in MASTER_HEADERS:
         if header is not None:
@@ -502,32 +524,54 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
     for i, r in enumerate(rows):
         rr = start_row + i
 
+        # --- NLD / Week ---
         if r.nld_date:
             nld_cell = ws.cell(rr, 1)
             nld_cell.value = dt.datetime.combine(r.nld_date, dt.time.min)
+            nld_cell.number_format = "d-mmm-yy"
+            nld_cell.alignment = Alignment(horizontal="left")
+            nld_cell.font = Font(bold=True)
             _apply_cell_fill(nld_cell, NLD_CELL_RGB)
-        ws.cell(rr, 2).value = r.nld_week
-        ws.cell(rr, 4).value = _safe_int(r.customer_po) if r.customer_po else r.customer_po
+        week_cell = ws.cell(rr, 2)
+        week_cell.value = r.nld_week
+        week_cell.alignment = Alignment(horizontal="left")
+
+        # Customer PO (col D) is centered in your master format
+        po_cell = ws.cell(rr, 4)
+        po_cell.value = _safe_int(r.customer_po) if r.customer_po else r.customer_po
+        po_cell.alignment = Alignment(horizontal="center")
         rpc_cell = ws.cell(rr, 5)
         rpc_cell.value = r.rpc_number
+        rpc_cell.alignment = Alignment(horizontal="center")
         _apply_cell_fill(rpc_cell, RPCNUM_CELL_RGB)
         ws.cell(rr, 6).value = r.city
         ws.cell(rr, 7).value = r.customer_name
-        ws.cell(rr, 8).value = r.mix_flag
+
+        # IMPORTANT: Column 8 has no header in your master sheet; do not populate it.
 
         # bucket quantity into the mapped column
         qty_col = BUCKETTYPE_TO_COLUMN.get(r.bucket_type)
         if qty_col:
-            ws.cell(rr, qty_col).value = r.quantity
+            qty_cell = ws.cell(rr, qty_col)
+            qty_cell.value = r.quantity
+            qty_cell.alignment = Alignment(horizontal="right")
 
         # HOLD mirrors the quantity
-        ws.cell(rr, 26).value = r.quantity
+        hold_cell = ws.cell(rr, 26)
+        hold_cell.value = r.quantity
+        hold_cell.alignment = Alignment(horizontal="right")
         bt_cell = ws.cell(rr, 27)
         bt_cell.value = r.bucket_type
+        bt_cell.alignment = Alignment(horizontal="right")
         _apply_bucket_type_style(bt_cell)
         if r.due_by:
-            ws.cell(rr, 28).value = dt.datetime.combine(r.due_by, dt.time.min)
-        ws.cell(rr, 29).value = r.due_week
+            due_cell = ws.cell(rr, 28)
+            due_cell.value = dt.datetime.combine(r.due_by, dt.time.min)
+            due_cell.number_format = "d-mmm-yy"
+            due_cell.alignment = Alignment(horizontal="right")
+        due_week_cell = ws.cell(rr, 29)
+        due_week_cell.value = r.due_week
+        due_week_cell.alignment = Alignment(horizontal="right")
 
         # Transit times
         avg_days, fastest_days = get_transit_times(r.city)
