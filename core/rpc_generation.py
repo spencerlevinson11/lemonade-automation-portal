@@ -34,7 +34,7 @@ PER_PALLET = {
     "8 liter round bucket":     3780,
     "8 liter round NG bucket":  4140,
     "3 liter round bucket":     5600,
-    "10 liter wide classic HQ#": 2800,
+    "10 liter wide classic HQ#": 2660,
     "Amalia White Buckets":     960,
     "Amalia Black Buckets":     960,
     "Amalia White Lids":        960,
