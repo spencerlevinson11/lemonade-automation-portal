@@ -92,6 +92,9 @@ urlpatterns = [
 
     # Bucket Metrics
     path("automations/bucket-metrics/", core_views.bucket_metrics_view, name="bucket_metrics"),
+
+    # RPC -> Master Spreadsheet Formatter
+    path("automations/rpc-master/", core_views.rpc_master_formatter_view, name="rpc_master_formatter"),
 ]
 
 # Bucket Projections (optional): only register if the views exist in this deploy
@@ -124,5 +127,6 @@ if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
             name="bucket_adjusted_prognosis_export",
         ),
     ]
+
 
 
