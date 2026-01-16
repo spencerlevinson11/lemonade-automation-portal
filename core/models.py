@@ -422,3 +422,32 @@ class OrderContainerDocument(models.Model):
     def __str__(self) -> str:
         return self.label or (self.file.name if self.file else "Document")
 
+
+
+# =========================
+# Microsoft Graph OAuth Token
+# =========================
+
+class MicrosoftGraphToken(models.Model):
+    """Stores delegated Microsoft Graph tokens per Django user."""
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="ms_graph_token",
+    )
+
+    access_token = models.TextField()
+    refresh_token = models.TextField()
+    expires_at = models.DateTimeField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def is_expired(self) -> bool:
+        return timezone.now() >= self.expires_at
+
+    def __str__(self) -> str:
+        return f"MicrosoftGraphToken({self.user.username})"
+
+
