@@ -12,6 +12,7 @@ import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
@@ -19,6 +20,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Sum, Q
 from django.http import FileResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from django.forms import inlineformset_factory
@@ -52,6 +54,24 @@ from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
 from .services.order_tracker import upsert_container_from_rpc_order
 from .services.rpc_master_formatter import parse_rpc_order_xlsx, build_master_format_workbook
+from .services.ms_graph_excel import (
+    GraphError,
+    exchange_code_for_token,
+    find_insert_row_for_nld,
+    get_access_token_for_user,
+    get_authorization_url,
+    get_range_values,
+    get_used_range,
+    insert_range_down,
+    parse_excel_date,
+    resolve_drive_item_from_share_url,
+    set_range_fill,
+    set_range_values,
+    store_token_for_user,
+)
+from .services.bucket_color_map import get_bucket_type_argb
+import datetime as dt
+
 
 
 
@@ -812,6 +832,45 @@ def custom_logout(request):
     return redirect("login")
 
 
+
+# -----------------------------
+# Microsoft Graph OAuth
+# -----------------------------
+
+@login_required
+def microsoft_connect_view(request):
+    """Start Microsoft OAuth so we can write into the user's OneDrive master workbook."""
+    try:
+        url = get_authorization_url(state=str(request.user.id))
+    except Exception as e:
+        messages.error(request, f"Microsoft connect is not configured: {e}")
+        return redirect("rpc_master_formatter")
+    return redirect(url)
+
+
+@login_required
+def microsoft_callback_view(request):
+    """OAuth redirect URI for Microsoft Graph."""
+    if request.GET.get("error"):
+        err = request.GET.get("error_description") or request.GET.get("error")
+        messages.error(request, f"Microsoft authorization failed: {err}")
+        return redirect("rpc_master_formatter")
+
+    code = request.GET.get("code")
+    if not code:
+        messages.error(request, "Missing authorization code from Microsoft.")
+        return redirect("rpc_master_formatter")
+
+    try:
+        result = exchange_code_for_token(code)
+        store_token_for_user(request.user, result)
+    except Exception as e:
+        messages.error(request, f"Could not save Microsoft connection: {e}")
+        return redirect("rpc_master_formatter")
+
+    messages.success(request, "Microsoft connected. You can now insert RPC rows into your OneDrive master.")
+    return redirect("rpc_master_formatter")
+
 # -----------------------------
 # RPC Order -> Master Spreadsheet Formatter
 # -----------------------------
@@ -828,7 +887,11 @@ def rpc_master_formatter_view(request):
       - data starting row 4
       - one row per bucket type (aggregated totals)
     """
+    ms_connected = hasattr(request.user, "ms_graph_token")
+    ms_connect_url = reverse("microsoft_connect")
+
     if request.method == "POST":
+
         form = RpcMasterFormatUploadForm(request.POST, request.FILES)
         if form.is_valid():
             f = form.cleaned_data["file"]
@@ -843,9 +906,73 @@ def rpc_master_formatter_view(request):
                 return render(
                     request,
                     "core/rpc_master_formatter.html",
-                    {"automation_name": "RPC → Master Formatter", "form": form, "meta": meta, "rows": rows},
+                    {"automation_name": "RPC → Master Formatter", "form": form, "meta": meta, "rows": rows, "ms_connected": ms_connected, "ms_connect_url": ms_connect_url},
                 )
 
+            insert_into_master = request.POST.get("insert_into_master") == "1"
+            if insert_into_master:
+                try:
+                    access_token = get_access_token_for_user(request.user)
+                    share_url = getattr(settings, "RPC_MASTER_ONEDRIVE_SHARE_URL", None)
+                    if not share_url:
+                        raise GraphError("RPC_MASTER_ONEDRIVE_SHARE_URL is not set on the server")
+                    sheet_name = getattr(settings, "RPC_MASTER_SHEET_NAME", None)
+                    ref = resolve_drive_item_from_share_url(access_token, share_url)
+                    used = get_used_range(access_token, ref, sheet_name)
+                    row_count = used.get("rowCount")
+                    if not row_count:
+                        # fallback parse from address like Sheet1!A1:AE123
+                        addr = (used.get("address") or "")
+                        m = re.search(r":\D*(\d+)$", addr)
+                        row_count = int(m.group(1)) if m else 0
+                    start_row = 4
+                    last_row = max(int(row_count or 0), start_row - 1)
+                    existing_dates = []
+                    if last_row >= start_row:
+                        col_vals = get_range_values(access_token, ref, sheet_name, f"A{start_row}:A{last_row}")
+                        for row in col_vals:
+                            v = row[0] if row else None
+                            existing_dates.append(parse_excel_date(v))
+                    new_nld = rows[0].nld_date
+                    if not new_nld:
+                        raise GraphError("RPC sheet is missing an NLD date")
+                    insert_row = find_insert_row_for_nld(existing_dates, new_nld, start_row)
+                    # Insert N blank rows (shift down)
+                    for _ in range(len(rows)):
+                        insert_range_down(access_token, ref, sheet_name, f"A{insert_row}:AE{insert_row}")
+                    # Write values + formatting
+                    for idx, mr in enumerate(rows):
+                        rno = insert_row + idx
+                        values = [None] * 31
+                        values[0] = mr.nld_date.isoformat() if mr.nld_date else None
+                        values[1] = mr.nld_week
+                        values[3] = int(mr.customer_po) if mr.customer_po and str(mr.customer_po).isdigit() else mr.customer_po
+                        values[4] = mr.rpc_number
+                        values[5] = mr.city
+                        values[6] = mr.customer_name
+                        values[7] = mr.mix_flag
+                        # quantity into the correct bucket column if known
+                        from .services.rpc_master_formatter import BUCKETTYPE_TO_COLUMN, get_transit_times
+                        qty_col = BUCKETTYPE_TO_COLUMN.get(mr.bucket_type)
+                        if qty_col:
+                            values[qty_col - 1] = mr.quantity
+                        values[25] = mr.quantity
+                        values[26] = mr.bucket_type
+                        values[27] = mr.due_by.isoformat() if mr.due_by else None
+                        values[28] = mr.due_week
+                        avg_days, fast_days = get_transit_times(mr.city)
+                        values[29] = avg_days
+                        values[30] = fast_days
+                        set_range_values(access_token, ref, sheet_name, f"A{rno}:AE{rno}", [values])
+                        # light green fills for NLD date + RPC number
+                        set_range_fill(access_token, ref, sheet_name, f"A{rno}:A{rno}", "FFE2EFDA")
+                        set_range_fill(access_token, ref, sheet_name, f"E{rno}:E{rno}", "FFC6E0B4")
+                        bt_fill = get_bucket_type_argb(mr.bucket_type)
+                        if bt_fill:
+                            set_range_fill(access_token, ref, sheet_name, f"AA{rno}:AA{rno}", bt_fill)
+                    messages.success(request, f"Inserted {len(rows)} row(s) into your OneDrive master workbook.")
+                except Exception as e:
+                    messages.error(request, f"Could not insert into OneDrive master: {e}")
             out_bytes = build_master_format_workbook(rows)
 
             # return as downloadable .xlsx
@@ -865,7 +992,7 @@ def rpc_master_formatter_view(request):
     return render(
         request,
         "core/rpc_master_formatter.html",
-        {"automation_name": "RPC → Master Formatter", "form": form},
+        {"automation_name": "RPC → Master Formatter", "form": form, "ms_connected": ms_connected, "ms_connect_url": ms_connect_url},
     )
 
 
@@ -2337,19 +2464,6 @@ def run_automation(request, pk):
         return redirect("order_tracker")
 
 
-    # --- Branch: RPC -> Master Sheet Formatter ---
-    # This project currently dispatches from the dashboard by Automation.name (there is no slug
-    # field on the Automation model). If this doesn't match, the request falls through to the
-    # default BOL generator.
-    is_rpc_master_formatter = (
-        ("rpc" in name_normalized and "master" in name_normalized)
-        or ("rpc" in name_normalized and "formatter" in name_normalized)
-        or ("master" in name_normalized and "formatter" in name_normalized)
-    )
-    if is_rpc_master_formatter:
-        return redirect("rpc_master_formatter")
-
-
     # --- Default: BOL generator ---
     if request.method == "POST":
         form = BOLForm(request.POST)
@@ -3172,7 +3286,6 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
-
 
 
 
