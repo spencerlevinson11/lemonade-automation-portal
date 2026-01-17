@@ -141,9 +141,13 @@ class PricingUploadForm(forms.Form):
 # =========================
 
 class RpcMasterFormatUploadForm(forms.Form):
-    file = forms.FileField(
-        label="RPC order spreadsheet (.xlsx)",
-        help_text="Upload the RPC order Excel file you received/generated (e.g., RPC#5670 Miami.xlsx).",
+    files = forms.FileField(
+        label="RPC order spreadsheet(s) (.xlsx)",
+        help_text=(
+            "Upload one or more RPC order Excel files (e.g., RPC#5670 Miami.xlsx). "
+            "You can select multiple files at once."
+        ),
+        widget=forms.ClearableFileInput(attrs={"multiple": True}),
     )
 
 
@@ -329,6 +333,7 @@ class OrderContainerLineForm(forms.ModelForm):
             "pallets": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
             "units_per_pallet": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
         }
+
 
 
 
