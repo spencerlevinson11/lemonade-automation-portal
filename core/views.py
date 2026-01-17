@@ -12,6 +12,9 @@ import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+from docx import Document
+from docx.shared import Pt
+
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
@@ -3229,6 +3232,124 @@ def order_tracker_view(request):
     )
 
 
+def _ordinal(n: int) -> str:
+    """Return an ordinal suffix for a positive day number (1 -> '1st')."""
+    if 10 <= (n % 100) <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _fmt_long_date(d: dt.date | None) -> str:
+    """Format like 'January 16th 2026' or 'TBD'."""
+    if not d:
+        return "TBD"
+    return f"{d.strftime('%B')} {_ordinal(d.day)} {d.year}"
+
+
+def _fmt_short_date(d: dt.date | None) -> str:
+    """Format like '12/8/2025' or 'TBD'."""
+    if not d:
+        return "TBD"
+    # avoid platform-specific %-m / %-d
+    return f"{d.month}/{d.day}/{d.year}"
+
+
+@login_required
+def order_tracker_recap_docx_view(request):
+    """Download an Order Recap DOCX sorted by Customer + Location, for all (filtered) containers."""
+    user = request.user
+
+    # Superusers see ALL containers across companies.
+    if user.is_superuser:
+        containers = OrderContainer.objects.all()
+    else:
+        company = get_object_or_404(Company, owner=user)
+        containers = OrderContainer.objects.filter(company=company)
+
+    # Respect the same filters as the dashboard (if present in the URL).
+    q = (request.GET.get("q") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+    assigned_to = (request.GET.get("assigned_to") or "").strip()
+
+    if q:
+        containers = containers.filter(
+            Q(customer_name__icontains=q)
+            | Q(location_name__icontains=q)
+            | Q(po_number__icontains=q)
+            | Q(rpc_number__icontains=q)
+            | Q(booking_number__icontains=q)
+            | Q(bill_of_lading_number__icontains=q)
+        )
+    if status:
+        containers = containers.filter(status__icontains=status)
+    if assigned_to:
+        containers = containers.filter(assigned_to__iexact=assigned_to)
+
+    # Sort by Customer + Location (requested), then by Requested Date, then by PO.
+    containers = containers.order_by(
+        "customer_name",
+        "location_name",
+        "requested_date",
+        "po_number",
+        "-updated_at",
+    ).prefetch_related("lines")
+
+    doc = Document()
+
+    # Match a clean, simple default look.
+    style = doc.styles["Normal"]
+    style.font.name = "Calibri"
+    style.font.size = Pt(11)
+
+    for idx, c in enumerate(containers):
+        po = (c.po_number or "TBD").strip() or "TBD"
+        rpc = (c.rpc_number or "TBD").strip() or "TBD"
+        loc = (c.location_name or "").strip()
+        status_txt = (c.status or "TBD").strip() or "TBD"
+
+        # Line 1: PO + Requested + Status
+        p1 = doc.add_paragraph()
+        p1.add_run(f"PO#{po}– Requested {_fmt_long_date(c.requested_date)} ")
+        p1.add_run(f"***{status_txt}***").bold = True
+
+        # Line 2: RPC + City
+        doc.add_paragraph(f"RPC# {rpc}{(' ' + loc) if loc else ''}")
+
+        # Line 3: Loading Date
+        doc.add_paragraph(f"Loading Date: {_fmt_short_date(c.loading_date)}")
+
+        # Content lines
+        for line in c.lines.all():
+            desc = (line.item_description or "").strip() or "(item)"
+            pallets = int(line.pallets or 0)
+            upp = int(line.units_per_pallet or 0)
+            total = int(line.total_units or (pallets * upp))
+            doc.add_paragraph(f"{desc}  ({pallets} x {upp} = {total:,})")
+
+        # Dates (ETD/ETA/Estimated Delivery)
+        doc.add_paragraph(f"ETD: {_fmt_short_date(c.etd)}")
+        doc.add_paragraph(f"ETA: {_fmt_short_date(c.eta)}")
+        doc.add_paragraph(f"Estimated Delivery: {_fmt_short_date(c.estimated_delivery_date)}")
+
+        # spacing between containers
+        if idx != len(containers) - 1:
+            doc.add_paragraph("")
+
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    filename = f"order_recap_{timezone.localdate().isoformat()}.docx"
+    return FileResponse(
+        buf,
+        as_attachment=True,
+        filename=filename,
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
 @login_required
 @require_http_methods(["POST"])
 def order_container_toggle_delivered_view(request, container_id: int):
@@ -3336,6 +3457,9 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
+
+
+
 
 
 
