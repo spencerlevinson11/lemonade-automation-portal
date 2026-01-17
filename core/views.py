@@ -3324,23 +3324,9 @@ def order_tracker_recap_docx_view(request):
     style.font.name = "Calibri"
     style.font.size = Pt(11)
 
-    def _safe_loc_append(rpc_text: str, loc_text: str) -> str:
-        """Avoid repeating the city/location if it's already embedded in the RPC string."""
-        rpc_clean = (rpc_text or "").strip()
-        loc_clean = (loc_text or "").strip()
-        if not loc_clean:
-            return rpc_clean
-        if not rpc_clean:
-            return loc_clean
-        # If location already appears in the RPC string (case-insensitive), don't append it.
-        if loc_clean.lower() in rpc_clean.lower():
-            return rpc_clean
-        return f"{rpc_clean} {loc_clean}".strip()
-
     for idx, c in enumerate(containers):
         po = (c.po_number or "TBD").strip() or "TBD"
         rpc = (c.rpc_number or "TBD").strip() or "TBD"
-        loc = (c.location_name or "").strip()
         status_txt = (c.status or "TBD").strip() or "TBD"
 
         # Line 1: PO + Requested + Status (with colors)
@@ -3350,17 +3336,18 @@ def order_tracker_recap_docx_view(request):
         # STATUS: orange + bold + highlighted (user requested highlight)
         _add_run(p1, f"***{status_txt}*** ", COLOR_ORANGE, bold=True, highlight=WD_COLOR_INDEX.YELLOW)
 
-        # Line 2: RPC + City (blue, bold) — ensure we don't repeat the city.
+        # Line 2: RPC (blue, bold)
         p2 = doc.add_paragraph()
-        rpc_line = _safe_loc_append(rpc, loc)
-        _add_run(p2, f"RPC# {rpc_line} ", COLOR_BLUE, bold=True)
+        # IMPORTANT: the RPC string already includes the city (ex: "6066 Miami"),
+        # so do NOT append the location name.
+        _add_run(p2, f"RPC# {rpc} ", COLOR_BLUE, bold=True)
 
         # Line 3: Loading Date (green, bold)
         p3 = doc.add_paragraph()
         _add_run(p3, f"Loading Date: {_fmt_short_date(c.loading_date)}", COLOR_GREEN, bold=True)
 
         # Content lines (green, underlined like example)
-        # Also explicitly underline "Buckets/Pallets" and "Pieces" per request.
+        # NOTE: user requested to remove the literal "Buckets/Pallets" label.
         for line in c.lines.all():
             desc = (line.item_description or "").strip() or "(item)"
             pallets = int(line.pallets or 0)
@@ -3370,10 +3357,9 @@ def order_tracker_recap_docx_view(request):
             p = doc.add_paragraph()
             # Description part (underlined in the example as well)
             _add_run(p, f"{desc}  (", COLOR_GREEN, underline=True)
-            _add_run(p, "Buckets/Pallets", COLOR_GREEN, underline=True)
-            _add_run(p, f": {pallets} x {upp} = ", COLOR_GREEN, underline=True)
+            _add_run(p, f"{pallets} x {upp} = {total:,} ", COLOR_GREEN, underline=True)
             _add_run(p, "Pieces", COLOR_GREEN, underline=True)
-            _add_run(p, f": {total:,})", COLOR_GREEN, underline=True)
+            _add_run(p, ")", COLOR_GREEN, underline=True)
 
         # Dates (black)
         p = doc.add_paragraph()
