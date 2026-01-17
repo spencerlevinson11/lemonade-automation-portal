@@ -894,7 +894,8 @@ def rpc_master_formatter_view(request):
 
         form = RpcMasterFormatUploadForm(request.POST, request.FILES)
         if form.is_valid():
-            upload_files = request.FILES.getlist("files")
+            # With MultipleFileField, this is a list of UploadedFile objects.
+            upload_files = form.cleaned_data.get("files") or []
             if not upload_files:
                 messages.error(request, "Please choose at least one RPC order spreadsheet.")
                 return render(
@@ -1013,6 +1014,11 @@ def rpc_master_formatter_view(request):
                 as_attachment=True,
                 filename=(f"RPC_{rpc_number}_master_format.xlsx" if len(upload_files) == 1 else "RPC_master_format_combined.xlsx"),
             )
+        else:
+            # Surface validation issues (e.g., no files selected) so the user
+            # doesn't see a "nothing happened" refresh.
+            if form.errors:
+                messages.error(request, "Please fix the upload form and try again.")
     else:
         form = RpcMasterFormatUploadForm()
 
@@ -3330,6 +3336,8 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
+
+
 
 
 
