@@ -147,7 +147,10 @@ class RpcMasterFormatUploadForm(forms.Form):
             "Upload one or more RPC order Excel files (e.g., RPC#5670 Miami.xlsx). "
             "You can select multiple files at once."
         ),
-        widget=forms.ClearableFileInput(attrs={"multiple": True}),
+                # Django's ClearableFileInput intentionally disallows multiple uploads.
+        # We accept multiple RPC files and process them via request.FILES.getlist('files').
+        widget=forms.FileInput(attrs={"multiple": True}),
+
     )
 
 
