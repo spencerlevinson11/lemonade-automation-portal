@@ -138,6 +138,9 @@
       <div class="actions">
         <!-- Keep your existing "full edit page" flow available -->
         <a class="btn" href="{% url 'order_container_new' %}">Open full editor</a>
+
+        <!-- Order recap export (DOCX) -->
+        <a class="btn" href="{% url 'order_tracker_recap_docx' %}?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}">Download order recap</a>
       </div>
     </div>
 
@@ -439,4 +442,5 @@
   </div>
 </body>
 </html>
+
 
