@@ -124,6 +124,11 @@
         {% csrf_token %}
         <label for="id_files">RPC order spreadsheet(s) (.xlsx)</label>
         {{ form.files }}
+        {% if form.files.errors %}
+          <div class="help" style="color: var(--danger); font-weight:800;">
+            {{ form.files.errors|striptags }}
+          </div>
+        {% endif %}
         {% if form.files.help_text %}
           <div class="help">{{ form.files.help_text }}</div>
         {% endif %}
