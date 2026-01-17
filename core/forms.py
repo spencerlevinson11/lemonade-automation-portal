@@ -1,5 +1,6 @@
 # core/forms.py
 from django import forms
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from .models import ProjectPlanEntry, OrderContainer, OrderContainerLine, OrderContainerDocument
@@ -13,6 +14,26 @@ class MultipleFileInput(forms.ClearableFileInput):
     """
 
     allow_multiple_selected = True
+
+
+class MultipleFileField(forms.FileField):
+    """A FileField that can validate and return multiple uploaded files."""
+
+    def clean(self, data, initial=None):
+        # When using a widget that allows selecting multiple files, Django
+        # gives us a list/tuple of UploadedFile objects.
+        if isinstance(data, (list, tuple)):
+            cleaned = []
+            errors = []
+            for item in data:
+                try:
+                    cleaned.append(super().clean(item, initial))
+                except ValidationError as e:
+                    errors.extend(e.error_list)
+            if errors:
+                raise ValidationError(errors)
+            return cleaned
+        return super().clean(data, initial)
 
 
 class BOLForm(forms.Form):
@@ -151,7 +172,7 @@ class PricingUploadForm(forms.Form):
 # =========================
 
 class RpcMasterFormatUploadForm(forms.Form):
-    files = forms.FileField(
+    files = MultipleFileField(
         label="RPC order spreadsheet(s) (.xlsx)",
         help_text=(
             "Upload one or more RPC order Excel files (e.g., RPC#5670 Miami.xlsx). "
