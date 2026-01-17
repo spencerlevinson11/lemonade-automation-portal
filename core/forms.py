@@ -5,6 +5,16 @@ from django.utils import timezone
 from .models import ProjectPlanEntry, OrderContainer, OrderContainerLine, OrderContainerDocument
 
 
+class MultipleFileInput(forms.ClearableFileInput):
+    """A file input widget that supports selecting multiple files.
+
+    In Django 5.x, FileInput/ClearableFileInput will raise ValueError if
+    attrs contains {"multiple": True} unless allow_multiple_selected=True.
+    """
+
+    allow_multiple_selected = True
+
+
 class BOLForm(forms.Form):
     # These labels mirror your "BOL INFORMATION SHEET" rows
 
@@ -147,9 +157,9 @@ class RpcMasterFormatUploadForm(forms.Form):
             "Upload one or more RPC order Excel files (e.g., RPC#5670 Miami.xlsx). "
             "You can select multiple files at once."
         ),
-        # Django's ClearableFileInput intentionally disallows multiple uploads.
-        # We accept multiple RPC files and process them via request.FILES.getlist('files').
-        widget=forms.FileInput(attrs={"multiple": True}),
+        # Django requires a widget with allow_multiple_selected=True.
+        # We process via request.FILES.getlist('files') in the view.
+        widget=MultipleFileInput(attrs={"multiple": True}),
     )
 
 
