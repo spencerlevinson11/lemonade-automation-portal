@@ -122,10 +122,10 @@
     <div class="card">
       <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
-        <label for="id_file">RPC order spreadsheet (.xlsx)</label>
-        {{ form.file }}
-        {% if form.file.help_text %}
-          <div class="help">{{ form.file.help_text }}</div>
+        <label for="id_files">RPC order spreadsheet(s) (.xlsx)</label>
+        {{ form.files }}
+        {% if form.files.help_text %}
+          <div class="help">{{ form.files.help_text }}</div>
         {% endif %}
 
         <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
@@ -184,4 +184,5 @@
 
 </body>
 </html>
+
 
