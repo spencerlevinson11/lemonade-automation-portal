@@ -14,6 +14,7 @@ from openpyxl.utils import get_column_letter
 
 from docx import Document
 from docx.shared import Pt, RGBColor
+from docx.enum.text import WD_COLOR_INDEX
 
 from django.conf import settings
 from django.contrib import messages
@@ -3307,17 +3308,34 @@ def order_tracker_recap_docx_view(request):
     COLOR_GREEN = RGBColor(0x00, 0xB0, 0x50)
     COLOR_BLACK = RGBColor(0x11, 0x11, 0x11)
 
-    def _add_run(p, text: str, color: RGBColor, bold: bool | None = None):
+    def _add_run(p, text: str, color: RGBColor, *, bold: bool | None = None, underline: bool | None = None, highlight=None):
         r = p.add_run(text)
         r.font.color.rgb = color
         if bold is not None:
             r.bold = bold
+        if underline is not None:
+            r.font.underline = underline
+        if highlight is not None:
+            r.font.highlight_color = highlight
         return r
 
     # Match a clean, simple default look.
     style = doc.styles["Normal"]
     style.font.name = "Calibri"
     style.font.size = Pt(11)
+
+    def _safe_loc_append(rpc_text: str, loc_text: str) -> str:
+        """Avoid repeating the city/location if it's already embedded in the RPC string."""
+        rpc_clean = (rpc_text or "").strip()
+        loc_clean = (loc_text or "").strip()
+        if not loc_clean:
+            return rpc_clean
+        if not rpc_clean:
+            return loc_clean
+        # If location already appears in the RPC string (case-insensitive), don't append it.
+        if loc_clean.lower() in rpc_clean.lower():
+            return rpc_clean
+        return f"{rpc_clean} {loc_clean}".strip()
 
     for idx, c in enumerate(containers):
         po = (c.po_number or "TBD").strip() or "TBD"
@@ -3328,33 +3346,42 @@ def order_tracker_recap_docx_view(request):
         # Line 1: PO + Requested + Status (with colors)
         p1 = doc.add_paragraph()
         _add_run(p1, f"PO#{po}– ", COLOR_RED, bold=True)
-        _add_run(p1, f"Requested {_fmt_long_date(c.requested_date)} ", COLOR_BROWN, bold=None)
-        _add_run(p1, f"***{status_txt}***", COLOR_ORANGE, bold=True)
+        _add_run(p1, f"Requested {_fmt_long_date(c.requested_date)} ", COLOR_BROWN)
+        # STATUS: orange + bold + highlighted (user requested highlight)
+        _add_run(p1, f"***{status_txt}*** ", COLOR_ORANGE, bold=True, highlight=WD_COLOR_INDEX.YELLOW)
 
-        # Line 2: RPC + City (blue, bold)
+        # Line 2: RPC + City (blue, bold) — ensure we don't repeat the city.
         p2 = doc.add_paragraph()
-        _add_run(p2, f"RPC# {rpc}{(' ' + loc) if loc else ''}", COLOR_BLUE, bold=True)
+        rpc_line = _safe_loc_append(rpc, loc)
+        _add_run(p2, f"RPC# {rpc_line} ", COLOR_BLUE, bold=True)
 
         # Line 3: Loading Date (green, bold)
         p3 = doc.add_paragraph()
         _add_run(p3, f"Loading Date: {_fmt_short_date(c.loading_date)}", COLOR_GREEN, bold=True)
 
-        # Content lines (green)
+        # Content lines (green, underlined like example)
+        # Also explicitly underline "Buckets/Pallets" and "Pieces" per request.
         for line in c.lines.all():
             desc = (line.item_description or "").strip() or "(item)"
             pallets = int(line.pallets or 0)
             upp = int(line.units_per_pallet or 0)
             total = int(line.total_units or (pallets * upp))
+
             p = doc.add_paragraph()
-            _add_run(p, f"{desc}  ({pallets} x {upp} = {total:,})", COLOR_GREEN, bold=None)
+            # Description part (underlined in the example as well)
+            _add_run(p, f"{desc}  (", COLOR_GREEN, underline=True)
+            _add_run(p, "Buckets/Pallets", COLOR_GREEN, underline=True)
+            _add_run(p, f": {pallets} x {upp} = ", COLOR_GREEN, underline=True)
+            _add_run(p, "Pieces", COLOR_GREEN, underline=True)
+            _add_run(p, f": {total:,})", COLOR_GREEN, underline=True)
 
         # Dates (black)
         p = doc.add_paragraph()
-        _add_run(p, f"ETD: {_fmt_short_date(c.etd)}", COLOR_BLACK, bold=None)
+        _add_run(p, f"ETD: {_fmt_short_date(c.etd)}", COLOR_BLACK)
         p = doc.add_paragraph()
-        _add_run(p, f"ETA: {_fmt_short_date(c.eta)}", COLOR_BLACK, bold=None)
+        _add_run(p, f"ETA: {_fmt_short_date(c.eta)}", COLOR_BLACK)
         p = doc.add_paragraph()
-        _add_run(p, f"Estimated Delivery: {_fmt_short_date(c.estimated_delivery_date)}", COLOR_BLACK, bold=None)
+        _add_run(p, f"Estimated Delivery: {_fmt_short_date(c.estimated_delivery_date)}", COLOR_BLACK)
 
         # spacing between containers
         if idx != len(containers) - 1:
@@ -3480,8 +3507,6 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
-
-
 
 
 
