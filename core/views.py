@@ -894,23 +894,49 @@ def rpc_master_formatter_view(request):
 
         form = RpcMasterFormatUploadForm(request.POST, request.FILES)
         if form.is_valid():
-            f = form.cleaned_data["file"]
-            file_bytes = f.read()
+            upload_files = request.FILES.getlist("files")
+            if not upload_files:
+                messages.error(request, "Please choose at least one RPC order spreadsheet.")
+                return render(
+                    request,
+                    "core/rpc_master_formatter.html",
+                    {"automation_name": "RPC → Master Formatter", "form": form, "ms_connected": ms_connected, "ms_connect_url": ms_connect_url},
+                )
 
-            meta, rows = parse_rpc_order_xlsx(file_bytes)
-            if not rows:
+            all_rows = []
+            first_meta = None
+            for f in upload_files:
+                file_bytes = f.read()
+                meta, rows = parse_rpc_order_xlsx(file_bytes)
+                if first_meta is None:
+                    first_meta = meta
+                if rows:
+                    all_rows.extend(rows)
+
+            # Sort all rows by NLD date (then RPC#, then bucket type) so the output is ready to paste.
+            all_rows.sort(
+                key=lambda r: (
+                    r.nld_date or dt.date(9999, 12, 31),
+                    r.rpc_number or 0,
+                    (r.bucket_type or "").lower(),
+                )
+            )
+
+            if not all_rows:
                 messages.error(
                     request,
-                    "Could not find any line items in that RPC spreadsheet. Make sure it's the standard RPC template.",
+                    "Could not find any line items in the uploaded RPC spreadsheet(s). Make sure they're the standard RPC template.",
                 )
                 return render(
                     request,
                     "core/rpc_master_formatter.html",
-                    {"automation_name": "RPC → Master Formatter", "form": form, "meta": meta, "rows": rows, "ms_connected": ms_connected, "ms_connect_url": ms_connect_url},
+                    {"automation_name": "RPC → Master Formatter", "form": form, "meta": first_meta or {}, "rows": all_rows, "ms_connected": ms_connected, "ms_connect_url": ms_connect_url},
                 )
 
             insert_into_master = request.POST.get("insert_into_master") == "1"
-            if insert_into_master:
+            if insert_into_master and len(upload_files) > 1:
+                messages.error(request, "Automatic OneDrive insertion currently supports a single RPC upload at a time. Uncheck the box (or upload one RPC) and generate a combined file instead.")
+            elif insert_into_master:
                 try:
                     access_token = get_access_token_for_user(request.user)
                     share_url = getattr(settings, "RPC_MASTER_ONEDRIVE_SHARE_URL", None)
@@ -933,15 +959,15 @@ def rpc_master_formatter_view(request):
                         for row in col_vals:
                             v = row[0] if row else None
                             existing_dates.append(parse_excel_date(v))
-                    new_nld = rows[0].nld_date
+                    new_nld = all_rows[0].nld_date
                     if not new_nld:
                         raise GraphError("RPC sheet is missing an NLD date")
                     insert_row = find_insert_row_for_nld(existing_dates, new_nld, start_row)
                     # Insert N blank rows (shift down)
-                    for _ in range(len(rows)):
+                    for _ in range(len(all_rows)):
                         insert_range_down(access_token, ref, sheet_name, f"A{insert_row}:AE{insert_row}")
                     # Write values + formatting
-                    for idx, mr in enumerate(rows):
+                    for idx, mr in enumerate(all_rows):
                         rno = insert_row + idx
                         values = [None] * 31
                         values[0] = mr.nld_date.isoformat() if mr.nld_date else None
@@ -970,21 +996,22 @@ def rpc_master_formatter_view(request):
                         bt_fill = get_bucket_type_argb(mr.bucket_type)
                         if bt_fill:
                             set_range_fill(access_token, ref, sheet_name, f"AA{rno}:AA{rno}", bt_fill)
-                    messages.success(request, f"Inserted {len(rows)} row(s) into your OneDrive master workbook.")
+                    messages.success(request, f"Inserted {len(all_rows)} row(s) into your OneDrive master workbook.")
                 except Exception as e:
                     messages.error(request, f"Could not insert into OneDrive master: {e}")
-            out_bytes = build_master_format_workbook(rows)
+            out_bytes = build_master_format_workbook(all_rows)
 
             # return as downloadable .xlsx
             tmp_path = os.path.join(tempfile.gettempdir(), f"rpc_master_format_{request.user.id}.xlsx")
             with open(tmp_path, "wb") as fh:
                 fh.write(out_bytes)
 
-            rpc_number = meta.get("rpc_number") or "rpc"
+            # If multiple RPCs were uploaded, use a neutral filename.
+            rpc_number = (first_meta or {}).get("rpc_number") or "rpc"
             return FileResponse(
                 open(tmp_path, "rb"),
                 as_attachment=True,
-                filename=f"RPC_{rpc_number}_master_format.xlsx",
+                filename=(f"RPC_{rpc_number}_master_format.xlsx" if len(upload_files) == 1 else "RPC_master_format_combined.xlsx"),
             )
     else:
         form = RpcMasterFormatUploadForm()
@@ -3303,6 +3330,10 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
+
+
+
+
 
 
 
