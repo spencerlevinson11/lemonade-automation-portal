@@ -71,6 +71,11 @@ urlpatterns = [
 
     # Order Tracker
     path("automations/orders/", core_views.order_tracker_view, name="order_tracker"),
+    path(
+        "automations/orders/recap.docx",
+        core_views.order_tracker_recap_docx_view,
+        name="order_tracker_recap_docx",
+    ),
     path("automations/orders/new/", core_views.order_container_edit_view, name="order_container_new"),
     path(
         "automations/orders/<int:container_id>/",
@@ -131,6 +136,7 @@ if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
             name="bucket_adjusted_prognosis_export",
         ),
     ]
+
 
 
 
