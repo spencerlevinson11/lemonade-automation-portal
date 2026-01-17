@@ -13,7 +13,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Pt, RGBColor
 
 from django.conf import settings
 from django.contrib import messages
@@ -3298,6 +3298,22 @@ def order_tracker_recap_docx_view(request):
 
     doc = Document()
 
+    # Color palette + formatting to match the recap example document.
+    # (Word RGB hex values)
+    COLOR_RED = RGBColor(0xC0, 0x00, 0x00)
+    COLOR_BROWN = RGBColor(0x7F, 0x60, 0x00)
+    COLOR_ORANGE = RGBColor(0xE6, 0x91, 0x38)
+    COLOR_BLUE = RGBColor(0x05, 0x63, 0xC1)
+    COLOR_GREEN = RGBColor(0x00, 0xB0, 0x50)
+    COLOR_BLACK = RGBColor(0x11, 0x11, 0x11)
+
+    def _add_run(p, text: str, color: RGBColor, bold: bool | None = None):
+        r = p.add_run(text)
+        r.font.color.rgb = color
+        if bold is not None:
+            r.bold = bold
+        return r
+
     # Match a clean, simple default look.
     style = doc.styles["Normal"]
     style.font.name = "Calibri"
@@ -3309,29 +3325,36 @@ def order_tracker_recap_docx_view(request):
         loc = (c.location_name or "").strip()
         status_txt = (c.status or "TBD").strip() or "TBD"
 
-        # Line 1: PO + Requested + Status
+        # Line 1: PO + Requested + Status (with colors)
         p1 = doc.add_paragraph()
-        p1.add_run(f"PO#{po}– Requested {_fmt_long_date(c.requested_date)} ")
-        p1.add_run(f"***{status_txt}***").bold = True
+        _add_run(p1, f"PO#{po}– ", COLOR_RED, bold=True)
+        _add_run(p1, f"Requested {_fmt_long_date(c.requested_date)} ", COLOR_BROWN, bold=None)
+        _add_run(p1, f"***{status_txt}***", COLOR_ORANGE, bold=True)
 
-        # Line 2: RPC + City
-        doc.add_paragraph(f"RPC# {rpc}{(' ' + loc) if loc else ''}")
+        # Line 2: RPC + City (blue, bold)
+        p2 = doc.add_paragraph()
+        _add_run(p2, f"RPC# {rpc}{(' ' + loc) if loc else ''}", COLOR_BLUE, bold=True)
 
-        # Line 3: Loading Date
-        doc.add_paragraph(f"Loading Date: {_fmt_short_date(c.loading_date)}")
+        # Line 3: Loading Date (green, bold)
+        p3 = doc.add_paragraph()
+        _add_run(p3, f"Loading Date: {_fmt_short_date(c.loading_date)}", COLOR_GREEN, bold=True)
 
-        # Content lines
+        # Content lines (green)
         for line in c.lines.all():
             desc = (line.item_description or "").strip() or "(item)"
             pallets = int(line.pallets or 0)
             upp = int(line.units_per_pallet or 0)
             total = int(line.total_units or (pallets * upp))
-            doc.add_paragraph(f"{desc}  ({pallets} x {upp} = {total:,})")
+            p = doc.add_paragraph()
+            _add_run(p, f"{desc}  ({pallets} x {upp} = {total:,})", COLOR_GREEN, bold=None)
 
-        # Dates (ETD/ETA/Estimated Delivery)
-        doc.add_paragraph(f"ETD: {_fmt_short_date(c.etd)}")
-        doc.add_paragraph(f"ETA: {_fmt_short_date(c.eta)}")
-        doc.add_paragraph(f"Estimated Delivery: {_fmt_short_date(c.estimated_delivery_date)}")
+        # Dates (black)
+        p = doc.add_paragraph()
+        _add_run(p, f"ETD: {_fmt_short_date(c.etd)}", COLOR_BLACK, bold=None)
+        p = doc.add_paragraph()
+        _add_run(p, f"ETA: {_fmt_short_date(c.eta)}", COLOR_BLACK, bold=None)
+        p = doc.add_paragraph()
+        _add_run(p, f"Estimated Delivery: {_fmt_short_date(c.estimated_delivery_date)}", COLOR_BLACK, bold=None)
 
         # spacing between containers
         if idx != len(containers) - 1:
@@ -3457,6 +3480,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
         },
     )
+
 
 
 
