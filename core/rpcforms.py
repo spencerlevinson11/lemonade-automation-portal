@@ -85,8 +85,27 @@ class RpcOrderForm(forms.Form):
     # --- Bucket bank: one numeric field per bucket type ---
     # Leave blank or 0 if not used. Value is "number of pallets".
 
-    b_10_wide_standard_classic = forms.IntegerField(
-        label="10 Wide Standard Classic",
+    # "10 Wide Standard Classic" is ordered in three pallet-quantity variants.
+    # These three fields replace the legacy single "10 Wide Standard Classic" input.
+
+    b_10_wide_standard_classic_x_2520 = forms.IntegerField(
+        label="10 Wide Standard Classic x 2520",
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
+        ),
+    )
+    b_10_wide_standard_classic_x_2660 = forms.IntegerField(
+        label="10 Wide Standard Classic x 2660",
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
+        ),
+    )
+    b_10_wide_standard_classic_x_2800 = forms.IntegerField(
+        label="10 Wide Standard Classic x 2800",
         required=False,
         min_value=0,
         widget=forms.NumberInput(
