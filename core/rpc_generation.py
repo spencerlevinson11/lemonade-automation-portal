@@ -22,7 +22,9 @@ STACKABLE_PAIRS = [
 ]
 
 PER_PALLET = {
-    "10 Wide Standard Classic": 2800,
+    "10 Wide Standard Classic x 2800": 2800,
+    "10 Wide Standard Classic x 2660": 2660,
+    "10 Wide Standard Classic x 2520": 2520,
     "10 ltr conical Next Gen":  4050,
     "10 ltr conical black":     3960,
     "10 ltr wide NG eco":       2842,
@@ -53,7 +55,9 @@ ARTICLE_MAP = {
     "10 ltr conical Next Gen":   500107,
     "13 ltr conical Next Gen":   500131,
     "13 ltr conical black":      500130,
-    "10 Wide Standard Classic":  500100,
+    "10 Wide Standard Classic x 2800": 500100,
+    "10 Wide Standard Classic x 2660": 500100,
+    "10 Wide Standard Classic x 2520": 500100,
     "10 liter classic hq":       500110,
     "5 liter vase":              500050,
     "7 liter vase #":            500071,
