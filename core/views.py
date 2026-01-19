@@ -144,7 +144,7 @@ def is_euro_customer_name(name: str) -> bool:
 
 def get_currency_for_customer_name(name: str):
     if is_euro_customer_name(name):
-        return ("EUR", "€")
+        return ("EUR", "$")
     return ("USD", "$")
 
 
