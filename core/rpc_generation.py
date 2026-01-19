@@ -93,9 +93,10 @@ def normalize(name: str) -> str:
 
 # Map form field names -> canonical bucket names
 BUCKET_FIELD_MAP = {
-    "b_10_wide_standard_classic x 2800": "10 Wide Standard Classic x 2800",
-    "b_10_wide_standard_classic x 2660": "10 Wide Standard Classic x 2660",
-    "b_10_wide_standard_classic x 2520": "10 Wide Standard Classic x 2520",
+    # NOTE: Django form field names cannot contain spaces.
+    "b_10_wide_standard_classic_x_2800": "10 Wide Standard Classic x 2800",
+    "b_10_wide_standard_classic_x_2660": "10 Wide Standard Classic x 2660",
+    "b_10_wide_standard_classic_x_2520": "10 Wide Standard Classic x 2520",
     "b_10_ltr_conical_next_gen": "10 ltr conical Next Gen",
     "b_10_ltr_conical_black": "10 ltr conical black",
     "b_10_ltr_wide_ng_eco": "10 ltr wide NG eco",
@@ -409,4 +410,5 @@ Bensenville, IL, 60106<br>
     email_status = " ".join(status_parts) if status_parts else "No email was sent."
 
     return files, email_status
+
 
