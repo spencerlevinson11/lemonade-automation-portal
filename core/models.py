@@ -423,6 +423,62 @@ class OrderContainerDocument(models.Model):
         return self.label or (self.file.name if self.file else "Document")
 
 
+class ScheduleActivity(models.Model):
+    """Simple company scheduler activity (week-view).
+
+    V1: one-off activities (no recurrence).
+    """
+
+    STATUS_PLANNED = "planned"
+    STATUS_DONE = "done"
+    STATUS_CANCELED = "canceled"
+
+    STATUS_CHOICES = [
+        (STATUS_PLANNED, "Planned"),
+        (STATUS_DONE, "Done"),
+        (STATUS_CANCELED, "Canceled"),
+    ]
+
+    CAT_DELIVERY = "delivery"
+    CAT_PRODUCTION = "production"
+    CAT_INVENTORY = "inventory"
+    CAT_SALES = "sales"
+    CAT_ADMIN = "admin"
+    CAT_OTHER = "other"
+
+    CATEGORY_CHOICES = [
+        (CAT_DELIVERY, "Delivery"),
+        (CAT_PRODUCTION, "Production"),
+        (CAT_INVENTORY, "Inventory"),
+        (CAT_SALES, "Sales"),
+        (CAT_ADMIN, "Admin"),
+        (CAT_OTHER, "Other"),
+    ]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="schedule_activities")
+
+    date = models.DateField()
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+
+    title = models.CharField(max_length=160)
+    category = models.CharField(max_length=32, choices=CATEGORY_CHOICES, default=CAT_OTHER)
+    assigned_to = models.CharField(max_length=80, blank=True)
+    notes = models.TextField(blank=True)
+
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PLANNED)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["date", "start_time", "created_at", "id"]
+
+    def __str__(self) -> str:
+        when = self.date.isoformat()
+        return f"{when} - {self.title}"
+
+
 
 # =========================
 # Microsoft Graph OAuth Token
@@ -449,5 +505,7 @@ class MicrosoftGraphToken(models.Model):
 
     def __str__(self) -> str:
         return f"MicrosoftGraphToken({self.user.username})"
+
+
 
 
