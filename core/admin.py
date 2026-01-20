@@ -11,6 +11,7 @@ from .models import (
     OrderContainer,
     OrderContainerLine,
     OrderContainerDocument,
+    ScheduleActivity,
 )
 
 
@@ -126,7 +127,26 @@ class OrderContainerAdmin(admin.ModelAdmin):
     inlines = [OrderContainerLineInline, OrderContainerDocumentInline]
 
 
+@admin.register(ScheduleActivity)
+class ScheduleActivityAdmin(admin.ModelAdmin):
+    list_display = (
+        "company",
+        "date",
+        "start_time",
+        "end_time",
+        "title",
+        "category",
+        "assigned_to",
+        "status",
+        "updated_at",
+    )
+    list_filter = ("company", "category", "status", "date")
+    search_fields = ("title", "assigned_to", "notes", "company__name")
+    ordering = ("-date", "start_time", "-updated_at")
+
+
 # ---- Global admin branding (no "Lemonade Stand") ----
 admin.site.site_header = "Automation Portal Admin"
 admin.site.site_title = "Automation Portal"
 admin.site.index_title = "Control center for your automations"
+
