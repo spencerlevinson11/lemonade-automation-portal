@@ -72,6 +72,7 @@ urlpatterns = [
     # Schedule Dashboard
     path("automations/schedule/", core_views.schedule_dashboard_view, name="schedule_dashboard"),
     path("automations/schedule/add/", core_views.schedule_activity_add_view, name="schedule_activity_add"),
+    path("automations/schedule/notes/", core_views.schedule_global_note_save_view, name="schedule_global_note_save"),
     path("automations/schedule/<int:pk>/edit/", core_views.schedule_activity_edit_view, name="schedule_activity_edit"),
     path("automations/schedule/<int:pk>/delete/", core_views.schedule_activity_delete_view, name="schedule_activity_delete"),
     path("automations/schedule/<int:pk>/toggle-done/", core_views.schedule_activity_toggle_done_view, name="schedule_activity_toggle_done"),
@@ -144,6 +145,9 @@ if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
             name="bucket_adjusted_prognosis_export",
         ),
     ]
+
+
+
 
 
 
