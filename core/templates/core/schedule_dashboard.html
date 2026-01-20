@@ -246,6 +246,7 @@
         <a class="btn btn-secondary" href="?d={{ prev_d }}">◀ Prev week</a>
         <div class="range">{{ week_start }} → {{ week_end }}</div>
         <a class="btn btn-secondary" href="?d={{ next_d }}">Next week ▶</a>
+        <a class="btn btn-secondary" href="?d={{ ref_date|date:'Y-m-d' }}&view=month">Month view</a>
         <a class="btn" href="/">Back to dashboard</a>
       </div>
     </div>
@@ -274,6 +275,7 @@
       <form method="post" action="{% url 'schedule_activity_add' %}">
         {% csrf_token %}
         <input type="hidden" name="back_d" value="{{ week_start|date:'Y-m-d' }}">
+        <input type="hidden" name="back_view" value="week">
 
         <div class="form-grid">
           <div>
@@ -317,22 +319,27 @@
     </div>
 
     <div class="week">
-      {% for d in days %}
+      {% for block in day_blocks %}
+        {% with d=block.date acts=block.activities %}
         <div class="day">
           <div class="day-head">
             <div>
               <div class="day-title">{{ d|date:"D" }}</div>
               <div class="day-sub">{{ d|date:"M j, Y" }}</div>
             </div>
-            <div class="pill pill-muted">{{ by_day.d|length }}</div>
+            <div class="pill pill-muted">{{ acts|length }}</div>
           </div>
 
-          {% for a in by_day.d %}
+          {% for a in acts %}
             <div class="activity {% if a.status == 'done' %}done{% elif a.status == 'canceled' %}canceled{% endif %}">
               <div class="activity-top">
                 <div>
                   <div class="pill" style="margin-bottom:6px;">{{ a.category }}</div>
-                  <p class="activity-title">{{ a.title }}</p>
+                  <p class="activity-title">
+                    <a href="{% url 'schedule_activity_edit' a.pk %}?back_d={{ week_start|date:'Y-m-d' }}&back_view=week" style="color:inherit; text-decoration:none;">
+                      {{ a.title }}
+                    </a>
+                  </p>
                   <div class="meta">
                     {% if a.start_time or a.end_time %}
                       <span>{{ a.start_time|default:"" }}{% if a.end_time %}–{{ a.end_time }}{% endif %}</span>
@@ -353,14 +360,16 @@
                   <form method="post" action="{% url 'schedule_activity_toggle_done' a.pk %}">
                     {% csrf_token %}
                     <input type="hidden" name="back_d" value="{{ week_start|date:'Y-m-d' }}">
+                    <input type="hidden" name="back_view" value="week">
                     <button class="icon-btn" type="submit" title="Toggle done">{% if a.status == 'done' %}↩{% else %}✓{% endif %}</button>
                   </form>
 
-                  <a class="icon-btn" href="{% url 'schedule_activity_edit' a.pk %}?back_d={{ week_start|date:'Y-m-d' }}" title="Edit">✎</a>
+                  <a class="icon-btn" href="{% url 'schedule_activity_edit' a.pk %}?back_d={{ week_start|date:'Y-m-d' }}&back_view=week" title="Edit">✎</a>
 
                   <form method="post" action="{% url 'schedule_activity_delete' a.pk %}" onsubmit="return confirm('Delete this activity?');">
                     {% csrf_token %}
                     <input type="hidden" name="back_d" value="{{ week_start|date:'Y-m-d' }}">
+                    <input type="hidden" name="back_view" value="week">
                     <button class="icon-btn" type="submit" title="Delete">🗑</button>
                   </form>
                 </div>
@@ -370,9 +379,11 @@
             <div class="meta" style="padding:4px 2px;">No activities</div>
           {% endfor %}
         </div>
+        {% endwith %}
       {% endfor %}
     </div>
 
   </div>
 </body>
 </html>
+
