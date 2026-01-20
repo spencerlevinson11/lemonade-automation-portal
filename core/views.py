@@ -27,6 +27,36 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+from __future__ import annotations
+
+import os
+import copy
+import re
+import tempfile
+import zipfile
+from decimal import Decimal, InvalidOperation
+from io import BytesIO
+
+import openpyxl
+import pandas as pd
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+from docx import Document
+from docx.shared import Pt, RGBColor
+from docx.enum.text import WD_COLOR_INDEX
+
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import logout
+from django.contrib.auth.decorators import login_required
+from django.db import IntegrityError, transaction
+from django.db.models import Sum, Q
+from django.http import FileResponse, HttpResponseForbidden
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
+from django.views.decorators.http import require_http_methods
 from django.forms import inlineformset_factory
 from django.views.decorators.http import require_POST
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
@@ -38,6 +68,7 @@ from .forms import (
     TipEntryForm,
     ProjectPlanEntryForm,
     ScheduleActivityForm,
+    ScheduleGlobalNoteForm,
     OrderContainerForm,
     OrderContainerLineForm,
     OrderContainerDocumentForm,
@@ -50,6 +81,7 @@ from .models import (
     TipEntry,
     ProjectPlanEntry,
     ScheduleActivity,
+    ScheduleGlobalNote,
     OrderContainer,
     OrderContainerLine,
     OrderContainerDocument,
@@ -77,6 +109,8 @@ from .services.ms_graph_excel import (
 )
 from .services.bucket_color_map import get_bucket_type_argb
 import datetime as dt
+
+from dateutil.relativedelta import relativedelta
 
 
 
@@ -3545,7 +3579,62 @@ def schedule_dashboard_view(request):
     view_mode = (request.GET.get("view") or "week").strip().lower()
     view_mode = "month" if view_mode == "month" else "week"
 
-    form = ScheduleActivityForm(initial={"date": ref_date})
+    # Always-on notes (not tied to a date)
+    global_note_obj, _ = ScheduleGlobalNote.objects.get_or_create(company=company)
+    global_note_form = ScheduleGlobalNoteForm(instance=global_note_obj)
+
+    form = ScheduleActivityForm(initial={"date": ref_date, "repeat_every": 1, "repeat_unit": "weeks"})
+
+    def _expand_occurrences(qs, start_date: dt.date, end_date: dt.date):
+        """Return a list of *display* activities for the given date range.
+
+        For recurring activities, we generate per-occurrence copies so that the
+        same base object can appear on multiple days without overwriting state.
+        """
+        out = []
+        for a in qs:
+            if not a.is_recurring:
+                out.append(copy.copy(a))
+                continue
+
+            until = a.repeat_until or end_date
+            occ_end = min(end_date, until)
+            if a.date > occ_end:
+                continue
+
+            unit = (a.repeat_unit or "weeks").lower()
+            every = int(a.repeat_every or 1)
+            if every < 1:
+                every = 1
+
+            cur = a.date
+
+            # Advance to first occurrence on/after start_date
+            if unit == "days":
+                step = dt.timedelta(days=every)
+                while cur < start_date:
+                    cur += step
+            elif unit == "weeks":
+                step = dt.timedelta(days=7 * every)
+                while cur < start_date:
+                    cur += step
+            else:  # months
+                while cur < start_date:
+                    cur = cur + relativedelta(months=every)
+
+            while cur <= occ_end:
+                occ = copy.copy(a)
+                occ.date = cur
+                occ._is_occurrence = True  # type: ignore[attr-defined]
+                out.append(occ)
+                if unit == "days":
+                    cur += dt.timedelta(days=every)
+                elif unit == "weeks":
+                    cur += dt.timedelta(days=7 * every)
+                else:
+                    cur = cur + relativedelta(months=every)
+
+        return out
 
     if view_mode == "month":
         # Month grid (Monday-starting weeks)
@@ -3561,13 +3650,24 @@ def schedule_dashboard_view(request):
         # Extend to the end of the last week (Sunday)
         grid_end = month_end + dt.timedelta(days=(6 - month_end.weekday()))
 
-        qs = (
+        base_qs = (
             ScheduleActivity.objects
-            .filter(company=company, date__gte=grid_start, date__lte=grid_end)
+            .filter(company=company)
+            .filter(
+                Q(is_recurring=False, date__gte=grid_start, date__lte=grid_end)
+                | (
+                    Q(is_recurring=True, date__lte=grid_end)
+                    & (Q(repeat_until__isnull=True) | Q(repeat_until__gte=grid_start))
+                )
+            )
             .order_by("date", "start_time", "created_at", "id")
         )
+
+        display_acts = _expand_occurrences(base_qs, grid_start, grid_end)
+        display_acts.sort(key=lambda a: (a.date, a.start_time or dt.time(23, 59), a.created_at, a.id))
+
         by_day = {}
-        for a in qs:
+        for a in display_acts:
             by_day.setdefault(a.date, []).append(a)
 
         weeks = []
@@ -3602,6 +3702,8 @@ def schedule_dashboard_view(request):
             "next_d": next_month.isoformat(),
             "weeks": weeks,
             "form": form,
+            "global_note_form": global_note_form,
+            "global_note_obj": global_note_obj,
         }
         return render(request, "core/schedule_month.html", context)
 
@@ -3610,14 +3712,24 @@ def schedule_dashboard_view(request):
     days = [week_start + dt.timedelta(days=i) for i in range(7)]
     week_end = days[-1]
 
-    qs = (
+    base_qs = (
         ScheduleActivity.objects
-        .filter(company=company, date__gte=week_start, date__lte=week_end)
+        .filter(company=company)
+        .filter(
+            Q(is_recurring=False, date__gte=week_start, date__lte=week_end)
+            | (
+                Q(is_recurring=True, date__lte=week_end)
+                & (Q(repeat_until__isnull=True) | Q(repeat_until__gte=week_start))
+            )
+        )
         .order_by("date", "start_time", "created_at", "id")
     )
 
+    display_acts = _expand_occurrences(base_qs, week_start, week_end)
+    display_acts.sort(key=lambda a: (a.date, a.start_time or dt.time(23, 59), a.created_at, a.id))
+
     by_day = {d: [] for d in days}
-    for a in qs:
+    for a in display_acts:
         by_day.setdefault(a.date, []).append(a)
 
     day_blocks = [{"date": d, "activities": by_day.get(d, [])} for d in days]
@@ -3633,6 +3745,8 @@ def schedule_dashboard_view(request):
         "next_d": (week_start + dt.timedelta(days=7)).isoformat(),
         "day_blocks": day_blocks,
         "form": form,
+        "global_note_form": global_note_form,
+        "global_note_obj": global_note_obj,
     }
     return render(request, "core/schedule_dashboard.html", context)
 
@@ -3658,6 +3772,36 @@ def schedule_activity_add_view(request):
         messages.success(request, "Activity added.")
     else:
         messages.error(request, "Could not add activity. Please check the fields.")
+
+    back_d = (request.POST.get("back_d") or "").strip()
+    back_view = (request.POST.get("back_view") or "").strip().lower()
+    back_view = "month" if back_view == "month" else "week"
+    if back_d:
+        return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
+    return redirect("schedule_dashboard")
+
+
+@login_required
+@require_POST
+def schedule_global_note_save_view(request):
+    """Save always-on notes for the scheduling dashboard."""
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        company = Company.objects.filter(owner=user).order_by("id").first()
+
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    note_obj, _ = ScheduleGlobalNote.objects.get_or_create(company=company)
+    form = ScheduleGlobalNoteForm(request.POST, instance=note_obj)
+    if form.is_valid():
+        form.save()
+        messages.success(request, "Notes saved.")
+    else:
+        messages.error(request, "Could not save notes.")
 
     back_d = (request.POST.get("back_d") or "").strip()
     back_view = (request.POST.get("back_view") or "").strip().lower()
@@ -3764,6 +3908,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
