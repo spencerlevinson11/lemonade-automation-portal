@@ -5,7 +5,9 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("core", "0008_order_tracking"),
+        # Keep the migration graph linear: this must come after the latest
+        # existing core migration in the project.
+        ("core", "0010_microsoft_graph_token"),
     ]
 
     operations = [
