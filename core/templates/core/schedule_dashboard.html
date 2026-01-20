@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ automation_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root{
+      --bg-main:#020617;
+      --bg-card:#0b1120;
+      --accent:#facc15;
+      --accent-strong:#fbbf24;
+      --text:#e5e7eb;
+      --muted:#9ca3af;
+      --border:#1f2937;
+      --good:#4ade80;
+      --danger:#f97373;
+      --input: rgba(2, 6, 23, 0.6);
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0; padding:24px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
+      color:var(--text);
+    }
+    .container{ max-width:1300px; margin:0 auto; }
+    a{ color: var(--accent); text-decoration:none; }
+    a:hover{ text-decoration:underline; }
+
+    .topbar{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:14px; margin-bottom:16px; flex-wrap:wrap;
+    }
+    .title{
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    }
+    .badge{
+      background: rgba(250,204,21,0.14);
+      border:1px solid rgba(250,204,21,0.25);
+      color: var(--accent-strong);
+      padding:6px 10px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:12px;
+      letter-spacing: .4px;
+      text-transform: uppercase;
+    }
+    .nav{
+      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    }
+    .nav .range{ color: var(--muted); font-size:13px; }
+
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00)) var(--bg-card);
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:16px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+    }
+
+    label{
+      display:block;
+      font-size:12px;
+      color: var(--muted);
+      margin-bottom:6px;
+      text-transform: uppercase;
+      letter-spacing:.4px;
+    }
+    input, select, textarea{
+      width:100%;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background: var(--input);
+      color: var(--text);
+      outline:none;
+    }
+    textarea{ resize:vertical; }
+
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      gap:10px;
+      padding:10px 14px;
+      border-radius:12px;
+      border:1px solid rgba(250,204,21,0.35);
+      background: rgba(250,204,21,0.14);
+      color: var(--accent-strong);
+      font-weight:800;
+      cursor:pointer;
+      text-decoration:none;
+      white-space:nowrap;
+    }
+    .btn:hover{ background: rgba(250,204,21,0.18); }
+    .btn-secondary{
+      border-color: var(--border);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      font-weight:700;
+    }
+    .btn-secondary:hover{ background: rgba(255,255,255,0.05); }
+    .btn-danger{
+      border-color: rgba(249,115,115,0.35);
+      background: rgba(249,115,115,0.10);
+      color: #fecaca;
+      font-weight:800;
+    }
+    .btn-danger:hover{ background: rgba(249,115,115,0.14); }
+    .btn-good{
+      border-color: rgba(74,222,128,0.35);
+      background: rgba(74,222,128,0.10);
+      color: #bbf7d0;
+      font-weight:800;
+    }
+    .btn-good:hover{ background: rgba(74,222,128,0.14); }
+
+    .form-grid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:12px;
+      align-items:end;
+    }
+    @media (min-width: 980px){
+      .form-grid{ grid-template-columns: 160px 140px 140px 2fr 180px 200px 160px auto; }
+    }
+
+    .week{
+      margin-top:16px;
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:12px;
+    }
+    @media (min-width: 980px){
+      .week{ grid-template-columns: repeat(7, 1fr); }
+    }
+
+    .day{
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:12px;
+      background: rgba(255,255,255,0.02);
+      min-height: 220px;
+    }
+
+    .day-head{
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:10px;
+      padding-bottom:8px;
+      border-bottom:1px solid rgba(255,255,255,0.06);
+    }
+    .day-title{ font-weight:900; letter-spacing:.2px; }
+    .day-sub{ color: var(--muted); font-size:12px; }
+
+    .pill{
+      display:inline-flex; align-items:center;
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:800;
+      border:1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing:.35px;
+      white-space:nowrap;
+    }
+    .pill-muted{ color: var(--muted); }
+
+    .activity{
+      border:1px solid rgba(255,255,255,0.10);
+      background: rgba(2,6,23,0.55);
+      border-radius:14px;
+      padding:10px;
+      margin-bottom:10px;
+    }
+    .activity.done{
+      opacity: 0.78;
+      border-color: rgba(74,222,128,0.25);
+      background: rgba(74,222,128,0.06);
+    }
+    .activity.canceled{
+      opacity: 0.72;
+      border-color: rgba(249,115,115,0.25);
+      background: rgba(249,115,115,0.05);
+    }
+
+    .activity-top{
+      display:flex; justify-content:space-between; gap:10px;
+      align-items:flex-start;
+    }
+    .activity-title{
+      font-weight:900;
+      margin:0;
+      font-size:14px;
+      line-height:1.25;
+    }
+    .meta{
+      color: var(--muted);
+      font-size:12px;
+      margin-top:4px;
+      line-height:1.25;
+    }
+    .actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+      align-items:center;
+    }
+    .actions form{ margin:0; }
+    .icon-btn{
+      padding:7px 10px;
+      border-radius:10px;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      font-weight:900;
+      cursor:pointer;
+    }
+    .icon-btn:hover{ background: rgba(255,255,255,0.06); }
+
+    .msg{ margin-bottom:14px; }
+    .msg .success{ color: var(--good); font-weight:800; }
+    .msg .error{ color: var(--danger); font-weight:800; }
+
+    .help{ color: var(--muted); font-size:13px; margin:0 0 14px; line-height:1.35; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="topbar">
+      <div class="title">
+        <div class="badge">Scheduling</div>
+        <div>
+          <div style="font-size:20px; font-weight:900; letter-spacing:.2px;">{{ company.name }}</div>
+          <div class="help" style="margin:4px 0 0;">Week view: plan activities, assign owners, and mark done.</div>
+        </div>
+      </div>
+
+      <div class="nav">
+        <a class="btn btn-secondary" href="?d={{ prev_d }}">◀ Prev week</a>
+        <div class="range">{{ week_start }} → {{ week_end }}</div>
+        <a class="btn btn-secondary" href="?d={{ next_d }}">Next week ▶</a>
+        <a class="btn" href="/">Back to dashboard</a>
+      </div>
+    </div>
+
+    {% if messages %}
+      <div class="msg">
+        {% for message in messages %}
+          {% if message.tags == 'success' %}
+            <div class="success">{{ message }}</div>
+          {% elif message.tags == 'error' %}
+            <div class="error">{{ message }}</div>
+          {% else %}
+            <div class="pill pill-muted">{{ message }}</div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="card">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <h2 style="margin:0; font-size:18px;">Add activity</h2>
+        <div class="pill pill-muted">Tip: start/end time optional</div>
+      </div>
+      <div style="height:10px"></div>
+
+      <form method="post" action="{% url 'schedule_activity_add' %}">
+        {% csrf_token %}
+        <input type="hidden" name="back_d" value="{{ week_start|date:'Y-m-d' }}">
+
+        <div class="form-grid">
+          <div>
+            <label>Date</label>
+            {{ form.date }}
+          </div>
+          <div>
+            <label>Start</label>
+            {{ form.start_time }}
+          </div>
+          <div>
+            <label>End</label>
+            {{ form.end_time }}
+          </div>
+          <div>
+            <label>Title</label>
+            {{ form.title }}
+          </div>
+          <div>
+            <label>Category</label>
+            {{ form.category }}
+          </div>
+          <div>
+            <label>Assigned to</label>
+            {{ form.assigned_to }}
+          </div>
+          <div>
+            <label>Status</label>
+            {{ form.status }}
+          </div>
+          <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button class="btn" type="submit">Add</button>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <label>Notes</label>
+          {{ form.notes }}
+        </div>
+      </form>
+    </div>
+
+    <div class="week">
+      {% for d in days %}
+        <div class="day">
+          <div class="day-head">
+            <div>
+              <div class="day-title">{{ d|date:"D" }}</div>
+              <div class="day-sub">{{ d|date:"M j, Y" }}</div>
+            </div>
+            <div class="pill pill-muted">{{ by_day.d|length }}</div>
+          </div>
+
+          {% for a in by_day.d %}
+            <div class="activity {% if a.status == 'done' %}done{% elif a.status == 'canceled' %}canceled{% endif %}">
+              <div class="activity-top">
+                <div>
+                  <div class="pill" style="margin-bottom:6px;">{{ a.category }}</div>
+                  <p class="activity-title">{{ a.title }}</p>
+                  <div class="meta">
+                    {% if a.start_time or a.end_time %}
+                      <span>{{ a.start_time|default:"" }}{% if a.end_time %}–{{ a.end_time }}{% endif %}</span>
+                      <span style="opacity:.55"> • </span>
+                    {% endif %}
+                    <span>Status: {{ a.get_status_display }}</span>
+                    {% if a.assigned_to %}
+                      <span style="opacity:.55"> • </span>
+                      <span>Owner: {{ a.assigned_to }}</span>
+                    {% endif %}
+                  </div>
+                  {% if a.notes %}
+                    <div class="meta" style="margin-top:6px;">{{ a.notes }}</div>
+                  {% endif %}
+                </div>
+
+                <div class="actions">
+                  <form method="post" action="{% url 'schedule_activity_toggle_done' a.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="back_d" value="{{ week_start|date:'Y-m-d' }}">
+                    <button class="icon-btn" type="submit" title="Toggle done">{% if a.status == 'done' %}↩{% else %}✓{% endif %}</button>
+                  </form>
+
+                  <a class="icon-btn" href="{% url 'schedule_activity_edit' a.pk %}?back_d={{ week_start|date:'Y-m-d' }}" title="Edit">✎</a>
+
+                  <form method="post" action="{% url 'schedule_activity_delete' a.pk %}" onsubmit="return confirm('Delete this activity?');">
+                    {% csrf_token %}
+                    <input type="hidden" name="back_d" value="{{ week_start|date:'Y-m-d' }}">
+                    <button class="icon-btn" type="submit" title="Delete">🗑</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          {% empty %}
+            <div class="meta" style="padding:4px 2px;">No activities</div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+
+  </div>
+</body>
+</html>
