@@ -3524,6 +3524,7 @@ def schedule_dashboard_view(request):
 
     GET params:
       - d: reference date (YYYY-MM-DD). The week shown is the Monday-starting week containing d.
+      - view: "week" (default) or "month"
     """
     user = request.user
 
@@ -3541,6 +3542,70 @@ def schedule_dashboard_view(request):
     except Exception:
         ref_date = timezone.localdate()
 
+    view_mode = (request.GET.get("view") or "week").strip().lower()
+    view_mode = "month" if view_mode == "month" else "week"
+
+    form = ScheduleActivityForm(initial={"date": ref_date})
+
+    if view_mode == "month":
+        # Month grid (Monday-starting weeks)
+        month_start = ref_date.replace(day=1)
+        # Find the first Monday to show
+        grid_start = month_start - dt.timedelta(days=month_start.weekday())
+        # Find the last day of the month
+        if month_start.month == 12:
+            next_month = month_start.replace(year=month_start.year + 1, month=1, day=1)
+        else:
+            next_month = month_start.replace(month=month_start.month + 1, day=1)
+        month_end = next_month - dt.timedelta(days=1)
+        # Extend to the end of the last week (Sunday)
+        grid_end = month_end + dt.timedelta(days=(6 - month_end.weekday()))
+
+        qs = (
+            ScheduleActivity.objects
+            .filter(company=company, date__gte=grid_start, date__lte=grid_end)
+            .order_by("date", "start_time", "created_at", "id")
+        )
+        by_day = {}
+        for a in qs:
+            by_day.setdefault(a.date, []).append(a)
+
+        weeks = []
+        cur = grid_start
+        while cur <= grid_end:
+            week_days = [cur + dt.timedelta(days=i) for i in range(7)]
+            weeks.append(
+                [
+                    {
+                        "date": d,
+                        "in_month": (d.month == month_start.month),
+                        "activities": by_day.get(d, []),
+                    }
+                    for d in week_days
+                ]
+            )
+            cur += dt.timedelta(days=7)
+
+        # Month nav
+        prev_month = (month_start - dt.timedelta(days=1)).replace(day=1)
+        next_month = (month_end + dt.timedelta(days=1)).replace(day=1)
+
+        context = {
+            "automation_name": "Schedule Dashboard",
+            "company": company,
+            "ref_date": ref_date,
+            "view_mode": "month",
+            "month_start": month_start,
+            "grid_start": grid_start,
+            "grid_end": grid_end,
+            "prev_d": prev_month.isoformat(),
+            "next_d": next_month.isoformat(),
+            "weeks": weeks,
+            "form": form,
+        }
+        return render(request, "core/schedule_month.html", context)
+
+    # Week view (default)
     week_start = ref_date - dt.timedelta(days=ref_date.weekday())
     days = [week_start + dt.timedelta(days=i) for i in range(7)]
     week_end = days[-1]
@@ -3555,18 +3620,18 @@ def schedule_dashboard_view(request):
     for a in qs:
         by_day.setdefault(a.date, []).append(a)
 
-    form = ScheduleActivityForm(initial={"date": ref_date})
+    day_blocks = [{"date": d, "activities": by_day.get(d, [])} for d in days]
 
     context = {
         "automation_name": "Schedule Dashboard",
         "company": company,
         "ref_date": ref_date,
+        "view_mode": "week",
         "week_start": week_start,
         "week_end": week_end,
         "prev_d": (week_start - dt.timedelta(days=7)).isoformat(),
         "next_d": (week_start + dt.timedelta(days=7)).isoformat(),
-        "days": days,
-        "by_day": by_day,
+        "day_blocks": day_blocks,
         "form": form,
     }
     return render(request, "core/schedule_dashboard.html", context)
@@ -3595,8 +3660,10 @@ def schedule_activity_add_view(request):
         messages.error(request, "Could not add activity. Please check the fields.")
 
     back_d = (request.POST.get("back_d") or "").strip()
+    back_view = (request.POST.get("back_view") or "").strip().lower()
+    back_view = "month" if back_view == "month" else "week"
     if back_d:
-        return redirect(f"/automations/schedule/?d={back_d}")
+        return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
 
 
@@ -3620,13 +3687,17 @@ def schedule_activity_edit_view(request, pk):
             form.save()
             messages.success(request, "Activity updated.")
             back_d = (request.POST.get("back_d") or "").strip()
+            back_view = (request.POST.get("back_view") or "").strip().lower()
+            back_view = "month" if back_view == "month" else "week"
             if back_d:
-                return redirect(f"/automations/schedule/?d={back_d}")
+                return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
             return redirect("schedule_dashboard")
     else:
         form = ScheduleActivityForm(instance=activity)
 
     back_d = (request.GET.get("back_d") or activity.date.isoformat()).strip()
+    back_view = (request.GET.get("back_view") or "week").strip().lower()
+    back_view = "month" if back_view == "month" else "week"
     return render(
         request,
         "core/schedule_activity_edit.html",
@@ -3636,6 +3707,7 @@ def schedule_activity_edit_view(request, pk):
             "activity": activity,
             "form": form,
             "back_d": back_d,
+            "back_view": back_view,
         },
     )
 
@@ -3658,8 +3730,10 @@ def schedule_activity_delete_view(request, pk):
     messages.success(request, "Activity deleted.")
 
     back_d = (request.POST.get("back_d") or "").strip()
+    back_view = (request.POST.get("back_view") or "").strip().lower()
+    back_view = "month" if back_view == "month" else "week"
     if back_d:
-        return redirect(f"/automations/schedule/?d={back_d}")
+        return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
 
 
@@ -3685,9 +3759,12 @@ def schedule_activity_toggle_done_view(request, pk):
     activity.save(update_fields=["status", "updated_at"])
 
     back_d = (request.POST.get("back_d") or "").strip()
+    back_view = (request.POST.get("back_view") or "").strip().lower()
+    back_view = "month" if back_view == "month" else "week"
     if back_d:
-        return redirect(f"/automations/schedule/?d={back_d}")
+        return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
