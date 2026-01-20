@@ -37,6 +37,7 @@ from .forms import (
     RpcMasterFormatUploadForm,
     TipEntryForm,
     ProjectPlanEntryForm,
+    ScheduleActivityForm,
     OrderContainerForm,
     OrderContainerLineForm,
     OrderContainerDocumentForm,
@@ -48,6 +49,7 @@ from .models import (
     PricingQuoteLine,
     TipEntry,
     ProjectPlanEntry,
+    ScheduleActivity,
     OrderContainer,
     OrderContainerLine,
     OrderContainerDocument,
@@ -2513,6 +2515,10 @@ def run_automation(request, pk):
     if "project planner" in name_normalized or "project planning" in name_normalized:
         return redirect("project_planner")
 
+    # --- Branch: Schedule Dashboard ---
+    if "schedule" in name_normalized or "calendar" in name_normalized:
+        return redirect("schedule_dashboard")
+
     # --- Branch: Order Tracker ---
     if "order tracker" in name_normalized or "container tracker" in name_normalized or "order tracking" in name_normalized:
         return redirect("order_tracker")
@@ -3503,6 +3509,185 @@ def order_container_edit_view(request, container_id: int | None = None):
 
 
 
+
+
+
+
+
+# =========================
+# Schedule Dashboard
+# =========================
+
+@login_required
+def schedule_dashboard_view(request):
+    """Company scheduling dashboard (week view).
+
+    GET params:
+      - d: reference date (YYYY-MM-DD). The week shown is the Monday-starting week containing d.
+    """
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        company = Company.objects.filter(owner=user).order_by("id").first()
+
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    d_str = (request.GET.get("d") or "").strip()
+    try:
+        ref_date = dt.date.fromisoformat(d_str) if d_str else timezone.localdate()
+    except Exception:
+        ref_date = timezone.localdate()
+
+    week_start = ref_date - dt.timedelta(days=ref_date.weekday())
+    days = [week_start + dt.timedelta(days=i) for i in range(7)]
+    week_end = days[-1]
+
+    qs = (
+        ScheduleActivity.objects
+        .filter(company=company, date__gte=week_start, date__lte=week_end)
+        .order_by("date", "start_time", "created_at", "id")
+    )
+
+    by_day = {d: [] for d in days}
+    for a in qs:
+        by_day.setdefault(a.date, []).append(a)
+
+    form = ScheduleActivityForm(initial={"date": ref_date})
+
+    context = {
+        "automation_name": "Schedule Dashboard",
+        "company": company,
+        "ref_date": ref_date,
+        "week_start": week_start,
+        "week_end": week_end,
+        "prev_d": (week_start - dt.timedelta(days=7)).isoformat(),
+        "next_d": (week_start + dt.timedelta(days=7)).isoformat(),
+        "days": days,
+        "by_day": by_day,
+        "form": form,
+    }
+    return render(request, "core/schedule_dashboard.html", context)
+
+
+@login_required
+@require_POST
+def schedule_activity_add_view(request):
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        company = Company.objects.filter(owner=user).order_by("id").first()
+
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    form = ScheduleActivityForm(request.POST)
+    if form.is_valid():
+        obj = form.save(commit=False)
+        obj.company = company
+        obj.save()
+        messages.success(request, "Activity added.")
+    else:
+        messages.error(request, "Could not add activity. Please check the fields.")
+
+    back_d = (request.POST.get("back_d") or "").strip()
+    if back_d:
+        return redirect(f"/automations/schedule/?d={back_d}")
+    return redirect("schedule_dashboard")
+
+
+@login_required
+def schedule_activity_edit_view(request, pk):
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        company = Company.objects.filter(owner=user).order_by("id").first()
+
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    activity = get_object_or_404(ScheduleActivity, pk=pk, company=company)
+
+    if request.method == "POST":
+        form = ScheduleActivityForm(request.POST, instance=activity)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Activity updated.")
+            back_d = (request.POST.get("back_d") or "").strip()
+            if back_d:
+                return redirect(f"/automations/schedule/?d={back_d}")
+            return redirect("schedule_dashboard")
+    else:
+        form = ScheduleActivityForm(instance=activity)
+
+    back_d = (request.GET.get("back_d") or activity.date.isoformat()).strip()
+    return render(
+        request,
+        "core/schedule_activity_edit.html",
+        {
+            "automation_name": "Edit Activity",
+            "company": company,
+            "activity": activity,
+            "form": form,
+            "back_d": back_d,
+        },
+    )
+
+
+@login_required
+@require_POST
+def schedule_activity_delete_view(request, pk):
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        company = Company.objects.filter(owner=user).order_by("id").first()
+
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    activity = get_object_or_404(ScheduleActivity, pk=pk, company=company)
+    activity.delete()
+    messages.success(request, "Activity deleted.")
+
+    back_d = (request.POST.get("back_d") or "").strip()
+    if back_d:
+        return redirect(f"/automations/schedule/?d={back_d}")
+    return redirect("schedule_dashboard")
+
+
+@login_required
+@require_POST
+def schedule_activity_toggle_done_view(request, pk):
+    user = request.user
+
+    if user.is_superuser:
+        company = Company.objects.order_by("id").first()
+    else:
+        company = Company.objects.filter(owner=user).order_by("id").first()
+
+    if not company:
+        return HttpResponseForbidden("No company is associated with this user.")
+
+    activity = get_object_or_404(ScheduleActivity, pk=pk, company=company)
+
+    if activity.status == ScheduleActivity.STATUS_DONE:
+        activity.status = ScheduleActivity.STATUS_PLANNED
+    else:
+        activity.status = ScheduleActivity.STATUS_DONE
+    activity.save(update_fields=["status", "updated_at"])
+
+    back_d = (request.POST.get("back_d") or "").strip()
+    if back_d:
+        return redirect(f"/automations/schedule/?d={back_d}")
+    return redirect("schedule_dashboard")
 
 
 
