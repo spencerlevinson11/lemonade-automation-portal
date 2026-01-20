@@ -466,6 +466,20 @@ class ScheduleActivity(models.Model):
     assigned_to = models.CharField(max_length=80, blank=True)
     notes = models.TextField(blank=True)
 
+    # Recurrence (optional)
+    is_recurring = models.BooleanField(default=False)
+    repeat_every = models.PositiveSmallIntegerField(default=1)
+    repeat_unit = models.CharField(
+        max_length=8,
+        choices=[
+            ("days", "Days"),
+            ("weeks", "Weeks"),
+            ("months", "Months"),
+        ],
+        default="weeks",
+    )
+    repeat_until = models.DateField(null=True, blank=True)
+
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PLANNED)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -478,6 +492,24 @@ class ScheduleActivity(models.Model):
         when = self.date.isoformat()
         return f"{when} - {self.title}"
 
+
+class ScheduleGlobalNote(models.Model):
+    """Always-on notes for the Scheduling dashboard.
+
+    These notes are not tied to any specific date and are shown at the top of
+    the scheduler for a company.
+    """
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="schedule_global_note",
+    )
+    notes = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"Schedule Notes - {self.company.name}"
 
 
 # =========================
@@ -505,6 +537,7 @@ class MicrosoftGraphToken(models.Model):
 
     def __str__(self) -> str:
         return f"MicrosoftGraphToken({self.user.username})"
+
 
 
 
