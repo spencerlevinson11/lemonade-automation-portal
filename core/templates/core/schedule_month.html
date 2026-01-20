@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ automation_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root {
+      --bg-main: #020617;
+      --bg-card: #0b1120;
+      --accent: #facc15;
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+      --border-subtle: #1f2937;
+      --good: #4ade80;
+      --danger: #f97373;
+      --input: rgba(2, 6, 23, 0.6);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text-main);
+      background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(250, 204, 21, 0.15);
+      border: 1px solid rgba(250, 204, 21, 0.25);
+      color: var(--accent);
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: .2px;
+      margin-bottom: 8px;
+    }
+
+    .help { color: var(--text-muted); font-size: 13px; margin: 4px 0 0; line-height: 1.35; }
+
+    .nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+    .range {
+      padding: 8px 12px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .btn {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-weight: 900;
+      background: var(--accent);
+      color: #0b1120;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+    }
+
+    .card {
+      background: rgba(11, 17, 32, 0.72);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+      margin-bottom: 16px;
+    }
+
+    .msg { margin: 10px 0 16px; }
+    .msg .success { color: var(--good); font-weight: 800; }
+    .msg .error { color: var(--danger); font-weight: 800; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    @media (max-width: 950px) {
+      .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+
+    label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; font-weight: 800; }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+      background: var(--input);
+      color: var(--text-main);
+      outline: none;
+    }
+
+    .dow {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+      color: var(--text-muted);
+      font-weight: 900;
+      font-size: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .cell {
+      min-height: 120px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .cell.out { opacity: 0.45; }
+
+    .cell-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .daynum { font-weight: 900; }
+    .count { color: var(--text-muted); font-size: 12px; }
+
+    .act {
+      display: block;
+      padding: 7px 9px;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+      background: rgba(0,0,0,0.12);
+      text-decoration: none;
+      color: var(--text-main);
+      font-weight: 800;
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    .act:hover { border-color: rgba(250,204,21,0.35); }
+
+    .act-sub { display: block; color: var(--text-muted); font-weight: 700; font-size: 11px; margin-top: 3px; }
+
+    .act.done { opacity: 0.65; text-decoration: line-through; }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="topbar">
+      <div>
+        <div class="badge">Scheduling</div>
+        <div style="font-size:20px; font-weight:900; letter-spacing:.2px;">{{ company.name }}</div>
+        <div class="help" style="max-width: 720px;">Month view: click any activity to edit it. Use week view for detailed day planning.</div>
+      </div>
+
+      <div class="nav">
+        <a class="btn btn-secondary" href="?d={{ prev_d }}&view=month">Prev month</a>
+        <div class="range">{{ month_start|date:"F Y" }}</div>
+        <a class="btn btn-secondary" href="?d={{ next_d }}&view=month">Next month</a>
+        <a class="btn btn-secondary" href="?d={{ ref_date|date:'Y-m-d' }}&view=week">Week view</a>
+        <a class="btn" href="/">Back to dashboard</a>
+      </div>
+    </div>
+
+    {% if messages %}
+      <div class="msg">
+        {% for message in messages %}
+          {% if message.tags == 'success' %}
+            <div class="success">{{ message }}</div>
+          {% elif message.tags == 'error' %}
+            <div class="error">{{ message }}</div>
+          {% else %}
+            <div class="success">{{ message }}</div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="card">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <h2 style="margin:0; font-size:18px;">Add activity</h2>
+        <div class="help" style="margin:0;">Tip: choose a date in this month, then it will appear in the grid below.</div>
+      </div>
+      <div style="height:10px"></div>
+
+      <form method="post" action="{% url 'schedule_activity_add' %}">
+        {% csrf_token %}
+        <input type="hidden" name="back_d" value="{{ month_start|date:'Y-m-d' }}">
+        <input type="hidden" name="back_view" value="month">
+
+        <div class="form-grid">
+          <div>
+            <label>Date</label>
+            {{ form.date }}
+          </div>
+          <div>
+            <label>Start</label>
+            {{ form.start_time }}
+          </div>
+          <div>
+            <label>End</label>
+            {{ form.end_time }}
+          </div>
+          <div>
+            <label>Title</label>
+            {{ form.title }}
+          </div>
+          <div>
+            <label>Category</label>
+            {{ form.category }}
+          </div>
+          <div>
+            <label>Assigned to</label>
+            {{ form.assigned_to }}
+          </div>
+          <div>
+            <label>Status</label>
+            {{ form.status }}
+          </div>
+          <div style="display:flex; gap:10px; justify-content:flex-end; align-items:end;">
+            <button class="btn" type="submit">Add</button>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <label>Notes</label>
+          {{ form.notes }}
+        </div>
+      </form>
+    </div>
+
+    <div class="dow">
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+    </div>
+
+    <div class="grid">
+      {% for week in weeks %}
+        {% for cell in week %}
+          <div class="cell {% if not cell.in_month %}out{% endif %}">
+            <div class="cell-head">
+              <div class="daynum">{{ cell.date|date:"j" }}</div>
+              <div class="count">{{ cell.activities|length }} item{{ cell.activities|length|pluralize }}</div>
+            </div>
+
+            {% for a in cell.activities %}
+              <a class="act {% if a.status == 'done' %}done{% endif %}" href="{% url 'schedule_activity_edit' a.pk %}?back_d={{ month_start|date:'Y-m-d' }}&back_view=month">
+                {{ a.title }}
+                <span class="act-sub">
+                  {% if a.start_time %}{{ a.start_time }}{% if a.end_time %}-{{ a.end_time }}{% endif %} | {% endif %}{{ a.get_status_display }}{% if a.assigned_to %} | {{ a.assigned_to }}{% endif %}
+                </span>
+              </a>
+            {% empty %}
+              <div class="help" style="margin:0;">&nbsp;</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+
+  </div>
+</body>
+</html>
