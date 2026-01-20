@@ -3,7 +3,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from .models import ProjectPlanEntry, OrderContainer, OrderContainerLine, OrderContainerDocument
+from .models import ProjectPlanEntry, ScheduleActivity, OrderContainer, OrderContainerLine, OrderContainerDocument
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -310,6 +310,37 @@ class ProjectPlanEntryForm(forms.ModelForm):
 # =========================
 # Order Tracking Forms
 # =========================
+
+
+
+class ScheduleActivityForm(forms.ModelForm):
+    class Meta:
+        model = ScheduleActivity
+        fields = [
+            "date",
+            "start_time",
+            "end_time",
+            "title",
+            "category",
+            "assigned_to",
+            "notes",
+            "status",
+        ]
+        widgets = {
+            "date": forms.DateInput(attrs={"type": "date"}),
+            "start_time": forms.TimeInput(attrs={"type": "time"}),
+            "end_time": forms.TimeInput(attrs={"type": "time"}),
+            "notes": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def clean(self):
+        cleaned = super().clean()
+        st = cleaned.get("start_time")
+        et = cleaned.get("end_time")
+        if st and et and et < st:
+            raise ValidationError("End time cannot be earlier than start time.")
+        return cleaned
+
 
 class OrderContainerForm(forms.ModelForm):
     assigned_to = forms.ChoiceField(
