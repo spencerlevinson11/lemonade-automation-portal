@@ -113,7 +113,7 @@
         </div>
       </div>
       <div>
-        <a class="btn btn-secondary" href="/automations/schedule/?d={{ back_d }}">Back to Week</a>
+        <a class="btn btn-secondary" href="/automations/schedule/?d={{ back_d }}&view={{ back_view }}">Back to {{ back_view|title }}</a>
       </div>
     </div>
 
@@ -121,6 +121,7 @@
       <form method="post">
         {% csrf_token %}
         <input type="hidden" name="back_d" value="{{ back_d }}">
+        <input type="hidden" name="back_view" value="{{ back_view }}">
 
         <div class="row">
           <div class="field">
@@ -167,7 +168,7 @@
 
         <div class="actions">
           <button class="btn" type="submit">Save Changes</button>
-          <a class="btn btn-secondary" href="/automations/schedule/?d={{ back_d }}">Cancel</a>
+          <a class="btn btn-secondary" href="/automations/schedule/?d={{ back_d }}&view={{ back_view }}">Cancel</a>
         </div>
       </form>
 
@@ -176,6 +177,7 @@
       <form method="post" action="{% url 'schedule_activity_delete' activity.id %}" onsubmit="return confirm('Delete this activity?');">
         {% csrf_token %}
         <input type="hidden" name="back_d" value="{{ back_d }}">
+        <input type="hidden" name="back_view" value="{{ back_view }}">
         <button class="btn btn-danger" type="submit">Delete Activity</button>
       </form>
     </div>
