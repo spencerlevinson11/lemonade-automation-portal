@@ -265,6 +265,24 @@
       </div>
     {% endif %}
 
+    <div class="card" style="margin-bottom:16px;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <h2 style="margin:0; font-size:18px;">Always-on Notes</h2>
+        <div class="pill pill-muted">These notes are not tied to a date</div>
+      </div>
+      <div style="height:10px"></div>
+
+      <form method="post" action="{% url 'schedule_global_note_save' %}">
+        {% csrf_token %}
+        <input type="hidden" name="back_d" value="{{ week_start|date:'Y-m-d' }}">
+        <input type="hidden" name="back_view" value="week">
+        {{ global_note_form.notes }}
+        <div style="margin-top:10px; display:flex; justify-content:flex-end;">
+          <button class="btn btn-good" type="submit">Save Notes</button>
+        </div>
+      </form>
+    </div>
+
     <div class="card">
       <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;">
         <h2 style="margin:0; font-size:18px;">Add activity</h2>
@@ -310,6 +328,27 @@
             <button class="btn" type="submit">Add</button>
           </div>
         </div>
+        <div style="margin-top:12px; display:grid; grid-template-columns: 160px 140px 160px 180px; gap:12px; align-items:end;">
+          <div>
+            <label>Recurring?</label>
+            <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; border:1px solid var(--border); background: var(--input);">
+              {{ form.is_recurring }}
+              <span style="color:var(--muted); font-size:13px;">Repeat on a schedule</span>
+            </div>
+          </div>
+          <div>
+            <label>Every</label>
+            {{ form.repeat_every }}
+          </div>
+          <div>
+            <label>Unit</label>
+            {{ form.repeat_unit }}
+          </div>
+          <div>
+            <label>Until (optional)</label>
+            {{ form.repeat_until }}
+          </div>
+        </div>
 
         <div style="margin-top:12px;">
           <label>Notes</label>
@@ -341,6 +380,9 @@
                     </a>
                   </p>
                   <div class="meta">
+                    {% if a.is_recurring %}
+                      <span class="pill pill-muted" style="margin-right:6px;">Repeats</span>
+                    {% endif %}
                     {% if a.start_time or a.end_time %}
                       <span>{{ a.start_time|default:"" }}{% if a.end_time %}–{{ a.end_time }}{% endif %}</span>
                       <span style="opacity:.55"> • </span>
@@ -386,4 +428,5 @@
   </div>
 </body>
 </html>
+
 
