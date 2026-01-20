@@ -3,7 +3,14 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from .models import ProjectPlanEntry, ScheduleActivity, OrderContainer, OrderContainerLine, OrderContainerDocument
+from .models import (
+    ProjectPlanEntry,
+    ScheduleActivity,
+    ScheduleGlobalNote,
+    OrderContainer,
+    OrderContainerLine,
+    OrderContainerDocument,
+)
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -324,12 +331,19 @@ class ScheduleActivityForm(forms.ModelForm):
             "category",
             "assigned_to",
             "notes",
+            "is_recurring",
+            "repeat_every",
+            "repeat_unit",
+            "repeat_until",
             "status",
         ]
         widgets = {
             "date": forms.DateInput(attrs={"type": "date"}),
             "start_time": forms.TimeInput(attrs={"type": "time"}),
             "end_time": forms.TimeInput(attrs={"type": "time"}),
+            "repeat_every": forms.NumberInput(attrs={"min": 1, "inputmode": "numeric"}),
+            "repeat_until": forms.DateInput(attrs={"type": "date"}),
+            "is_recurring": forms.CheckboxInput(attrs={"style": "width:auto;"}),
             "notes": forms.Textarea(attrs={"rows": 3}),
         }
 
@@ -339,7 +353,36 @@ class ScheduleActivityForm(forms.ModelForm):
         et = cleaned.get("end_time")
         if st and et and et < st:
             raise ValidationError("End time cannot be earlier than start time.")
+
+        is_recurring = cleaned.get("is_recurring")
+        repeat_every = cleaned.get("repeat_every")
+        repeat_unit = cleaned.get("repeat_unit")
+        repeat_until = cleaned.get("repeat_until")
+
+        if not is_recurring:
+            # Normalize recurrence fields when recurrence is off
+            cleaned["repeat_every"] = 1
+            cleaned["repeat_unit"] = "weeks"
+            cleaned["repeat_until"] = None
+        else:
+            if not repeat_every or repeat_every < 1:
+                raise ValidationError("Repeat every must be at least 1.")
+            if repeat_unit not in {"days", "weeks", "months"}:
+                raise ValidationError("Invalid repeat unit.")
+            # If repeat_until is before the start date, it's unusable
+            d = cleaned.get("date")
+            if repeat_until and d and repeat_until < d:
+                raise ValidationError("Repeat-until date cannot be earlier than the start date.")
         return cleaned
+
+
+class ScheduleGlobalNoteForm(forms.ModelForm):
+    class Meta:
+        model = ScheduleGlobalNote
+        fields = ["notes"]
+        widgets = {
+            "notes": forms.Textarea(attrs={"rows": 5, "placeholder": "Always-on notes (not tied to a date)..."}),
+        }
 
 
 class OrderContainerForm(forms.ModelForm):
