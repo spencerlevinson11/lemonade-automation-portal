@@ -27,36 +27,6 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
-from __future__ import annotations
-
-import os
-import copy
-import re
-import tempfile
-import zipfile
-from decimal import Decimal, InvalidOperation
-from io import BytesIO
-
-import openpyxl
-import pandas as pd
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
-
-from docx import Document
-from docx.shared import Pt, RGBColor
-from docx.enum.text import WD_COLOR_INDEX
-
-from django.conf import settings
-from django.contrib import messages
-from django.contrib.auth import logout
-from django.contrib.auth.decorators import login_required
-from django.db import IntegrityError, transaction
-from django.db.models import Sum, Q
-from django.http import FileResponse, HttpResponseForbidden
-from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
-from django.utils import timezone
-from django.views.decorators.http import require_http_methods
 from django.forms import inlineformset_factory
 from django.views.decorators.http import require_POST
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
@@ -3908,8 +3878,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
 
 
 
