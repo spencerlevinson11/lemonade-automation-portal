@@ -85,8 +85,8 @@
         .map-grid {
             margin-top: 14px;
             display: grid;
-            grid-template-columns: repeat(12, minmax(0, 1fr));
             gap: 6px;
+            user-select: none;
         }
 
         .map-cell {
@@ -99,6 +99,113 @@
             flex-direction: column;
             gap: 4px;
             background: rgba(15, 23, 42, 0.8);
+            cursor: pointer;
+            position: relative;
+        }
+
+        .map-cell.kind-bed { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.35); }
+        .map-cell.kind-path { background: rgba(148, 163, 184, 0.10); border-color: rgba(148, 163, 184, 0.35); }
+        .map-cell.kind-water { background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.4); }
+        .map-cell.kind-tree { background: rgba(16, 185, 129, 0.10); border-color: rgba(16, 185, 129, 0.35); }
+        .map-cell.kind-sun { background: rgba(250, 204, 21, 0.10); border-color: rgba(250, 204, 21, 0.45); }
+        .map-cell.kind-shade { background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.25); }
+        .map-cell.kind-custom { background: rgba(168, 85, 247, 0.10); border-color: rgba(168, 85, 247, 0.35); }
+
+        .map-cell .cell-kind {
+            font-size: 0.62rem;
+            color: var(--text-muted);
+        }
+
+        .map-cell .cell-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+
+        .kind-pill {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            padding: 2px 6px;
+            border-radius: 999px;
+            font-size: 0.6rem;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: rgba(2, 6, 23, 0.55);
+            color: var(--text-muted);
+        }
+
+        .toolbar {
+            display: grid;
+            gap: 10px;
+            margin-top: 10px;
+            padding: 12px;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(2, 6, 23, 0.35);
+        }
+
+        .tool-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .tool-btn {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            color: var(--text-main);
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+
+        .tool-btn.active {
+            border-color: rgba(250, 204, 21, 0.7);
+            box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.12);
+        }
+
+        .tool-row input {
+            background: #0f172a;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            border-radius: 10px;
+            padding: 8px 10px;
+            color: var(--text-main);
+            font-size: 0.85rem;
+            flex: 1;
+            min-width: 180px;
+        }
+
+        .tool-small {
+            width: 92px;
+        }
+
+        .primary-btn {
+            background: linear-gradient(90deg, rgba(250, 204, 21, 0.95), rgba(251, 191, 36, 0.85));
+            color: #111827;
+            border: none;
+            border-radius: 12px;
+            padding: 10px 12px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.85rem;
+        }
+
+        .muted-btn {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            color: var(--text-main);
+            border-radius: 12px;
+            padding: 10px 12px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .status-pill {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-left: auto;
         }
 
         .map-cell strong { font-size: 0.72rem; }
@@ -241,9 +348,34 @@
             <div class="card">
                 <h2 class="sidebar-title">Customizable backyard map</h2>
                 <p class="sidebar-copy">
-                    Use this grid to sketch zones for sun exposure, beds, and companion groupings.
-                    Each block can represent 5–10 feet depending on your scale.
+                    Pick a tool, then click + drag to "paint" zones and objects onto the grid.
+                    Use labels/notes for anything (bed names, varieties, irrigation lines, etc.).
                 </p>
+
+                <div class="plant-search" style="margin-bottom: 10px;">
+                    <select id="toolSelect">
+                        <option value="bed">Bed</option>
+                        <option value="path">Path</option>
+                        <option value="water">Water</option>
+                        <option value="tree">Tree</option>
+                        <option value="sun">Full sun zone</option>
+                        <option value="shade">Shade zone</option>
+                        <option value="custom">Custom</option>
+                        <option value="erase">Eraser</option>
+                    </select>
+                    <input id="cellLabel" type="text" placeholder="Label (optional)">
+                </div>
+                <div class="plant-search" style="margin-bottom: 12px;">
+                    <input id="cellNotes" type="text" placeholder="Notes (optional, e.g. variety, soil, irrigation)">
+                    <button id="saveMapBtn" type="button" style="background: rgba(250,204,21,.14); border:1px solid rgba(250,204,21,.5); color: var(--accent); border-radius: 10px; padding: 8px 10px; font-weight: 600; cursor: pointer;">Save</button>
+                </div>
+
+                <div class="plant-search" style="margin-bottom: 8px;">
+                    <input id="rowsInput" type="number" min="4" max="60" value="{{ rows }}" placeholder="Rows">
+                    <input id="colsInput" type="number" min="4" max="60" value="{{ cols }}" placeholder="Cols">
+                    <button id="resizeBtn" type="button" style="background: rgba(56,189,248,.12); border:1px solid rgba(56,189,248,.45); color: var(--info); border-radius: 10px; padding: 8px 10px; font-weight: 600; cursor: pointer;">Resize</button>
+                </div>
+                <div id="saveStatus" style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 8px;"></div>
 
                 <div class="legend">
                     <span class="legend-pill"><span class="legend-dot legend-sun"></span> Full sun</span>
@@ -251,17 +383,7 @@
                     <span class="legend-pill"><span class="legend-dot legend-water"></span> Irrigated</span>
                 </div>
 
-                <div class="map-grid">
-                    {% for row in map_rows %}
-                        {% for col in map_cols %}
-                            <div class="map-cell">
-                                <strong>Bed {{ row }}-{{ col }}</strong>
-                                <span>Zone: {{ row }}</span>
-                                <span>Notes: Soil + microclimate</span>
-                            </div>
-                        {% endfor %}
-                    {% endfor %}
-                </div>
+                <div id="mapGrid" class="map-grid"></div>
             </div>
 
             <div class="card">
@@ -271,16 +393,8 @@
                 </p>
 
                 <div class="plant-search">
-                    <input id="plantSearch" type="text" placeholder="Search plants...">
-                    <select id="zoneFilter">
-                        <option value="">All zones</option>
-                        <option value="2-11">2-11</option>
-                        <option value="3-11">3-11</option>
-                        <option value="3-10">3-10</option>
-                        <option value="4-10">4-10</option>
-                        <option value="4-9">4-9</option>
-                        <option value="5-9">5-9</option>
-                    </select>
+                    <input id="plantSearch" type="text" placeholder="Search plants (online catalog)...">
+                    <button id="plantSearchBtn" type="button" style="background: rgba(250,204,21,.14); border:1px solid rgba(250,204,21,.5); color: var(--accent); border-radius: 10px; padding: 8px 10px; font-weight: 600; cursor: pointer;">Search</button>
                 </div>
 
                 <div id="plantList" class="plant-list"></div>
@@ -289,24 +403,160 @@
     </div>
 
     <script>
-        const plantCatalog = {{ plant_catalog_json|safe }};
+        const featuredPlants = {{ featured_plants_json|safe }};
+        const initialMap = {{ map_data_json|safe }};
+
+        const mapGrid = document.getElementById("mapGrid");
+        const toolSelect = document.getElementById("toolSelect");
+        const cellLabel = document.getElementById("cellLabel");
+        const cellNotes = document.getElementById("cellNotes");
+        const saveBtn = document.getElementById("saveMapBtn");
+        const saveStatus = document.getElementById("saveStatus");
+        const rowsInput = document.getElementById("rowsInput");
+        const colsInput = document.getElementById("colsInput");
+        const resizeBtn = document.getElementById("resizeBtn");
 
         const plantList = document.getElementById("plantList");
         const searchInput = document.getElementById("plantSearch");
-        const zoneFilter = document.getElementById("zoneFilter");
+        const searchBtn = document.getElementById("plantSearchBtn");
 
-        const renderPlants = () => {
-            const searchText = searchInput.value.toLowerCase();
-            const zoneValue = zoneFilter.value;
+        let rows = Number(rowsInput.value) || 12;
+        let cols = Number(colsInput.value) || 18;
+        const mapData = (initialMap && typeof initialMap === 'object') ? initialMap : { version: 1, cells: {} };
+        if (!mapData.cells) mapData.cells = {};
 
-            const filtered = plantCatalog.filter((plant) => {
-                const matchSearch = plant.name.toLowerCase().includes(searchText)
-                    || plant.notes.toLowerCase().includes(searchText);
-                const matchZone = zoneValue === "" || plant.zones === zoneValue;
-                return matchSearch && matchZone;
-            });
+        const KIND_META = {
+            bed:   { label: "Bed",   emoji: "🟫" },
+            path:  { label: "Path",  emoji: "⬛" },
+            water: { label: "Water", emoji: "💧" },
+            tree:  { label: "Tree",  emoji: "🌳" },
+            sun:   { label: "Sun",   emoji: "☀️" },
+            shade: { label: "Shade", emoji: "🌤️" },
+            custom:{ label: "Custom",emoji: "🧩" },
+        };
 
-            plantList.innerHTML = filtered.map((plant) => `
+        const getCookie = (name) => {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
+        };
+
+        const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+
+        const keyFor = (r, c) => `${r}-${c}`;
+
+        const renderCell = (cellEl, r, c) => {
+            const key = keyFor(r, c);
+            const data = mapData.cells[key];
+            const kind = data?.kind || "";
+            const label = data?.label || "";
+            const notes = data?.notes || "";
+
+            cellEl.className = "map-cell";
+            if (kind) cellEl.classList.add(`kind-${kind}`);
+
+            const meta = KIND_META[kind];
+            const header = meta ? `${meta.emoji} ${meta.label}` : "";
+
+            cellEl.innerHTML = `
+                <strong>${header || `Cell ${r},${c}`}</strong>
+                ${label ? `<span>Label: ${label}</span>` : `<span style="color: rgba(148,163,184,.65)">Label: —</span>`}
+                ${notes ? `<span>Notes: ${notes}</span>` : `<span style="color: rgba(148,163,184,.65)">Notes: —</span>`}
+            `;
+        };
+
+        const buildGrid = () => {
+            mapGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+            mapGrid.innerHTML = "";
+            for (let r = 1; r <= rows; r++) {
+                for (let c = 1; c <= cols; c++) {
+                    const cell = document.createElement("div");
+                    cell.dataset.r = r;
+                    cell.dataset.c = c;
+                    renderCell(cell, r, c);
+                    mapGrid.appendChild(cell);
+                }
+            }
+        };
+
+        const applyToolToCell = (cellEl) => {
+            const r = Number(cellEl.dataset.r);
+            const c = Number(cellEl.dataset.c);
+            const key = keyFor(r, c);
+
+            const tool = toolSelect.value;
+            if (tool === "erase") {
+                delete mapData.cells[key];
+                renderCell(cellEl, r, c);
+                return;
+            }
+
+            mapData.cells[key] = {
+                kind: tool,
+                label: (cellLabel.value || "").trim(),
+                notes: (cellNotes.value || "").trim(),
+            };
+            renderCell(cellEl, r, c);
+        };
+
+        let isPainting = false;
+
+        mapGrid.addEventListener("mousedown", (e) => {
+            const cell = e.target.closest('.map-cell');
+            if (!cell) return;
+            isPainting = true;
+            applyToolToCell(cell);
+        });
+
+        mapGrid.addEventListener("mouseover", (e) => {
+            if (!isPainting) return;
+            const cell = e.target.closest('.map-cell');
+            if (!cell) return;
+            applyToolToCell(cell);
+        });
+
+        window.addEventListener("mouseup", () => { isPainting = false; });
+
+        const saveMap = async () => {
+            saveStatus.textContent = "Saving…";
+            try {
+                const res = await fetch("{% url 'permaculture_map_save' %}", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": getCookie("csrftoken"),
+                    },
+                    body: JSON.stringify({
+                        rows,
+                        cols,
+                        data: { version: 1, cells: mapData.cells },
+                    }),
+                });
+                const out = await res.json();
+                if (!res.ok || !out.ok) throw new Error(out.error || "Save failed");
+                saveStatus.textContent = `Saved ✔ (${new Date().toLocaleTimeString()})`;
+            } catch (err) {
+                saveStatus.textContent = `Save failed: ${err.message}`;
+            }
+        };
+
+        saveBtn.addEventListener("click", saveMap);
+
+        resizeBtn.addEventListener("click", () => {
+            const newRows = clamp(Number(rowsInput.value) || rows, 4, 60);
+            const newCols = clamp(Number(colsInput.value) || cols, 4, 60);
+            rows = newRows;
+            cols = newCols;
+            rowsInput.value = rows;
+            colsInput.value = cols;
+            buildGrid();
+            saveStatus.textContent = "Resized (don’t forget to Save)";
+        });
+
+        // Plant catalog (featured + online search)
+        const renderFeatured = () => {
+            plantList.innerHTML = featuredPlants.map((plant) => `
                 <div class="plant-card">
                     <h3>${plant.name}</h3>
                     <div class="plant-meta">
@@ -319,17 +569,54 @@
                     <div class="companions">
                         Companion plants:
                         <div class="companion-list">
-                            ${plant.companions.map((companion) => `<span class="companion-pill">${companion}</span>`).join("")}
+                            ${plant.companions.map((c) => `<span class="companion-pill">${c}</span>`).join("")}
                         </div>
                     </div>
                 </div>
             `).join("");
         };
 
-        searchInput.addEventListener("input", renderPlants);
-        zoneFilter.addEventListener("change", renderPlants);
+        const searchOnline = async () => {
+            const q = (searchInput.value || "").trim();
+            if (q.length < 2) {
+                renderFeatured();
+                return;
+            }
+            plantList.innerHTML = `<div style="color: var(--text-muted);">Searching…</div>`;
+            try {
+                const res = await fetch(`{% url 'permaculture_plant_search' %}?q=${encodeURIComponent(q)}`);
+                const out = await res.json();
+                if (!res.ok || !out.ok) throw new Error(out.error || "Search failed");
 
-        renderPlants();
+                const results = out.results || [];
+                if (results.length === 0) {
+                    plantList.innerHTML = `<div style="color: var(--text-muted);">No matches. Try a different spelling or scientific name.</div>`;
+                    return;
+                }
+                plantList.innerHTML = results.map((p) => `
+                    <div class="plant-card">
+                        <h3>${p.common_name ? `${p.common_name} — ` : ""}<span style="color: var(--text-muted); font-weight: 500;">${p.scientific_name}</span></h3>
+                        <div class="plant-meta">
+                            ${p.rank ? `<span>Rank: ${p.rank}</span>` : ""}
+                            ${p.family ? `<span>Family: ${p.family}</span>` : ""}
+                            ${p.genus ? `<span>Genus: ${p.genus}</span>` : ""}
+                        </div>
+                        <div style="color: var(--text-muted); font-size: 0.8rem;">Source: GBIF taxonomy (key ${p.gbif_key || "—"})</div>
+                    </div>
+                `).join("");
+            } catch (err) {
+                plantList.innerHTML = `<div style="color: var(--text-muted);">Search failed: ${err.message}</div>`;
+            }
+        };
+
+        searchBtn.addEventListener("click", searchOnline);
+        searchInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") searchOnline();
+        });
+
+        // Initial render
+        buildGrid();
+        renderFeatured();
     </script>
 </body>
 </html>
