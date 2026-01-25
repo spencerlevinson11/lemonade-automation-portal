@@ -115,6 +115,16 @@ urlpatterns = [
         core_views.permaculture_plant_search_view,
         name="permaculture_plant_search",
     ),
+    path(
+        "automations/permaculture/plants/profile/",
+        core_views.permaculture_plant_profile_view,
+        name="permaculture_plant_profile",
+    ),
+    path(
+        "automations/permaculture/plants/companions/",
+        core_views.permaculture_companion_suggest_view,
+        name="permaculture_plant_companions",
+    ),
 
     # RPC -> Master Spreadsheet Formatter
     path("automations/rpc-master/", core_views.rpc_master_formatter_view, name="rpc_master_formatter"),
@@ -154,6 +164,14 @@ if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
             name="bucket_adjusted_prognosis_export",
         ),
     ]
+
+
+
+
+
+
+
+
 
 
 
