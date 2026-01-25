@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import re
 import tempfile
 import zipfile
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
-import json
+
+import urllib.parse
+import urllib.request
 
 import openpyxl
 import pandas as pd
@@ -25,10 +28,12 @@ from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
 from django.db.models import Sum, Q
 from django.http import FileResponse, HttpResponseForbidden
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+
 from django.forms import inlineformset_factory
 from django.views.decorators.http import require_POST
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
@@ -57,6 +62,7 @@ from .models import (
     OrderContainer,
     OrderContainerLine,
     OrderContainerDocument,
+    GardenMap,
 )
 
 from .rpc_generation import generate_rpc_from_form
@@ -2556,7 +2562,8 @@ def run_automation(request, pk):
 
 @login_required
 def permaculture_map_view(request):
-    plant_catalog = [
+    # A small featured list shown immediately (the main catalog is searched online).
+    featured_plants = [
         {
             "name": "Basil",
             "zones": "4-10",
@@ -2622,13 +2629,99 @@ def permaculture_map_view(request):
         },
     ]
 
+    garden_map, _ = GardenMap.objects.get_or_create(user=request.user)
+
+    # Ensure minimum schema
+    data = garden_map.data or {}
+    if "version" not in data:
+        data = {"version": 1, "cells": {}}
+        garden_map.data = data
+        garden_map.save(update_fields=["data", "updated_at"])
+
     context = {
         "automation_name": "Permaculture Garden Planner",
-        "plant_catalog_json": json.dumps(plant_catalog),
-        "map_rows": list(range(1, 9)),
-        "map_cols": list(range(1, 13)),
+        "featured_plants_json": json.dumps(featured_plants),
+        "rows": garden_map.rows,
+        "cols": garden_map.cols,
+        "map_data_json": json.dumps(garden_map.data),
     }
     return render(request, "core/permaculture_map.html", context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def permaculture_map_save_view(request):
+    """Save the garden map JSON payload."""
+    garden_map, _ = GardenMap.objects.get_or_create(user=request.user)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
+
+    # Allow optional resizing.
+    rows = payload.get("rows")
+    cols = payload.get("cols")
+    if isinstance(rows, int) and 4 <= rows <= 60:
+        garden_map.rows = rows
+    if isinstance(cols, int) and 4 <= cols <= 60:
+        garden_map.cols = cols
+
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return JsonResponse({"ok": False, "error": "Missing data"}, status=400)
+
+    # Basic shape validation.
+    if data.get("version") != 1 or not isinstance(data.get("cells", {}), dict):
+        return JsonResponse({"ok": False, "error": "Unsupported schema"}, status=400)
+
+    garden_map.data = data
+    garden_map.save(update_fields=["rows", "cols", "data", "updated_at"])
+    return JsonResponse({"ok": True})
+
+
+@login_required
+@require_http_methods(["GET"])
+def permaculture_plant_search_view(request):
+    """Search a large online plant catalog (GBIF) and return normalized results.
+
+    NOTE: GBIF is a global biodiversity data network; we filter to kingdom=Plantae.
+    """
+    q = (request.GET.get("q") or "").strip()
+    if len(q) < 2:
+        return JsonResponse({"ok": True, "results": []})
+
+    params = {
+        "q": q,
+        "kingdom": "Plantae",
+        "limit": 20,
+    }
+    url = "https://api.gbif.org/v1/species/search?" + urllib.parse.urlencode(params)
+
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            raw = resp.read().decode("utf-8")
+        gbif = json.loads(raw)
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Plant search failed"}, status=502)
+
+    results = []
+    for item in gbif.get("results", [])[:20]:
+        sci = item.get("scientificName") or item.get("canonicalName")
+        if not sci:
+            continue
+        results.append(
+            {
+                "scientific_name": sci,
+                "common_name": (item.get("vernacularName") or ""),
+                "rank": (item.get("rank") or ""),
+                "family": (item.get("family") or ""),
+                "genus": (item.get("genus") or ""),
+                "species": (item.get("species") or ""),
+                "gbif_key": item.get("key"),
+            }
+        )
+
+    return JsonResponse({"ok": True, "results": results})
 
 
 
