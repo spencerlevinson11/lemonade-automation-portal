@@ -2528,6 +2528,9 @@ def run_automation(request, pk):
     if "order tracker" in name_normalized or "container tracker" in name_normalized or "order tracking" in name_normalized:
         return redirect("order_tracker")
 
+ # --- Branch: Permaculture Garden Planner ---
+    if "permaculture" in name_normalized or "garden" in name_normalized or "backyard" in name_normalized:
+        return redirect("permaculture_map")
 
     # --- Default: BOL generator ---
     if request.method == "POST":
@@ -2549,6 +2552,83 @@ def run_automation(request, pk):
         form = BOLForm()
 
     return render(request, "core/run_bol.html", {"automation": automation, "form": form})
+
+@login_required
+def permaculture_map_view(request):
+    plant_catalog = [
+        {
+            "name": "Basil",
+            "zones": "4-10",
+            "companions": ["Tomato", "Pepper", "Lettuce"],
+            "sunlight": "Full sun",
+            "water": "Moderate",
+            "spacing_ft": 1,
+            "notes": "Boosts tomato flavor; keep evenly moist.",
+        },
+        {
+            "name": "Tomato",
+            "zones": "3-11",
+            "companions": ["Basil", "Marigold", "Carrot"],
+            "sunlight": "Full sun",
+            "water": "Consistent",
+            "spacing_ft": 2.5,
+            "notes": "Stake or cage; rotate annually.",
+        },
+        {
+            "name": "Carrot",
+            "zones": "3-10",
+            "companions": ["Tomato", "Onion", "Rosemary"],
+            "sunlight": "Full sun",
+            "water": "Even moisture",
+            "spacing_ft": 0.5,
+            "notes": "Loosen soil deeply for straight roots.",
+        },
+        {
+            "name": "Marigold",
+            "zones": "2-11",
+            "companions": ["Tomato", "Pepper", "Squash"],
+            "sunlight": "Full sun",
+            "water": "Low",
+            "spacing_ft": 1,
+            "notes": "Helps deter nematodes and pests.",
+        },
+        {
+            "name": "Lavender",
+            "zones": "5-9",
+            "companions": ["Rosemary", "Sage", "Thyme"],
+            "sunlight": "Full sun",
+            "water": "Low",
+            "spacing_ft": 2,
+            "notes": "Prefers dry soil; prune after bloom.",
+        },
+        {
+            "name": "Comfrey",
+            "zones": "3-9",
+            "companions": ["Apple tree", "Rose"],
+            "sunlight": "Part sun",
+            "water": "Moderate",
+            "spacing_ft": 3,
+            "notes": "Dynamic accumulator; great chop-and-drop mulch.",
+        },
+        {
+            "name": "Strawberry",
+            "zones": "4-9",
+            "companions": ["Borage", "Spinach", "Lettuce"],
+            "sunlight": "Full sun",
+            "water": "Moderate",
+            "spacing_ft": 1.5,
+            "notes": "Mulch to keep fruit clean and retain moisture.",
+        },
+    ]
+
+    context = {
+        "automation_name": "Permaculture Garden Planner",
+        "plant_catalog_json": json.dumps(plant_catalog),
+        "map_rows": list(range(1, 9)),
+        "map_cols": list(range(1, 13)),
+    }
+    return render(request, "core/permaculture_map.html", context)
+
 
 
 @login_required
