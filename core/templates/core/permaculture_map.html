@@ -110,6 +110,7 @@
         .map-cell.kind-sun { background: rgba(250, 204, 21, 0.10); border-color: rgba(250, 204, 21, 0.45); }
         .map-cell.kind-shade { background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.25); }
         .map-cell.kind-custom { background: rgba(168, 85, 247, 0.10); border-color: rgba(168, 85, 247, 0.35); }
+        .map-cell.kind-plant { background: rgba(250, 204, 21, 0.08); border-color: rgba(250, 204, 21, 0.35); }
 
         .map-cell .cell-kind {
             font-size: 0.62rem;
@@ -361,6 +362,7 @@
                         <option value="sun">Full sun zone</option>
                         <option value="shade">Shade zone</option>
                         <option value="custom">Custom</option>
+                        <option value="plant">Plant</option>
                         <option value="erase">Eraser</option>
                     </select>
                     <input id="cellLabel" type="text" placeholder="Label (optional)">
@@ -398,6 +400,14 @@
                 </div>
 
                 <div id="plantList" class="plant-list"></div>
+
+                <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(148,163,184,0.2);">
+                    <div class="sidebar-title" style="font-size: 0.95rem;">Companion suggestions</div>
+                    <p class="sidebar-copy" style="margin-top: 6px;">
+                        Place a plant on the grid and we'll suggest compatible companions for nearby cells.
+                    </p>
+                    <div id="companionBox" class="plant-list" style="gap: 10px;"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -433,6 +443,7 @@
             sun:   { label: "Sun",   emoji: "☀️" },
             shade: { label: "Shade", emoji: "🌤️" },
             custom:{ label: "Custom",emoji: "🧩" },
+            plant: { label: "Plant", emoji: "🌱" },
         };
 
         const getCookie = (name) => {
@@ -480,6 +491,66 @@
             }
         };
 
+        let selectedPlant = null; // {scientific_name, common_name, perenual_id?, gbif_key?}
+
+        const getNeighborPlants = (r, c) => {
+            const out = [];
+            for (let dr = -1; dr <= 1; dr++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                    if (dr === 0 && dc === 0) continue;
+                    const rr = r + dr;
+                    const cc = c + dc;
+                    if (rr < 1 || rr > rows || cc < 1 || cc > cols) continue;
+                    const k = keyFor(rr, cc);
+                    const cell = mapData.cells[k];
+                    if (cell && cell.kind === 'plant') {
+                        const sci = cell.plant?.scientific_name || cell.label || '';
+                        const common = cell.plant?.common_name || '';
+                        out.push(common || sci);
+                    }
+                }
+            }
+            return out;
+        };
+
+        const renderCompanionBox = (payload) => {
+            const box = document.getElementById('companionBox');
+            if (!box) return;
+            const rec = payload?.recommended || [];
+            const conflicts = payload?.conflicts || [];
+
+            if (rec.length === 0 && conflicts.length === 0) {
+                box.innerHTML = `<div class="plant-item" style="padding: 10px; border: 1px solid rgba(148,163,184,.2); border-radius: 12px; background: rgba(2,6,23,.35); color: var(--text-muted);">No companion data for this plant yet. (You can still place it.)</div>`;
+                return;
+            }
+
+            const recHtml = rec.length ? `<div class="plant-item" style="padding: 10px; border: 1px solid rgba(74,222,128,.25); border-radius: 12px; background: rgba(74,222,128,.06);">
+                <div style="font-weight:700; margin-bottom:6px;">Recommended nearby</div>
+                <div style="color: var(--text-muted); font-size: .85rem; line-height: 1.35;">${rec.map(x=>`<span style="display:inline-block; margin: 2px 6px 0 0; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(74,222,128,.25); background: rgba(2,6,23,.35);">${x}</span>`).join('')}</div>
+            </div>` : '';
+
+            const badHtml = conflicts.length ? `<div class="plant-item" style="padding: 10px; border: 1px solid rgba(249,115,115,.25); border-radius: 12px; background: rgba(249,115,115,.06);">
+                <div style="font-weight:700; margin-bottom:6px;">Potential conflicts detected</div>
+                <div style="color: var(--text-muted); font-size: .85rem; line-height: 1.35;">${conflicts.map(x=>`<span style="display:inline-block; margin: 2px 6px 0 0; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(249,115,115,.25); background: rgba(2,6,23,.35);">${x}</span>`).join('')}</div>
+            </div>` : '';
+
+            box.innerHTML = recHtml + badHtml;
+        };
+
+        const fetchCompanions = async (plantName, neighbors) => {
+            try {
+                const url = `/automations/permaculture/plants/companions/?` + new URLSearchParams({
+                    plant: plantName,
+                    nearby: (neighbors || []).join(',')
+                }).toString();
+                const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                const data = await resp.json();
+                if (data && data.ok) renderCompanionBox(data);
+            } catch (e) {
+                // ignore
+            }
+        };
+
         const applyToolToCell = (cellEl) => {
             const r = Number(cellEl.dataset.r);
             const c = Number(cellEl.dataset.c);
@@ -489,6 +560,31 @@
             if (tool === "erase") {
                 delete mapData.cells[key];
                 renderCell(cellEl, r, c);
+                return;
+            }
+
+            if (tool === 'plant') {
+                const label = (cellLabel.value || '').trim();
+                const notes = (cellNotes.value || '').trim();
+                const plantObj = selectedPlant ? {
+                    scientific_name: selectedPlant.scientific_name || '',
+                    common_name: selectedPlant.common_name || '',
+                    perenual_id: selectedPlant.perenual_id || null,
+                    gbif_key: selectedPlant.gbif_key || null,
+                } : null;
+
+                mapData.cells[key] = {
+                    kind: 'plant',
+                    label: label || (plantObj?.common_name || plantObj?.scientific_name || ''),
+                    notes,
+                    plant: plantObj,
+                };
+                renderCell(cellEl, r, c);
+
+                const plantNameForSuggestions = plantObj?.common_name || plantObj?.scientific_name || label;
+                if (plantNameForSuggestions) {
+                    fetchCompanions(plantNameForSuggestions, getNeighborPlants(r, c));
+                }
                 return;
             }
 
@@ -555,25 +651,58 @@
         });
 
         // Plant catalog (featured + online search)
+        const selectPlant = async (p) => {
+            selectedPlant = {
+                scientific_name: p.scientific_name || p.name || '',
+                common_name: p.common_name || p.name || '',
+                perenual_id: p.perenual_id || null,
+                gbif_key: p.gbif_key || null,
+            };
+            toolSelect.value = 'plant';
+            cellLabel.value = selectedPlant.common_name || selectedPlant.scientific_name;
+            saveStatus.textContent = `Selected plant: ${cellLabel.value} (now paint onto the grid)`;
+
+            // Pull richer profile (zones/sun/water/companions) when available.
+            try {
+                const params = new URLSearchParams();
+                if (selectedPlant.perenual_id) params.set('perenual_id', String(selectedPlant.perenual_id));
+                if (selectedPlant.scientific_name) params.set('scientific_name', selectedPlant.scientific_name);
+                const res = await fetch(`/automations/permaculture/plants/profile/?${params.toString()}`);
+                const out = await res.json();
+                if (out && out.ok && out.profile) {
+                    const prof = out.profile;
+                    const name = prof.common_name || prof.scientific_name;
+                    const neighbors = []; // none until placed
+                    fetchCompanions(name, neighbors);
+                }
+            } catch (e) {
+                // ignore
+            }
+        };
+
         const renderFeatured = () => {
-            plantList.innerHTML = featuredPlants.map((plant) => `
-                <div class="plant-card">
-                    <h3>${plant.name}</h3>
-                    <div class="plant-meta">
-                        <span>Zones: ${plant.zones}</span>
-                        <span>Sun: ${plant.sunlight}</span>
-                        <span>Water: ${plant.water}</span>
-                        <span>Spacing: ${plant.spacing_ft} ft</span>
-                    </div>
-                    <div>${plant.notes}</div>
-                    <div class="companions">
-                        Companion plants:
-                        <div class="companion-list">
-                            ${plant.companions.map((c) => `<span class="companion-pill">${c}</span>`).join("")}
+            plantList.innerHTML = featuredPlants.map((plant) => {
+                const zones = plant.zones || plant.hardiness_zones || '—';
+                const good = plant.companions_good || [];
+                return `
+                    <div class="plant-card">
+                        <h3>${plant.name} <span style="color: var(--text-muted); font-weight: 500;">${plant.scientific_name || ''}</span></h3>
+                        <div class="plant-meta">
+                            <span>Zones: ${zones}</span>
+                            <span>Sun: ${plant.sunlight || '—'}</span>
+                            <span>Water: ${plant.water || '—'}</span>
+                            <span>N: ${plant.nitrogen || '—'}</span>
+                        </div>
+                        <div style="color: var(--text-muted); font-size: 0.85rem; line-height: 1.35;">${plant.benefits || ''}</div>
+                        ${good.length ? `<div class="companions" style="margin-top: 10px;">Companions:
+                            <div class="companion-list">${good.map((c) => `<span class="companion-pill">${c}</span>`).join('')}</div>
+                        </div>` : ''}
+                        <div style="margin-top: 10px; display:flex; gap:8px;">
+                            <button type="button" class="tool-btn" style="padding: 8px 10px;" onclick='window.__selectPlant(${JSON.stringify({name: plant.name, scientific_name: plant.scientific_name, common_name: plant.name})})'>Use</button>
                         </div>
                     </div>
-                </div>
-            `).join("");
+                `;
+            }).join("");
         };
 
         const searchOnline = async () => {
@@ -593,7 +722,10 @@
                     plantList.innerHTML = `<div style="color: var(--text-muted);">No matches. Try a different spelling or scientific name.</div>`;
                     return;
                 }
-                plantList.innerHTML = results.map((p) => `
+                plantList.innerHTML = results.map((p) => {
+                    const src = out.provider || 'catalog';
+                    const idStr = p.perenual_id ? `Perenual #${p.perenual_id}` : (p.gbif_key ? `GBIF #${p.gbif_key}` : '');
+                    return `
                     <div class="plant-card">
                         <h3>${p.common_name ? `${p.common_name} — ` : ""}<span style="color: var(--text-muted); font-weight: 500;">${p.scientific_name}</span></h3>
                         <div class="plant-meta">
@@ -601,9 +733,13 @@
                             ${p.family ? `<span>Family: ${p.family}</span>` : ""}
                             ${p.genus ? `<span>Genus: ${p.genus}</span>` : ""}
                         </div>
-                        <div style="color: var(--text-muted); font-size: 0.8rem;">Source: GBIF taxonomy (key ${p.gbif_key || "—"})</div>
+                        <div style="color: var(--text-muted); font-size: 0.8rem;">Source: ${src}${idStr ? ` (${idStr})` : ''}</div>
+                        <div style="margin-top: 10px; display:flex; gap:8px;">
+                            <button type="button" class="tool-btn" style="padding: 8px 10px;" onclick='window.__selectPlant(${JSON.stringify({scientific_name: p.scientific_name, common_name: p.common_name || "", perenual_id: p.perenual_id || null, gbif_key: p.gbif_key || null})})'>Use</button>
+                        </div>
                     </div>
-                `).join("");
+                    `;
+                }).join("");
             } catch (err) {
                 plantList.innerHTML = `<div style="color: var(--text-muted);">Search failed: ${err.message}</div>`;
             }
@@ -614,9 +750,13 @@
             if (e.key === "Enter") searchOnline();
         });
 
+        // Wire up inline onclick handlers safely
+        window.__selectPlant = (p) => selectPlant(p);
+
         // Initial render
         buildGrid();
         renderFeatured();
     </script>
 </body>
 </html>
+
