@@ -6,7 +6,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("core", "0009_order_tracker_enhancements"),
+        ("core", "0012_schedule_recurrence_and_global_note"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -30,5 +30,6 @@ class Migration(migrations.Migration):
             ],
         ),
     ]
+]
 
 
