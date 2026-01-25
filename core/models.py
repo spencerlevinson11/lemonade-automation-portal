@@ -572,6 +572,42 @@ class GardenMap(models.Model):
         return f"GardenMap({self.user.username})"
 
 
+class PlantProfile(models.Model):
+    """Cached plant profiles enriched from external sources (and/or manual curation).
+
+    NOTE: There is no single source that provides *complete* companion + zone + care
+    metadata for "every plant". This model stores a merged/normalized profile for the
+    plants the user actually searches/uses, and can be extended with additional
+    providers over time.
+    """
+
+    scientific_name = models.CharField(max_length=255, unique=True)
+    common_name = models.CharField(max_length=255, blank=True, default="")
+
+    # USDA hardiness zones (string so we can support ranges like "4-10")
+    hardiness_zones = models.CharField(max_length=64, blank=True, default="")
+
+    sunlight = models.CharField(max_length=128, blank=True, default="")
+    water = models.CharField(max_length=128, blank=True, default="")
+    nitrogen = models.CharField(max_length=128, blank=True, default="")
+
+    benefits = models.TextField(blank=True, default="")
+    drawbacks = models.TextField(blank=True, default="")
+
+    companions_good = models.JSONField(default=list, blank=True)
+    companions_bad = models.JSONField(default=list, blank=True)
+
+    # Track where we got the data ("perenual", "openfarm", "curated", ...)
+    source = models.CharField(max_length=64, blank=True, default="")
+    raw = models.JSONField(default=dict, blank=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return self.scientific_name
+
+
+
 
 
 
