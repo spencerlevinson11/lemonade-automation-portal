@@ -1,0 +1,336 @@
+
++<!DOCTYPE html>
++<html lang="en">
++<head>
++    <meta charset="utf-8">
++    <title>Permaculture Garden Planner</title>
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++
++    <style>
++        :root {
++            --bg-main: #020617;
++            --bg-surface: #020819;
++            --bg-card: #0b1120;
++            --accent: #facc15;
++            --accent-strong: #fbbf24;
++            --accent-soft: rgba(250, 204, 21, 0.18);
++            --text-main: #e5e7eb;
++            --text-muted: #9ca3af;
++            --border-subtle: #1f2937;
++            --border-strong: #111827;
++            --success: #4ade80;
++            --info: #38bdf8;
++        }
++
++        * { box-sizing: border-box; }
++
++        body {
++            margin: 0;
++            min-height: 100vh;
++            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
++            color: var(--text-main);
++            background:
++                radial-gradient(circle at top, rgba(34, 197, 94, 0.15), transparent 55%),
++                radial-gradient(circle at bottom, #000000 0, #020617 55%);
++        }
++
++        .page {
++            max-width: 1200px;
++            margin: 0 auto;
++            padding: 24px;
++        }
++
++        .header {
++            display: flex;
++            justify-content: space-between;
++            gap: 20px;
++            align-items: center;
++            margin-bottom: 16px;
++        }
++
++        .title-block h1 {
++            margin: 0;
++            font-size: 1.5rem;
++            font-weight: 600;
++        }
++
++        .title-block p {
++            margin: 4px 0 0;
++            color: var(--text-muted);
++            font-size: 0.9rem;
++        }
++
++        .back-link {
++            color: var(--accent);
++            text-decoration: none;
++            font-size: 0.85rem;
++            font-weight: 500;
++        }
++
++        .back-link:hover { text-decoration: underline; }
++
++        .layout {
++            display: grid;
++            grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
++            gap: 18px;
++        }
++
++        .card {
++            background: var(--bg-card);
++            border: 1px solid var(--border-strong);
++            border-radius: 16px;
++            padding: 16px;
++            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
++        }
++
++        .map-grid {
++            margin-top: 14px;
++            display: grid;
++            grid-template-columns: repeat(12, minmax(0, 1fr));
++            gap: 6px;
++        }
++
++        .map-cell {
++            border: 1px solid rgba(148, 163, 184, 0.2);
++            border-radius: 6px;
++            min-height: 52px;
++            padding: 6px;
++            font-size: 0.65rem;
++            display: flex;
++            flex-direction: column;
++            gap: 4px;
++            background: rgba(15, 23, 42, 0.8);
++        }
++
++        .map-cell strong { font-size: 0.72rem; }
++
++        .legend {
++            display: flex;
++            flex-wrap: wrap;
++            gap: 8px;
++            margin-top: 10px;
++        }
++
++        .legend-pill {
++            display: inline-flex;
++            align-items: center;
++            gap: 6px;
++            padding: 4px 8px;
++            border-radius: 999px;
++            font-size: 0.7rem;
++            background: rgba(15, 23, 42, 0.9);
++            border: 1px solid rgba(148, 163, 184, 0.25);
++        }
++
++        .legend-dot {
++            width: 10px;
++            height: 10px;
++            border-radius: 999px;
++        }
++
++        .legend-sun { background: var(--accent); }
++        .legend-shade { background: var(--info); }
++        .legend-water { background: var(--success); }
++
++        .plant-search {
++            display: flex;
++            gap: 8px;
++            margin-bottom: 12px;
++        }
++
++        .plant-search input,
++        .plant-search select {
++            flex: 1;
++            background: #0f172a;
++            border: 1px solid rgba(148, 163, 184, 0.3);
++            border-radius: 10px;
++            padding: 8px 10px;
++            color: var(--text-main);
++            font-size: 0.85rem;
++        }
++
++        .plant-list {
++            display: grid;
++            gap: 12px;
++            max-height: 580px;
++            overflow: auto;
++            padding-right: 4px;
++        }
++
++        .plant-card {
++            border-radius: 14px;
++            border: 1px solid rgba(148, 163, 184, 0.25);
++            background: rgba(15, 23, 42, 0.9);
++            padding: 12px;
++        }
++
++        .plant-card h3 {
++            margin: 0 0 4px;
++            font-size: 0.95rem;
++        }
++
++        .plant-meta {
++            display: flex;
++            flex-wrap: wrap;
++            gap: 6px;
++            margin-bottom: 6px;
++        }
++
++        .plant-meta span {
++            font-size: 0.7rem;
++            color: var(--text-muted);
++            border: 1px solid rgba(148, 163, 184, 0.25);
++            padding: 2px 6px;
++            border-radius: 999px;
++        }
++
++        .companions {
++            font-size: 0.75rem;
++            color: var(--text-muted);
++            margin-top: 6px;
++        }
++
++        .companion-list {
++            display: flex;
++            flex-wrap: wrap;
++            gap: 6px;
++            margin-top: 4px;
++        }
++
++        .companion-pill {
++            font-size: 0.7rem;
++            background: rgba(250, 204, 21, 0.12);
++            border: 1px solid rgba(250, 204, 21, 0.45);
++            padding: 2px 8px;
++            border-radius: 999px;
++            color: var(--accent);
++        }
++
++        .sidebar-title {
++            margin: 0 0 6px;
++            font-size: 1rem;
++        }
++
++        .sidebar-copy {
++            color: var(--text-muted);
++            font-size: 0.85rem;
++            margin-bottom: 12px;
++        }
++
++        @media (max-width: 960px) {
++            .layout {
++                grid-template-columns: 1fr;
++            }
++
++            .plant-list {
++                max-height: none;
++            }
++        }
++    </style>
++</head>
++<body>
++    <div class="page">
++        <div class="header">
++            <div class="title-block">
++                <h1>Permaculture Garden Planner</h1>
++                <p>Draft a backyard layout and explore companion planting recommendations.</p>
++            </div>
++            <a class="back-link" href="{% url 'dashboard' %}">← Back to dashboard</a>
++        </div>
++
++        <div class="layout">
++            <div class="card">
++                <h2 class="sidebar-title">Customizable backyard map</h2>
++                <p class="sidebar-copy">
++                    Use this grid to sketch zones for sun exposure, beds, and companion groupings.
++                    Each block can represent 5–10 feet depending on your scale.
++                </p>
++
++                <div class="legend">
++                    <span class="legend-pill"><span class="legend-dot legend-sun"></span> Full sun</span>
++                    <span class="legend-pill"><span class="legend-dot legend-shade"></span> Partial shade</span>
++                    <span class="legend-pill"><span class="legend-dot legend-water"></span> Irrigated</span>
++                </div>
++
++                <div class="map-grid">
++                    {% for row in map_rows %}
++                        {% for col in map_cols %}
++                            <div class="map-cell">
++                                <strong>Bed {{ row }}-{{ col }}</strong>
++                                <span>Zone: {{ row }}</span>
++                                <span>Notes: Soil + microclimate</span>
++                            </div>
++                        {% endfor %}
++                    {% endfor %}
++                </div>
++            </div>
++
++            <div class="card">
++                <h2 class="sidebar-title">Plant database & companions</h2>
++                <p class="sidebar-copy">
++                    Filter by hardiness zone and scan companion matches to build guilds.
++                </p>
++
++                <div class="plant-search">
++                    <input id="plantSearch" type="text" placeholder="Search plants...">
++                    <select id="zoneFilter">
++                        <option value="">All zones</option>
++                        <option value="2-11">2-11</option>
++                        <option value="3-11">3-11</option>
++                        <option value="3-10">3-10</option>
++                        <option value="4-10">4-10</option>
++                        <option value="4-9">4-9</option>
++                        <option value="5-9">5-9</option>
++                    </select>
++                </div>
++
++                <div id="plantList" class="plant-list"></div>
++            </div>
++        </div>
++    </div>
++
++    <script>
++        const plantCatalog = {{ plant_catalog_json|safe }};
++
++        const plantList = document.getElementById("plantList");
++        const searchInput = document.getElementById("plantSearch");
++        const zoneFilter = document.getElementById("zoneFilter");
++
++        const renderPlants = () => {
++            const searchText = searchInput.value.toLowerCase();
++            const zoneValue = zoneFilter.value;
++
++            const filtered = plantCatalog.filter((plant) => {
++                const matchSearch = plant.name.toLowerCase().includes(searchText)
++                    || plant.notes.toLowerCase().includes(searchText);
++                const matchZone = zoneValue === "" || plant.zones === zoneValue;
++                return matchSearch && matchZone;
++            });
++
++            plantList.innerHTML = filtered.map((plant) => `
++                <div class="plant-card">
++                    <h3>${plant.name}</h3>
++                    <div class="plant-meta">
++                        <span>Zones: ${plant.zones}</span>
++                        <span>Sun: ${plant.sunlight}</span>
++                        <span>Water: ${plant.water}</span>
++                        <span>Spacing: ${plant.spacing_ft} ft</span>
++                    </div>
++                    <div>${plant.notes}</div>
++                    <div class="companions">
++                        Companion plants:
++                        <div class="companion-list">
++                            ${plant.companions.map((companion) => `<span class="companion-pill">${companion}</span>`).join("")}
++                        </div>
++                    </div>
++                </div>
++            `).join("");
++        };
++
++        searchInput.addEventListener("input", renderPlants);
++        zoneFilter.addEventListener("change", renderPlants);
++
++        renderPlants();
++    </script>
++</body>
++</html>
