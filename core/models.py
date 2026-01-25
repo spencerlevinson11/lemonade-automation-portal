@@ -539,6 +539,39 @@ class MicrosoftGraphToken(models.Model):
         return f"MicrosoftGraphToken({self.user.username})"
 
 
+# =========================
+# Permaculture Garden Planner
+# =========================
+
+
+class GardenMap(models.Model):
+    """Stores a user's editable garden map (zones + objects) as JSON."""
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="garden_map",
+    )
+
+    # Grid dimensions are stored so users can resize later.
+    rows = models.PositiveSmallIntegerField(default=12)
+    cols = models.PositiveSmallIntegerField(default=18)
+
+    # JSON payload schema (kept flexible for future upgrades):
+    # {
+    #   "version": 1,
+    #   "cells": {
+    #       "r-c": {"kind":"bed|path|water|tree|sun|shade|custom", "label":"...", "notes":"..."}
+    #   }
+    # }
+    data = models.JSONField(default=dict, blank=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"GardenMap({self.user.username})"
+
+
 
 
 
