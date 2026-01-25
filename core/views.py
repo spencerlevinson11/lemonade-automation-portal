@@ -63,6 +63,7 @@ from .models import (
     OrderContainerLine,
     OrderContainerDocument,
     GardenMap,
+    PlantProfile,
 )
 
 from .rpc_generation import generate_rpc_from_form
@@ -2562,72 +2563,9 @@ def run_automation(request, pk):
 
 @login_required
 def permaculture_map_view(request):
-    # A small featured list shown immediately (the main catalog is searched online).
-    featured_plants = [
-        {
-            "name": "Basil",
-            "zones": "4-10",
-            "companions": ["Tomato", "Pepper", "Lettuce"],
-            "sunlight": "Full sun",
-            "water": "Moderate",
-            "spacing_ft": 1,
-            "notes": "Boosts tomato flavor; keep evenly moist.",
-        },
-        {
-            "name": "Tomato",
-            "zones": "3-11",
-            "companions": ["Basil", "Marigold", "Carrot"],
-            "sunlight": "Full sun",
-            "water": "Consistent",
-            "spacing_ft": 2.5,
-            "notes": "Stake or cage; rotate annually.",
-        },
-        {
-            "name": "Carrot",
-            "zones": "3-10",
-            "companions": ["Tomato", "Onion", "Rosemary"],
-            "sunlight": "Full sun",
-            "water": "Even moisture",
-            "spacing_ft": 0.5,
-            "notes": "Loosen soil deeply for straight roots.",
-        },
-        {
-            "name": "Marigold",
-            "zones": "2-11",
-            "companions": ["Tomato", "Pepper", "Squash"],
-            "sunlight": "Full sun",
-            "water": "Low",
-            "spacing_ft": 1,
-            "notes": "Helps deter nematodes and pests.",
-        },
-        {
-            "name": "Lavender",
-            "zones": "5-9",
-            "companions": ["Rosemary", "Sage", "Thyme"],
-            "sunlight": "Full sun",
-            "water": "Low",
-            "spacing_ft": 2,
-            "notes": "Prefers dry soil; prune after bloom.",
-        },
-        {
-            "name": "Comfrey",
-            "zones": "3-9",
-            "companions": ["Apple tree", "Rose"],
-            "sunlight": "Part sun",
-            "water": "Moderate",
-            "spacing_ft": 3,
-            "notes": "Dynamic accumulator; great chop-and-drop mulch.",
-        },
-        {
-            "name": "Strawberry",
-            "zones": "4-9",
-            "companions": ["Borage", "Spinach", "Lettuce"],
-            "sunlight": "Full sun",
-            "water": "Moderate",
-            "spacing_ft": 1.5,
-            "notes": "Mulch to keep fruit clean and retain moisture.",
-        },
-    ]
+    # A small featured list shown immediately (the larger catalog is searched online).
+    # This is also used for companion suggestions out-of-the-box.
+    featured_plants = _permaculture_featured_plants()
 
     garden_map, _ = GardenMap.objects.get_or_create(user=request.user)
 
@@ -2646,6 +2584,134 @@ def permaculture_map_view(request):
         "map_data_json": json.dumps(garden_map.data),
     }
     return render(request, "core/permaculture_map.html", context)
+
+
+def _permaculture_featured_plants():
+    """Curated starter set with richer metadata + companion relationships.
+
+    This is NOT intended to represent "every plant"; it is a fast, built-in dataset.
+    The broader catalog is queried on-demand from external sources.
+    """
+    return [
+        {
+            "name": "Basil",
+            "scientific_name": "Ocimum basilicum",
+            "zones": "4-10",
+            "companions_good": ["Tomato", "Pepper", "Lettuce"],
+            "companions_bad": ["Rue"],
+            "sunlight": "Full sun",
+            "water": "Moderate",
+            "nitrogen": "Moderate",
+            "benefits": "Repels some pests; can improve tomato flavor.",
+            "drawbacks": "Sensitive to cold; bolts in heat.",
+        },
+        {
+            "name": "Tomato",
+            "scientific_name": "Solanum lycopersicum",
+            "zones": "3-11",
+            "companions_good": ["Basil", "Marigold", "Carrot", "Onion", "Garlic"],
+            "companions_bad": ["Potato", "Fennel", "Brassicas"],
+            "sunlight": "Full sun",
+            "water": "Consistent",
+            "nitrogen": "Moderate",
+            "benefits": "High yield; trellising saves space.",
+            "drawbacks": "Susceptible to blight; rotate.",
+        },
+        {
+            "name": "Carrot",
+            "scientific_name": "Daucus carota subsp. sativus",
+            "zones": "3-10",
+            "companions_good": ["Tomato", "Onion", "Rosemary", "Sage"],
+            "companions_bad": ["Dill"],
+            "sunlight": "Full sun",
+            "water": "Even moisture",
+            "nitrogen": "Low",
+            "benefits": "Loosens soil; good edge crop.",
+            "drawbacks": "Forks in rocky soil.",
+        },
+        {
+            "name": "Marigold",
+            "scientific_name": "Tagetes spp.",
+            "zones": "2-11",
+            "companions_good": ["Tomato", "Pepper", "Squash", "Cucumber"],
+            "companions_bad": [],
+            "sunlight": "Full sun",
+            "water": "Low",
+            "nitrogen": "Low",
+            "benefits": "May reduce nematodes; attracts beneficial insects.",
+            "drawbacks": "Can self-seed.",
+        },
+        {
+            "name": "Lavender",
+            "scientific_name": "Lavandula angustifolia",
+            "zones": "5-9",
+            "companions_good": ["Rosemary", "Sage", "Thyme"],
+            "companions_bad": [],
+            "sunlight": "Full sun",
+            "water": "Low",
+            "nitrogen": "Low",
+            "benefits": "Attracts pollinators; aromatic pest deterrent.",
+            "drawbacks": "Hates wet feet.",
+        },
+        {
+            "name": "Comfrey",
+            "scientific_name": "Symphytum officinale",
+            "zones": "3-9",
+            "companions_good": ["Apple", "Pear", "Berry bushes"],
+            "companions_bad": [],
+            "sunlight": "Part sun",
+            "water": "Moderate",
+            "nitrogen": "High",
+            "benefits": "Dynamic accumulator; excellent chop-and-drop mulch.",
+            "drawbacks": "Spreads if allowed to seed.",
+        },
+        {
+            "name": "Strawberry",
+            "scientific_name": "Fragaria × ananassa",
+            "zones": "4-9",
+            "companions_good": ["Borage", "Spinach", "Lettuce", "Bush beans"],
+            "companions_bad": ["Brassicas"],
+            "sunlight": "Full sun",
+            "water": "Moderate",
+            "nitrogen": "Moderate",
+            "benefits": "Ground cover; good underplanting.",
+            "drawbacks": "Bird pressure; needs mulch.",
+        },
+    ]
+
+
+def _norm_name(s: str) -> str:
+    return (s or "").strip().lower()
+
+
+def _get_curated_profile_by_name(name: str) -> dict | None:
+    n = _norm_name(name)
+    for p in _permaculture_featured_plants():
+        if _norm_name(p.get("name")) == n or _norm_name(p.get("scientific_name")) == n:
+            return p
+    return None
+
+
+def _upsert_profile_from_curated(cur: dict) -> PlantProfile:
+    sci = (cur.get("scientific_name") or cur.get("name") or "").strip()
+    obj, _ = PlantProfile.objects.get_or_create(scientific_name=sci)
+    obj.common_name = cur.get("name") or obj.common_name
+    obj.hardiness_zones = cur.get("zones") or obj.hardiness_zones
+    obj.sunlight = cur.get("sunlight") or obj.sunlight
+    obj.water = cur.get("water") or obj.water
+    obj.nitrogen = cur.get("nitrogen") or obj.nitrogen
+    obj.benefits = cur.get("benefits") or obj.benefits
+    obj.drawbacks = cur.get("drawbacks") or obj.drawbacks
+    obj.companions_good = cur.get("companions_good") or obj.companions_good
+    obj.companions_bad = cur.get("companions_bad") or obj.companions_bad
+    obj.source = obj.source or "curated"
+    obj.raw = obj.raw or {"curated": cur}
+    obj.save()
+    return obj
+
+
+def _perenual_key() -> str | None:
+    return (os.environ.get("PERENUAL_API_KEY") or "").strip() or None
 
 
 @login_required
@@ -2682,19 +2748,48 @@ def permaculture_map_save_view(request):
 @login_required
 @require_http_methods(["GET"])
 def permaculture_plant_search_view(request):
-    """Search a large online plant catalog (GBIF) and return normalized results.
+    """Search a large online plant catalog and return normalized results.
 
-    NOTE: GBIF is a global biodiversity data network; we filter to kingdom=Plantae.
+    Priority order:
+      1) Perenual (if PERENUAL_API_KEY is configured) - richer gardening metadata
+      2) GBIF (no key) - massive taxonomy, but minimal gardening metadata
     """
     q = (request.GET.get("q") or "").strip()
     if len(q) < 2:
         return JsonResponse({"ok": True, "results": []})
 
-    params = {
-        "q": q,
-        "kingdom": "Plantae",
-        "limit": 20,
-    }
+    perenual_key = (os.environ.get("PERENUAL_API_KEY") or "").strip()
+    if perenual_key:
+        # Perenual species list search (requires API key)
+        url = "https://perenual.com/api/v2/species-list?" + urllib.parse.urlencode(
+            {"key": perenual_key, "q": q, "page": 1}
+        )
+        try:
+            with urllib.request.urlopen(url, timeout=12) as resp:
+                raw = resp.read().decode("utf-8")
+            data = json.loads(raw)
+        except Exception:
+            return JsonResponse({"ok": False, "error": "Plant search failed"}, status=502)
+
+        results = []
+        for item in (data.get("data") or [])[:20]:
+            sci_list = item.get("scientific_name") or []
+            sci = (sci_list[0] if isinstance(sci_list, list) and sci_list else "")
+            results.append(
+                {
+                    "scientific_name": sci,
+                    "common_name": item.get("common_name") or "",
+                    "rank": "species",
+                    "family": item.get("family") or "",
+                    "genus": item.get("genus") or "",
+                    "species": item.get("species_epithet") or "",
+                    "perenual_id": item.get("id"),
+                }
+            )
+        return JsonResponse({"ok": True, "provider": "perenual", "results": results})
+
+    # Fallback: GBIF taxonomy search (no key)
+    params = {"q": q, "kingdom": "Plantae", "limit": 20}
     url = "https://api.gbif.org/v1/species/search?" + urllib.parse.urlencode(params)
 
     try:
@@ -2721,14 +2816,174 @@ def permaculture_plant_search_view(request):
             }
         )
 
-    return JsonResponse({"ok": True, "results": results})
-
-
-
-@login_required
+    return JsonResponse({"ok": True, "provider": "gbif", "results": results})
 
 
 @login_required
+@require_http_methods(["GET"])
+def permaculture_plant_profile_view(request):
+    """Return a normalized plant profile.
+
+    If PERENUAL_API_KEY is configured and a perenual_id is provided, we'll fetch
+    plant details and cache them in PlantProfile.
+    """
+    perenual_id = request.GET.get("perenual_id")
+    scientific_name = (request.GET.get("scientific_name") or "").strip()
+
+    # 1) If we have an exact cached profile, return it.
+    if scientific_name:
+        cached = PlantProfile.objects.filter(scientific_name=scientific_name).first()
+        if cached:
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "profile": {
+                        "scientific_name": cached.scientific_name,
+                        "common_name": cached.common_name,
+                        "hardiness_zones": cached.hardiness_zones,
+                        "sunlight": cached.sunlight,
+                        "water": cached.water,
+                        "nitrogen": cached.nitrogen,
+                        "benefits": cached.benefits,
+                        "drawbacks": cached.drawbacks,
+                        "companions_good": cached.companions_good,
+                        "companions_bad": cached.companions_bad,
+                        "source": cached.source,
+                    },
+                }
+            )
+
+    # 2) If the plant is in our curated starter set, upsert into cache.
+    curated = _get_curated_profile_by_name(scientific_name) if scientific_name else None
+    if curated:
+        obj = _upsert_profile_from_curated(curated)
+        return JsonResponse(
+            {
+                "ok": True,
+                "profile": {
+                    "scientific_name": obj.scientific_name,
+                    "common_name": obj.common_name,
+                    "hardiness_zones": obj.hardiness_zones,
+                    "sunlight": obj.sunlight,
+                    "water": obj.water,
+                    "nitrogen": obj.nitrogen,
+                    "benefits": obj.benefits,
+                    "drawbacks": obj.drawbacks,
+                    "companions_good": obj.companions_good,
+                    "companions_bad": obj.companions_bad,
+                    "source": obj.source,
+                },
+            }
+        )
+
+    # 3) If we have a Perenual id + key, fetch details and cache.
+    key = _perenual_key()
+    if key and perenual_id:
+        url = f"https://perenual.com/api/v2/species/details/{urllib.parse.quote(str(perenual_id))}?" + urllib.parse.urlencode(
+            {"key": key}
+        )
+        try:
+            with urllib.request.urlopen(url, timeout=12) as resp:
+                raw = resp.read().decode("utf-8")
+            details = json.loads(raw)
+        except Exception:
+            return JsonResponse({"ok": False, "error": "Plant profile fetch failed"}, status=502)
+
+        sci_list = details.get("scientific_name") or []
+        sci = (sci_list[0] if isinstance(sci_list, list) and sci_list else "").strip()
+        if not sci:
+            sci = scientific_name or f"Perenual:{perenual_id}"
+
+        obj, _ = PlantProfile.objects.get_or_create(scientific_name=sci)
+        obj.common_name = details.get("common_name") or obj.common_name
+        hardiness = details.get("hardiness") or {}
+        if isinstance(hardiness, dict):
+            mn = hardiness.get("min")
+            mx = hardiness.get("max")
+            if mn and mx:
+                obj.hardiness_zones = f"{mn}-{mx}"
+        obj.sunlight = ", ".join(details.get("sunlight") or []) if isinstance(details.get("sunlight"), list) else (details.get("sunlight") or obj.sunlight)
+        obj.water = details.get("watering") or obj.water
+        obj.source = "perenual"
+        obj.raw = details
+        obj.save()
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "profile": {
+                    "scientific_name": obj.scientific_name,
+                    "common_name": obj.common_name,
+                    "hardiness_zones": obj.hardiness_zones,
+                    "sunlight": obj.sunlight,
+                    "water": obj.water,
+                    "nitrogen": obj.nitrogen,
+                    "benefits": obj.benefits,
+                    "drawbacks": obj.drawbacks,
+                    "companions_good": obj.companions_good,
+                    "companions_bad": obj.companions_bad,
+                    "source": obj.source,
+                },
+            }
+        )
+
+    # Last resort: return minimal profile (user can still place it)
+    return JsonResponse(
+        {
+            "ok": True,
+            "profile": {
+                "scientific_name": scientific_name or "",
+                "common_name": "",
+                "hardiness_zones": "",
+                "sunlight": "",
+                "water": "",
+                "nitrogen": "",
+                "benefits": "",
+                "drawbacks": "",
+                "companions_good": [],
+                "companions_bad": [],
+                "source": "unknown",
+            },
+        }
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def permaculture_companion_suggest_view(request):
+    """Suggest companion plants for a given plant, considering nearby placements."""
+    plant = (request.GET.get("plant") or "").strip()
+    nearby_raw = (request.GET.get("nearby") or "").strip()
+    nearby = [p.strip() for p in nearby_raw.split(",") if p.strip()]
+
+    # Ensure curated plants exist in cache so suggestions work immediately.
+    for cur in _permaculture_featured_plants():
+        _upsert_profile_from_curated(cur)
+
+    # Load profile by either scientific or common name
+    prof = PlantProfile.objects.filter(scientific_name__iexact=plant).first()
+    if not prof:
+        prof = PlantProfile.objects.filter(common_name__iexact=plant).first()
+
+    good = list(prof.companions_good) if prof else []
+    bad = list(prof.companions_bad) if prof else []
+
+    nearby_norm = {_norm_name(x) for x in nearby}
+
+    recommended = [x for x in good if _norm_name(x) not in nearby_norm]
+    conflicts = [x for x in nearby if _norm_name(x) in {_norm_name(b) for b in bad}]
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "plant": plant,
+            "recommended": recommended[:12],
+            "conflicts": conflicts[:12],
+            "known": bool(prof),
+        }
+    )
+
+
 def project_planner_view(request):
     """
     Project Planner:
@@ -4053,6 +4308,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
