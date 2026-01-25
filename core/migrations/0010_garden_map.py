@@ -1,163 +1,34 @@
-from django.contrib import admin
-from django.urls import path
-from django.contrib.auth import views as auth_views
-
-from core import views as core_views
+from django.conf import settings
+from django.db import migrations, models
+import django.db.models.deletion
 
 
-urlpatterns = [
-    path("admin/", admin.site.urls),
+class Migration(migrations.Migration):
 
-    # Auth routes
-    path(
-        "login/",
-        auth_views.LoginView.as_view(template_name="core/login.html"),
-        name="login",
-    ),
-    path(
-        "logout/",
-        core_views.custom_logout,
-        name="logout",
-    ),
-
-    # Main dashboard
-    path("", core_views.dashboard, name="dashboard"),
-
-    # Run a specific automation by ID
-    path(
-        "automations/<int:pk>/run/",
-        core_views.run_automation,
-        name="run_automation",
-    ),
-
-    # Pricing Quotes
-    path("automations/pricing/upload/", core_views.pricing_upload_view, name="pricing_upload"),
-    path("automations/pricing/customers/", core_views.pricing_customer_list_view, name="pricing_customer_list"),
-    path(
-        "automations/pricing/customers/<int:customer_id>/",
-        core_views.pricing_customer_edit_view,
-        name="pricing_customer_edit",
-    ),
-    path(
-        "automations/pricing/customers/<int:customer_id>/quote/",
-        core_views.pricing_customer_quote_view,
-        name="pricing_customer_quote",
-    ),
-
-    # Tip Tracker
-    path("automations/tips/", core_views.tip_tracker_view, name="tip_tracker"),
-    path("tips/", core_views.tip_tracker_view, name="tip_tracker"),
-    path("tips/export/", core_views.tip_tracker_export_excel, name="tip_tracker_export_excel"),
-    path("automations/tips/export/", core_views.tip_tracker_export_excel, name="tip_tracker_export_excel"),
-    path(
-        "tips/delete/<int:entry_id>/",
-        core_views.tip_entry_delete_view,
-        name="tip_entry_delete",
-    ),
-
-    # Project Planner
-    path("automations/project-planner/", core_views.project_planner_view, name="project_planner"),
-    path(
-        "automations/project-planner/complete/<int:pk>/",
-        core_views.project_plan_complete_view,
-        name="project_plan_complete",
-    ),
-    path(
-        "automations/project-planner/delete/<int:pk>/",
-        core_views.project_plan_delete_view,
-        name="project_plan_delete",
-    ),
-
-
-    # Schedule Dashboard
-    path("automations/schedule/", core_views.schedule_dashboard_view, name="schedule_dashboard"),
-    path("automations/schedule/add/", core_views.schedule_activity_add_view, name="schedule_activity_add"),
-    path("automations/schedule/notes/", core_views.schedule_global_note_save_view, name="schedule_global_note_save"),
-    path("automations/schedule/<int:pk>/edit/", core_views.schedule_activity_edit_view, name="schedule_activity_edit"),
-    path("automations/schedule/<int:pk>/delete/", core_views.schedule_activity_delete_view, name="schedule_activity_delete"),
-    path("automations/schedule/<int:pk>/toggle-done/", core_views.schedule_activity_toggle_done_view, name="schedule_activity_toggle_done"),
-
-
-    # Order Tracker
-    path("automations/orders/", core_views.order_tracker_view, name="order_tracker"),
-    path(
-        "automations/orders/recap.docx",
-        core_views.order_tracker_recap_docx_view,
-        name="order_tracker_recap_docx",
-    ),
-    path("automations/orders/new/", core_views.order_container_edit_view, name="order_container_new"),
-    path(
-        "automations/orders/<int:container_id>/",
-        core_views.order_container_edit_view,
-        name="order_container_edit",
-    ),
-    
-    path(
-        "automations/orders/<int:container_id>/delete/",
-        core_views.order_container_delete_view,
-        name="order_container_delete",
-    ),
-
-    path(
-        "automations/orders/<int:container_id>/toggle-delivered/",
-        core_views.order_container_toggle_delivered_view,
-        name="order_container_toggle_delivered",
-    ),
-
-    # Bucket Metrics
-    path("automations/bucket-metrics/", core_views.bucket_metrics_view, name="bucket_metrics"),
-
-    # Permaculture Garden Planner
-    path("automations/permaculture/", core_views.permaculture_map_view, name="permaculture_map"),
-    path("automations/permaculture/save/", core_views.permaculture_map_save_view, name="permaculture_map_save"),
-    path(
-        "automations/permaculture/plants/search/",
-        core_views.permaculture_plant_search_view,
-        name="permaculture_plant_search",
-    ),
-
-    # RPC -> Master Spreadsheet Formatter
-    path("automations/rpc-master/", core_views.rpc_master_formatter_view, name="rpc_master_formatter"),
-    # Microsoft Graph OAuth
-    path("microsoft/connect/", core_views.microsoft_connect_view, name="microsoft_connect"),
-    path("microsoft/callback/", core_views.microsoft_callback_view, name="microsoft_callback"),
-
-]
-
-# Bucket Projections (optional): only register if the views exist in this deploy
-if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucket_projections_export_view"):
-    urlpatterns += [
-        path(
-            "automations/bucket-metrics/projections/",
-            core_views.bucket_projections_view,
-            name="bucket_projections",
-        ),
-        path(
-            "automations/bucket-metrics/projections/export/",
-            core_views.bucket_projections_export_view,
-            name="bucket_projections_export",
-        ),
-        path(
-            "automations/bucket-metrics/projections/export-zip/",
-            core_views.bucket_projections_zip_export_view,
-            name="bucket_projections_export_zip",
-        ),
+    dependencies = [
+        ("core", "0009_order_tracker_enhancements"),
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
-
-# Adjusted Prognosis Export (optional)
-if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
-    urlpatterns += [
-        path(
-            "bucket-prognosis-export/",
-            core_views.bucket_adjusted_prognosis_export_view,
-            name="bucket_adjusted_prognosis_export",
+    operations = [
+        migrations.CreateModel(
+            name="GardenMap",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("rows", models.PositiveSmallIntegerField(default=12)),
+                ("cols", models.PositiveSmallIntegerField(default=18)),
+                ("data", models.JSONField(blank=True, default=dict)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="garden_map",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+            ],
         ),
     ]
-
-
-
-
-
 
 
