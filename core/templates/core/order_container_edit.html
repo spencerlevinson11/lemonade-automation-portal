@@ -191,6 +191,23 @@
             {{ form.bill_of_lading_number }}
             {{ form.bill_of_lading_number.errors }}
           </div>
+
+          <div class="field">
+            <label>Vessel name</label>
+            {{ form.vessel_name }}
+            {{ form.vessel_name.errors }}
+            <div class="muted tiny" style="margin-top:6px;">Used for your dashboard map. Add MMSI for best results.</div>
+          </div>
+          <div class="field">
+            <label>Vessel MMSI</label>
+            {{ form.vessel_mmsi }}
+            {{ form.vessel_mmsi.errors }}
+          </div>
+          <div class="field">
+            <label>Vessel IMO (optional)</label>
+            {{ form.vessel_imo }}
+            {{ form.vessel_imo.errors }}
+          </div>
           <div class="field">
             <label>ETD</label>
             {{ form.etd }}
