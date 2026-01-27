@@ -70,6 +70,7 @@ from .rpc_generation import generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
 from .services.order_tracker import upsert_container_from_rpc_order
+from .services.myshiptracking import bulk_vessel_status
 from .services.rpc_master_formatter import parse_rpc_order_xlsx, build_master_format_workbook
 from .services.ms_graph_excel import (
     GraphError,
@@ -3655,6 +3656,51 @@ def order_tracker_view(request):
     delivered_containers = containers.filter(delivered_q)
     active_containers = containers.exclude(delivered_q)
 
+    # --- Vessel map data (MyShipTracking) ---
+    vessel_points = []
+    vessel_map_error = None
+    try:
+        mmsi_list = [int(c.vessel_mmsi) for c in active_containers if getattr(c, "vessel_mmsi", None)]
+        imo_list = [int(c.vessel_imo) for c in active_containers if getattr(c, "vessel_imo", None)]
+    except Exception:
+        mmsi_list, imo_list = [], []
+
+    if mmsi_list or imo_list:
+        data, err = bulk_vessel_status(mmsi_list=mmsi_list, imo_list=imo_list)
+        vessel_map_error = err
+        if data:
+            # Index returned vessel data by identifiers for quick matching to containers.
+            by_mmsi = {str(v.get("mmsi")): v for v in data if v.get("mmsi") is not None}
+            by_imo = {str(v.get("imo")): v for v in data if v.get("imo") is not None}
+
+            for c in active_containers:
+                v = None
+                if getattr(c, "vessel_mmsi", None):
+                    v = by_mmsi.get(str(c.vessel_mmsi))
+                if v is None and getattr(c, "vessel_imo", None):
+                    v = by_imo.get(str(c.vessel_imo))
+                if not v:
+                    continue
+
+                try:
+                    lat = float(v.get("lat"))
+                    lng = float(v.get("lng"))
+                except Exception:
+                    continue
+
+                vessel_points.append(
+                    {
+                        "lat": lat,
+                        "lng": lng,
+                        "vessel_name": (getattr(c, "vessel_name", "") or v.get("vessel_name") or "").strip(),
+                        "mmsi": v.get("mmsi"),
+                        "imo": v.get("imo"),
+                        "received": v.get("received"),
+                        "container_label": f"{c.customer_name}{(' • ' + c.location_name) if c.location_name else ''}",
+                        "container_url": reverse("order_container_edit", kwargs={"container_id": c.id}),
+                    }
+                )
+
     return render(
         request,
         "core/order_tracker.html",
@@ -3669,6 +3715,8 @@ def order_tracker_view(request):
             "assigned_to": assigned_to,
             "sort": sort,
             "dir": direction,
+            "vessel_points_json": json.dumps(vessel_points),
+            "vessel_map_error": vessel_map_error,
         },
     )
 
@@ -4308,6 +4356,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
