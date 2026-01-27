@@ -28,11 +28,14 @@ from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
 from django.db.models import Sum, Q
 from django.http import FileResponse, HttpResponseForbidden
+from django.http import Http404
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+
+from django.utils._os import safe_join
 
 from django.forms import inlineformset_factory
 from django.views.decorators.http import require_POST
@@ -850,6 +853,29 @@ def dashboard(request):
 def custom_logout(request):
     logout(request)
     return redirect("login")
+
+
+@login_required
+def protected_media_view(request, path: str):
+    """Serve user-uploaded media files (PDFs, etc.) through Django.
+
+    Render doesn't automatically serve MEDIA_URL for web services, so we expose
+    /media/... via a Django view. This also prevents path traversal.
+    """
+    try:
+        full_path = safe_join(str(settings.MEDIA_ROOT), path)
+    except Exception:
+        raise Http404("File not found")
+
+    if not os.path.exists(full_path) or not os.path.isfile(full_path):
+        raise Http404("File not found")
+
+    # Inline render for PDFs/images, download for everything else
+    filename = os.path.basename(full_path)
+    resp = FileResponse(open(full_path, "rb"))
+    if filename.lower().endswith(".pdf"):
+        resp["Content-Disposition"] = f'inline; filename="{filename}"'
+    return resp
 
 
 
@@ -4356,6 +4382,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
