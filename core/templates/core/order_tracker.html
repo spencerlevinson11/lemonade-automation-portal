@@ -5,6 +5,9 @@
   <title>{{ automation_name }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <!-- Leaflet (map) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
   <style>
     :root {
       --bg-main: #020617;
@@ -125,6 +128,14 @@
     }
 
     .actions { display:flex; gap:10px; flex-wrap:wrap; }
+
+    #vesselMap {
+      height: 380px;
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.16);
+      overflow: hidden;
+    }
   </style>
 </head>
 
@@ -153,6 +164,26 @@
         {% endfor %}
       </div>
     {% endif %}
+
+    <!-- Vessel map (shows vessels for containers that have MMSI/IMO saved) -->
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:900;">Vessel Map</div>
+          <div class="muted tiny">Latest terrestrial AIS position for any container with a saved MMSI/IMO.</div>
+        </div>
+        <div class="badge">Live</div>
+      </div>
+
+      {% if vessel_map_error %}
+        <div class="muted" style="margin-top:10px;">{{ vessel_map_error }}</div>
+      {% endif %}
+
+      <div style="margin-top:12px;">
+        <div id="vesselMap"></div>
+        <div id="vesselMapHint" class="muted tiny" style="margin-top:8px; display:none;">No vessels to show yet. Add a vessel MMSI (recommended) or IMO to any container.</div>
+      </div>
+    </div>
 
     <!-- NEW: Inline "Add container" form (collapsible) -->
     <div class="card">
@@ -214,6 +245,21 @@
             <div class="field">
               <label>BOL #</label>
               <input name="bill_of_lading_number" placeholder="Bill of Lading number" />
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field">
+              <label>Vessel name (optional)</label>
+              <input name="vessel_name" placeholder="e.g., BLUE STAR DELOS" />
+            </div>
+            <div class="field" style="max-width:320px;">
+              <label>Vessel MMSI (recommended)</label>
+              <input name="vessel_mmsi" inputmode="numeric" placeholder="9-digit MMSI" />
+            </div>
+            <div class="field" style="max-width:320px;">
+              <label>Vessel IMO (optional)</label>
+              <input name="vessel_imo" inputmode="numeric" placeholder="7-digit IMO" />
             </div>
           </div>
 
@@ -440,7 +486,56 @@
       <a href="{% url 'dashboard' %}">← Back to dashboard</a>
     </div>
   </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    (function () {
+      const points = {{ vessel_points_json|default:"[]"|safe }};
+      const hint = document.getElementById('vesselMapHint');
+      const mapEl = document.getElementById('vesselMap');
+
+      if (!mapEl) return;
+
+      // If no vessels, still show a world map with a hint.
+      const hasPoints = Array.isArray(points) && points.length > 0;
+      if (!hasPoints && hint) hint.style.display = 'block';
+
+      // Compute a reasonable center
+      let center = [20, 0];
+      if (hasPoints) {
+        const lats = points.map(p => p.lat).filter(v => typeof v === 'number');
+        const lngs = points.map(p => p.lng).filter(v => typeof v === 'number');
+        if (lats.length && lngs.length) {
+          center = [lats.reduce((a,b)=>a+b,0)/lats.length, lngs.reduce((a,b)=>a+b,0)/lngs.length];
+        }
+      }
+
+      const map = L.map('vesselMap', { scrollWheelZoom: false }).setView(center, hasPoints ? 3 : 2);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      if (hasPoints) {
+        const bounds = [];
+        points.forEach(p => {
+          if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
+          const marker = L.marker([p.lat, p.lng]).addTo(map);
+          const title = (p.vessel_name || 'Vessel') + (p.mmsi ? ` (MMSI ${p.mmsi})` : '');
+          const line2 = p.container_label ? `<div style="margin-top:4px;"><strong>Container:</strong> ${p.container_label}</div>` : '';
+          const line3 = p.received ? `<div class="muted" style="margin-top:4px; font-size:12px;">Received: ${p.received}</div>` : '';
+          const link = p.container_url ? `<div style="margin-top:8px;"><a href="${p.container_url}">Open container</a></div>` : '';
+          marker.bindPopup(`<div style="min-width:220px;"><div style="font-weight:800;">${title}</div>${line2}${line3}${link}</div>`);
+          bounds.push([p.lat, p.lng]);
+        });
+        if (bounds.length) {
+          map.fitBounds(bounds, { padding: [24, 24] });
+        }
+      }
+    })();
+  </script>
 </body>
 </html>
+
 
 
