@@ -408,6 +408,9 @@ class OrderContainerForm(forms.ModelForm):
             "estimated_delivery_date",
             "booking_number",
             "bill_of_lading_number",
+            "vessel_name",
+            "vessel_mmsi",
+            "vessel_imo",
             "notes",
         ]
         widgets = {
@@ -419,6 +422,9 @@ class OrderContainerForm(forms.ModelForm):
             "estimated_delivery_date": forms.DateInput(attrs={"type": "date"}),
             "status": forms.TextInput(attrs={"placeholder": "e.g., booked, on water, customs hold, delivered"}),
             "notes": forms.Textarea(attrs={"rows": 3, "placeholder": "Optional notes..."}),
+            "vessel_name": forms.TextInput(attrs={"placeholder": "e.g., CMA CGM Marco Polo"}),
+            "vessel_mmsi": forms.NumberInput(attrs={"placeholder": "9-digit MMSI (recommended)", "inputmode": "numeric"}),
+            "vessel_imo": forms.NumberInput(attrs={"placeholder": "7-digit IMO (optional)", "inputmode": "numeric"}),
         }
 
 
@@ -440,6 +446,8 @@ class OrderContainerLineForm(forms.ModelForm):
             "pallets": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
             "units_per_pallet": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
         }
+
+
 
 
 
