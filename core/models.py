@@ -352,6 +352,11 @@ class OrderContainer(models.Model):
     booking_number = models.CharField(max_length=128, blank=True)
     bill_of_lading_number = models.CharField(max_length=128, blank=True)
 
+    # Optional vessel metadata (for live AIS mapping)
+    vessel_name = models.CharField(max_length=255, blank=True)
+    vessel_mmsi = models.BigIntegerField(null=True, blank=True)
+    vessel_imo = models.BigIntegerField(null=True, blank=True)
+
     notes = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
