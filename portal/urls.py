@@ -132,6 +132,11 @@ urlpatterns = [
     path("microsoft/connect/", core_views.microsoft_connect_view, name="microsoft_connect"),
     path("microsoft/callback/", core_views.microsoft_callback_view, name="microsoft_callback"),
 
+    # Media (uploaded PDFs, etc.)
+    # We serve media through Django so it works on Render without needing a separate
+    # web server/static files rule for MEDIA_URL.
+    path("media/<path:path>", core_views.protected_media_view, name="protected_media"),
+
 ]
 
 # Bucket Projections (optional): only register if the views exist in this deploy
@@ -164,6 +169,11 @@ if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
             name="bucket_adjusted_prognosis_export",
         ),
     ]
+
+
+
+
+
 
 
 
