@@ -2729,7 +2729,43 @@ def _maybe_seed_permaculture_map(garden_map: GardenMap) -> bool:
         garden_map.save(update_fields=["rows", "cols", "data", "updated_at"])
         return True
 
+
     return False
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def permaculture_map_reset_view(request):
+    """Reset the user's permaculture map back to the bundled Excel layout."""
+    garden_map, _ = GardenMap.objects.get_or_create(user=request.user)
+    rows, cols, data = _build_default_map_from_excel()
+    garden_map.rows = rows
+    garden_map.cols = cols
+    garden_map.data = data
+    garden_map.save(update_fields=["rows", "cols", "data", "updated_at"])
+    messages.success(request, "Permaculture map reset to your backyard layout.")
+    return redirect("permaculture_map")
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def permaculture_map_import_excel_view(request):
+    """Re-import the bundled Excel layout.
+
+    Kept separate from reset so the UI can offer either action. For now this
+    uses the same bundled workbook. If you later want to upload a new workbook,
+    we can extend this endpoint to accept request.FILES.
+    """
+    garden_map, _ = GardenMap.objects.get_or_create(user=request.user)
+    rows, cols, data = _build_default_map_from_excel()
+    garden_map.rows = rows
+    garden_map.cols = cols
+    garden_map.data = data
+    garden_map.save(update_fields=["rows", "cols", "data", "updated_at"])
+    messages.success(request, "Excel backyard layout imported.")
+    return redirect("permaculture_map")
+
+
 @login_required
 def permaculture_map_view(request):
     # A small featured list shown immediately (the larger catalog is searched online).
