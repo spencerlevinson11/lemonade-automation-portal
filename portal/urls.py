@@ -111,6 +111,7 @@ urlpatterns = [
     path("automations/permaculture/", core_views.permaculture_map_view, name="permaculture_map"),
     path("automations/permaculture/save/", core_views.permaculture_map_save_view, name="permaculture_map_save"),
     path("automations/permaculture/reset/", core_views.permaculture_map_reset_view, name="permaculture_map_reset"),
+    path("automations/permaculture/import-excel/", core_views.permaculture_map_import_excel_view, name="permaculture_map_import_excel"),
     path(
         "automations/permaculture/plants/search/",
         core_views.permaculture_plant_search_view,
@@ -170,6 +171,13 @@ if hasattr(core_views, "bucket_adjusted_prognosis_export_view"):
             name="bucket_adjusted_prognosis_export",
         ),
     ]
+
+
+
+
+
+
+
 
 
 
