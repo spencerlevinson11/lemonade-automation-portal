@@ -2718,17 +2718,21 @@ def _maybe_seed_permaculture_map(garden_map: GardenMap) -> bool:
     data = garden_map.data or {}
     cells = data.get("cells") if isinstance(data, dict) else None
 
+    # We consider a map "empty" if it has no cells saved. In that case, seed from
+    # the Excel backyard diagram unless the map has already been seeded before.
     looks_empty = not cells
-    looks_default_size = (garden_map.rows, garden_map.cols) == (12, 18)
+    seeded = isinstance(data, dict) and data.get("_seed") == "excel"
 
-    if looks_empty and looks_default_size:
-        rows, cols, data = _build_default_map_from_excel()
+    if looks_empty and not seeded:
+        rows, cols, seeded_data = _build_default_map_from_excel()
+        # Mark the payload so we don't re-seed on future loads.
+        if isinstance(seeded_data, dict):
+            seeded_data["_seed"] = "excel"
         garden_map.rows = rows
         garden_map.cols = cols
-        garden_map.data = data
+        garden_map.data = seeded_data
         garden_map.save(update_fields=["rows", "cols", "data", "updated_at"])
         return True
-
 
     return False
 
@@ -2739,6 +2743,8 @@ def permaculture_map_reset_view(request):
     """Reset the user's permaculture map back to the bundled Excel layout."""
     garden_map, _ = GardenMap.objects.get_or_create(user=request.user)
     rows, cols, data = _build_default_map_from_excel()
+    if isinstance(data, dict):
+        data["_seed"] = "excel"
     garden_map.rows = rows
     garden_map.cols = cols
     garden_map.data = data
@@ -2758,6 +2764,8 @@ def permaculture_map_import_excel_view(request):
     """
     garden_map, _ = GardenMap.objects.get_or_create(user=request.user)
     rows, cols, data = _build_default_map_from_excel()
+    if isinstance(data, dict):
+        data["_seed"] = "excel"
     garden_map.rows = rows
     garden_map.cols = cols
     garden_map.data = data
@@ -4565,6 +4573,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
