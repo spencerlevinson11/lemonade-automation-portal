@@ -105,6 +105,17 @@
             font-size: 0.55rem;
             min-height: unset;
         }
+
+        .map-cell.diagram .mini-label {
+            font-weight: 700;
+            line-height: 1.05;
+            font-size: 0.6rem;
+            color: rgba(226,232,240,0.95);
+            text-shadow: 0 1px 0 rgba(0,0,0,0.35);
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
         .map-cell {
             border: 1px solid rgba(148, 163, 184, 0.2);
             border-radius: 6px;
@@ -389,10 +400,13 @@
                 </div>
 
                 <div class="plant-search" style="margin-bottom: 8px;">
-                    <input id="rowsInput" type="number" min="4" max="60" value="{{ rows }}" placeholder="Rows">
-                    <input id="colsInput" type="number" min="4" max="60" value="{{ cols }}" placeholder="Cols">
-                    <label style="display:flex; flex-direction:column; gap:4px; font-size:0.82rem; color:var(--text-muted);">Cell size (px)<input id="cellSizeInput" type="number" min="10" max="60" value="18" style="margin-top:4px; width:120px;"></label>
-            <button id="resizeBtn" type="button" style="background: rgba(56,189,248,.12); border:1px solid rgba(56,189,248,.45); color: var(--info); border-radius: 10px; padding: 8px 10px; font-weight: 600; cursor: pointer;">Resize</button>
+                    <input id="rowsInput" type="number" min="4" max="200" value="{{ rows }}" placeholder="Rows">
+                    <input id="colsInput" type="number" min="4" max="200" value="{{ cols }}" placeholder="Cols">
+                    <label style="display:flex; flex-direction:column; gap:4px; font-size:0.82rem; color:var(--text-muted);">Cell size (px)
+                        <input id="cellSizeInput" type="number" min="10" max="60" value="18" style="margin-top:4px; width:120px;">
+                    </label>
+                    <button id="resizeBtn" type="button" style="background: rgba(56,189,248,.12); border:1px solid rgba(56,189,248,.45); color: var(--info); border-radius: 10px; padding: 8px 10px; font-weight: 600; cursor: pointer;">Resize</button>
+                    <a href="{% url 'permaculture_map_reset' %}" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; background: rgba(249,115,115,.10); border:1px solid rgba(249,115,115,.45); color: var(--danger); border-radius: 10px; padding: 8px 10px; font-weight: 600;">Reset to Excel layout</a>
                 </div>
                 <div id="saveStatus" style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 8px;"></div>
 
@@ -487,6 +501,62 @@
 
 
 
+        const BORDER_PX = {
+            thin: 1,
+            medium: 2,
+            thick: 3,
+            double: 3,
+            dashed: 1,
+            dotted: 1,
+        };
+
+        const applyExcelStyles = (cellEl, data) => {
+            // Reset any prior inline styles that may stick around between renders.
+            cellEl.style.backgroundColor = "";
+            cellEl.style.borderLeftWidth = "";
+            cellEl.style.borderRightWidth = "";
+            cellEl.style.borderTopWidth = "";
+            cellEl.style.borderBottomWidth = "";
+            cellEl.style.borderLeftStyle = "";
+            cellEl.style.borderRightStyle = "";
+            cellEl.style.borderTopStyle = "";
+            cellEl.style.borderBottomStyle = "";
+            cellEl.style.borderColor = "";
+
+            if (!data) return;
+
+            if (data.color) {
+                cellEl.style.backgroundColor = data.color;
+            }
+
+            if (data.border && typeof data.border === 'object') {
+                const b = data.border;
+                const setSide = (side, style) => {
+                    if (!style) return;
+                    const px = BORDER_PX[String(style)] || 1;
+                    if (side === 'l') {
+                        cellEl.style.borderLeftWidth = `${px}px`;
+                        cellEl.style.borderLeftStyle = 'solid';
+                    } else if (side === 'r') {
+                        cellEl.style.borderRightWidth = `${px}px`;
+                        cellEl.style.borderRightStyle = 'solid';
+                    } else if (side === 't') {
+                        cellEl.style.borderTopWidth = `${px}px`;
+                        cellEl.style.borderTopStyle = 'solid';
+                    } else if (side === 'b') {
+                        cellEl.style.borderBottomWidth = `${px}px`;
+                        cellEl.style.borderBottomStyle = 'solid';
+                    }
+                };
+                setSide('l', b.l);
+                setSide('r', b.r);
+                setSide('t', b.t);
+                setSide('b', b.b);
+                // Slightly brighter border when Excel borders exist.
+                cellEl.style.borderColor = 'rgba(226,232,240,.45)';
+            }
+        };
+
         const renderCell = (cellEl, r, c) => {
             const key = keyFor(r, c);
             const data = mapData.cells[key];
@@ -497,11 +567,29 @@
             cellEl.className = "map-cell";
             if (kind) cellEl.classList.add(`kind-${kind}`);
 
+            // Apply Excel diagram styling (fill + borders) when present.
+            applyExcelStyles(cellEl, data);
+
+            // In diagram mode we want the grid to look like a map, not a form.
+            if (diagramMode) {
+                const short = (label || '').trim();
+                cellEl.innerHTML = short ? `<div class="mini-label">${short}</div>` : "";
+                // Keep full info on hover.
+                const meta = KIND_META[kind];
+                const header = meta ? `${meta.label}` : (kind || '');
+                const parts = [];
+                if (header) parts.push(header);
+                if (label) parts.push(label);
+                if (notes) parts.push(notes);
+                cellEl.title = parts.join(" — ");
+                return;
+            }
+
             const meta = KIND_META[kind];
             const header = meta ? `${meta.emoji} ${meta.label}` : "";
 
             cellEl.innerHTML = `
-                <strong>${header || `Cell ${r},${c}`}</strong>
+                <strong>${header || ""}</strong>
                 ${label ? `<span>Label: ${label}</span>` : `<span style="color: rgba(148,163,184,.65)">Label: —</span>`}
                 ${notes ? `<span>Notes: ${notes}</span>` : `<span style="color: rgba(148,163,184,.65)">Notes: —</span>`}
             `;
@@ -674,8 +762,8 @@
         saveBtn.addEventListener("click", saveMap);
 
         resizeBtn.addEventListener("click", () => {
-            const newRows = clamp(Number(rowsInput.value) || rows, 4, 60);
-            const newCols = clamp(Number(colsInput.value) || cols, 4, 60);
+            const newRows = clamp(Number(rowsInput.value) || rows, 4, 200);
+            const newCols = clamp(Number(colsInput.value) || cols, 4, 200);
             rows = newRows;
             cols = newCols;
             rowsInput.value = rows;
@@ -794,4 +882,6 @@
     </script>
 </body>
 </html>
+
+
 
