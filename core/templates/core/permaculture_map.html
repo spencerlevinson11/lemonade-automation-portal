@@ -105,7 +105,7 @@
             font-size: 0.55rem;
             min-height: unset;
         }
- {
+        .map-cell {
             border: 1px solid rgba(148, 163, 184, 0.2);
             border-radius: 6px;
             min-height: 52px;
@@ -442,25 +442,28 @@
         const rowsInput = document.getElementById("rowsInput");
         const colsInput = document.getElementById("colsInput");
         const cellSizeInput = document.getElementById("cellSizeInput");
+        const resizeBtn = document.getElementById("resizeBtn");
+
+        const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+        const keyFor = (r, c) => `${r}-${c}`;
+
+        let rows = Number(rowsInput?.value) || 12;
+        let cols = Number(colsInput?.value) || 18;
+        let cellSize = clamp(Number(cellSizeInput?.value) || 18, 10, 60);
+        let diagramMode = (rows > 40 || cols > 40 || cellSize <= 20);
+
         if (cellSizeInput) {
-            cellSize = clamp(Number(cellSizeInput.value) || 18, 10, 60);
             cellSizeInput.addEventListener("change", () => {
                 cellSize = clamp(Number(cellSizeInput.value) || cellSize, 10, 60);
-                // auto diagram mode for larger maps
                 diagramMode = (rows > 40 || cols > 40 || cellSize <= 20);
                 buildGrid();
             });
         }
-        const resizeBtn = document.getElementById("resizeBtn");
 
         const plantList = document.getElementById("plantList");
         const searchInput = document.getElementById("plantSearch");
         const searchBtn = document.getElementById("plantSearchBtn");
 
-        let rows = Number(rowsInput.value) || 12;
-        let cols = Number(colsInput.value) || 18;
-        let cellSize = 18;
-        let diagramMode = false;
         const mapData = (initialMap && typeof initialMap === 'object') ? initialMap : { version: 1, cells: {} };
         if (!mapData.cells) mapData.cells = {};
 
@@ -482,9 +485,7 @@
             return null;
         };
 
-        const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
-        const keyFor = (r, c) => `${r}-${c}`;
 
         const renderCell = (cellEl, r, c) => {
             const key = keyFor(r, c);
