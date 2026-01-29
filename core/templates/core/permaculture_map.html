@@ -360,6 +360,21 @@
                 max-height: none;
             }
         }
+    
+        @media (min-width: 900px) {
+            .map-card {
+                height: calc(100vh - 160px);
+                display: flex;
+                flex-direction: column;
+            }
+            .map-card .map-grid {
+                flex: 1;
+            }
+            .map-grid.diagram {
+                max-height: none;
+            }
+        }
+
     </style>
 </head>
 <body>
@@ -403,9 +418,14 @@
                     <input id="rowsInput" type="number" min="4" max="200" value="{{ rows }}" placeholder="Rows">
                     <input id="colsInput" type="number" min="4" max="200" value="{{ cols }}" placeholder="Cols">
                     <label style="display:flex; flex-direction:column; gap:4px; font-size:0.82rem; color:var(--text-muted);">Cell size (px)
-                        <input id="cellSizeInput" type="number" min="10" max="60" value="18" style="margin-top:4px; width:120px;">
+                        <input id="cellSizeInput" type="number" min="3" max="60" value="18" style="margin-top:4px; width:120px;">
                     </label>
                     <button id="resizeBtn" type="button" style="background: rgba(56,189,248,.12); border:1px solid rgba(56,189,248,.45); color: var(--info); border-radius: 10px; padding: 8px 10px; font-weight: 600; cursor: pointer;">Resize</button>
+                    <button id="fitBtn" type="button" style="background: rgba(250, 204, 21, .12); border:1px solid rgba(250, 204, 21, .35); color: var(--text-main); padding: 10px 14px; border-radius: 12px; font-weight: 700;">Fit to screen</button>
+                    <label style="display:flex; align-items:center; gap:8px; margin-left: 8px; color: var(--text-muted); font-size: .9rem;">
+                        <input id="autoFitToggle" type="checkbox" checked style="accent-color: var(--accent);">
+                        Auto-fit
+                    </label>
                     <a href="{% url 'permaculture_map_reset' %}" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; background: rgba(249,115,115,.10); border:1px solid rgba(249,115,115,.45); color: var(--danger); border-radius: 10px; padding: 8px 10px; font-weight: 600;">Reset to Excel layout</a>
                 </div>
                 <div id="saveStatus" style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 8px;"></div>
@@ -457,13 +477,60 @@
         const colsInput = document.getElementById("colsInput");
         const cellSizeInput = document.getElementById("cellSizeInput");
         const resizeBtn = document.getElementById("resizeBtn");
+        const fitBtn = document.getElementById("fitBtn");
+        const autoFitToggle = document.getElementById("autoFitToggle");
 
         const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
         const keyFor = (r, c) => `${r}-${c}`;
 
+        const computeFitCellSize = () => {
+            // Fit whole grid inside the visible map card area (best effort).
+            // We use the map card's content box to estimate available space.
+            const card = mapGrid?.closest(".map-card");
+            if (!card) return null;
+
+            const cardRect = card.getBoundingClientRect();
+            const gridRect = mapGrid.getBoundingClientRect();
+
+            // Available width: card inner width minus padding
+            const availW = Math.max(0, card.clientWidth - 32);
+            // Available height: from grid top to bottom of card (minus padding)
+            const availH = Math.max(0, cardRect.bottom - gridRect.top - 24);
+
+            if (!availW || !availH || !cols || !rows) return null;
+
+            // Account for grid gaps: (cols-1)*gap and (rows-1)*gap
+            const isDiag = diagramMode;
+            const gap = isDiag ? 1 : 6;
+
+            const cellW = Math.floor((availW - (cols - 1) * gap) / cols);
+            const cellH = Math.floor((availH - (rows - 1) * gap) / rows);
+            const next = Math.max(3, Math.min(cellW, cellH)); // allow very small for big layouts
+            return clamp(next, 3, 60);
+        };
+
+        const applyCellSize = (nextSize) => {
+            if (!nextSize || !Number.isFinite(nextSize)) return;
+            cellSize = clamp(Number(nextSize), 3, 60);
+            if (cellSizeInput) cellSizeInput.value = String(cellSize);
+            buildGrid();
+        };
+
+        const fitToScreen = () => {
+            const next = computeFitCellSize();
+            if (next) applyCellSize(next);
+        };
+
+        let _fitTimer = null;
+        const scheduleFit = () => {
+            if (!autoFitToggle?.checked) return;
+            if (_fitTimer) window.clearTimeout(_fitTimer);
+            _fitTimer = window.setTimeout(() => fitToScreen(), 60);
+        };
+
         let rows = Number(rowsInput?.value) || 12;
         let cols = Number(colsInput?.value) || 18;
-        let cellSize = clamp(Number(cellSizeInput?.value) || 18, 10, 60);
+        let cellSize = clamp(Number(cellSizeInput?.value) || 18, 3, 60);
         let diagramMode = (rows > 40 || cols > 40 || cellSize <= 20);
 
         if (cellSizeInput) {
@@ -773,6 +840,27 @@
             saveStatus.textContent = "Resized (don’t forget to Save)";
         });
 
+
+        if (fitBtn) {
+            fitBtn.addEventListener("click", () => {
+                // Ensure we are in diagram mode for compact rendering when fitting.
+                diagramMode = true;
+                fitToScreen();
+            });
+        }
+
+        if (autoFitToggle) {
+            autoFitToggle.addEventListener("change", () => {
+                if (autoFitToggle.checked) {
+                    // Switch to diagram mode when auto-fitting large layouts.
+                    diagramMode = true;
+                    scheduleFit();
+                }
+            });
+        }
+
+        window.addEventListener("resize", scheduleFit);
+
         // Plant catalog (featured + online search)
         const selectPlant = async (p) => {
             selectedPlant = {
@@ -879,6 +967,11 @@
         // Initial render
         buildGrid();
         renderFeatured();
+        // Best-effort: fit the whole yard onto one screen in diagram mode.
+        if (autoFitToggle?.checked) {
+            diagramMode = true;
+            window.setTimeout(() => fitToScreen(), 0);
+        }
     </script>
 </body>
 </html>
