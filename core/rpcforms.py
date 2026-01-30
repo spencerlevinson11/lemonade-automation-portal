@@ -185,6 +185,15 @@ class RpcOrderForm(forms.Form):
         ),
     )
 
+    b_8_liter_wide_nir_grey = forms.IntegerField(
+        label="8 liter wide NIR grey",
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
+        ),
+    )
+
     b_8_liter_round_ng_bucket = forms.IntegerField(
         label="8 liter round NG bucket",
         required=False,
@@ -210,6 +219,16 @@ class RpcOrderForm(forms.Form):
             attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
         ),
     )
+
+    b_10_liter_wide_nir_grey_2520 = forms.IntegerField(
+        label="10 liter wide NIR grey 2520",
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
+        ),
+    )
+
     b_amalia_white_buckets = forms.IntegerField(
         label="Amalia White Buckets",
         required=False,
@@ -290,3 +309,4 @@ class RpcOrderForm(forms.Form):
             attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
         ),
     )
+
