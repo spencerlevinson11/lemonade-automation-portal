@@ -51,13 +51,15 @@ MASTER_HEADERS: List[Tuple[int, Optional[str]]] = [
     (22, "13 NextGen"),
     (23, "3 liter round"),
     (24, "MAXIMA"),
-    (25, "SUB"),
-    (26, "HOLD"),
-    (27, "Bucket Type"),
-    (28, "Due By"),
-    (29, "Due week"),
-    (30, "Average Transit "),
-    (31, None),
+    (25, "8 liter wide NIR grey"),
+    (26, "10 liter wide NIR grey"),
+    (27, "SUB"),
+    (28, "HOLD"),
+    (29, "Bucket Type"),
+    (30, "Due By"),
+    (31, "Due week"),
+    (32, "Average Transit "),
+    (33, None),
 ]
 
 
@@ -97,7 +99,11 @@ BUCKETTYPE_TO_COLUMN: Dict[str, int] = {
     "Maxima Lids": 24,
     "Maxima Sets": 24,
     # Other
-    "Amalia Buckets": 25,
+    "Amalia Buckets": 27,
+
+    # NIR Grey wide
+    "8 liter wide NIR grey": 25,
+    "10 liter wide NIR grey": 26,
 }
 
 
@@ -321,6 +327,13 @@ def infer_master_bucket_type(rpc_bucket_type: str) -> str:
     if "amalia" in low:
         return "Amalia Buckets"
 
+    # NIR wide grey
+    if "nir" in low and "wide" in low and "grey" in low:
+        if "8" in low:
+            return "8 liter wide NIR grey"
+        if "10" in low:
+            return "10 liter wide NIR grey"
+
     # Next Gen 10
     if "next gen" in low or re.search(r"\bng\b", low):
         if "10" in low:
@@ -515,7 +528,8 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
     # Column widths matter because Excel will show dates as "#####" if the column is too narrow.
     # These match your example "what the cells should look like" workbook.
     ws.column_dimensions["A"].width = 25.28515625   # NLD
-    ws.column_dimensions["AB"].width = 26.28515625  # Due By
+    # Due By is column AD after adding the two NIR-wide bucket columns (Y & Z)
+    ws.column_dimensions["AD"].width = 26.28515625  # Due By
 
     # leave rows 1-2 blank to match your example
     for col_idx, header in MASTER_HEADERS:
@@ -564,27 +578,27 @@ def build_master_format_workbook(rows: Iterable[MasterRow]) -> bytes:
             qty_cell.value = r.quantity
             qty_cell.alignment = Alignment(horizontal="right")
 
-        # HOLD mirrors the quantity
-        hold_cell = ws.cell(rr, 26)
+        # HOLD mirrors the quantity (column AB in your master sheet)
+        hold_cell = ws.cell(rr, 28)
         hold_cell.value = r.quantity
         hold_cell.alignment = Alignment(horizontal="right")
-        bt_cell = ws.cell(rr, 27)
+        bt_cell = ws.cell(rr, 29)
         bt_cell.value = r.bucket_type
         bt_cell.alignment = Alignment(horizontal="right")
-        _apply_bucket_type_style(bt_cell)
+        # Per your note: do NOT color-code the Bucket Type column.
         if r.due_by:
-            due_cell = ws.cell(rr, 28)
+            due_cell = ws.cell(rr, 30)
             due_cell.value = dt.datetime.combine(r.due_by, dt.time.min)
             due_cell.number_format = "d-mmm-yyyy"
             due_cell.alignment = Alignment(horizontal="right")
-        due_week_cell = ws.cell(rr, 29)
+        due_week_cell = ws.cell(rr, 31)
         due_week_cell.value = r.due_week
         due_week_cell.alignment = Alignment(horizontal="right")
 
         # Transit times
         avg_days, fastest_days = get_transit_times(r.city)
-        ws.cell(rr, 30).value = avg_days
-        ws.cell(rr, 31).value = fastest_days
+        ws.cell(rr, 32).value = avg_days
+        ws.cell(rr, 33).value = fastest_days
 
     out = BytesIO()
     wb.save(out)
