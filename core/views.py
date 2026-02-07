@@ -1162,6 +1162,41 @@ def tip_tracker_view(request):
     if request.method == "POST":
         form = TipEntryForm(request.POST)
         if form.is_valid():
+            # -----------------------------------------------------------------
+            # Guardrail: prevent accidental double-submits.
+            #
+            # Sometimes browsers/users will submit the same form twice (double
+            # click, lag, mobile tap, etc.). That would create duplicate rows.
+            #
+            # We store a short-lived fingerprint of the most recent successful
+            # submission in the session. If we see the exact same payload again
+            # within a couple seconds, we treat it as a duplicate and ignore it.
+            # -----------------------------------------------------------------
+            try:
+                import time
+                fp = "|".join(
+                    [
+                        str(form.cleaned_data.get("tip_date")),
+                        str(form.cleaned_data.get("shift_start")),
+                        str(form.cleaned_data.get("shift_end")),
+                        str(form.cleaned_data.get("tips_total")),
+                        str(form.cleaned_data.get("job_type")),
+                        (form.cleaned_data.get("notes", "") or "").strip(),
+                    ]
+                )
+                last = request.session.get("tip_tracker_last_submit") or {}
+                if (
+                    last.get("fp") == fp
+                    and isinstance(last.get("ts"), (int, float))
+                    and (time.time() - float(last.get("ts"))) < 3.0
+                ):
+                    messages.info(request, "That entry was already saved.")
+                    return redirect("tip_tracker")
+                request.session["tip_tracker_last_submit"] = {"fp": fp, "ts": time.time()}
+            except Exception:
+                # Never block saving tips if session storage fails for any reason.
+                pass
+
             TipEntry.objects.create(
                 company=company,
                 user=user,
@@ -1871,7 +1906,12 @@ def tip_tracker_export_excel(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def tip_entry_delete_view(request, entry_id: int):
-    entry = get_object_or_404(TipEntry, id=entry_id)
+    # Be forgiving: if the entry doesn't exist (e.g., stale UI / double-submit race),
+    # don't throw a 404 page — just return the user to the tracker with a message.
+    entry = TipEntry.objects.filter(id=entry_id).first()
+    if not entry:
+        messages.info(request, "That tip entry no longer exists.")
+        return redirect("tip_tracker")
 
     # Permission check: owner of company (or superuser), and must match user+company
     if not (
@@ -4625,6 +4665,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
