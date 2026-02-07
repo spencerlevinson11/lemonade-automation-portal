@@ -196,7 +196,7 @@
 
     <div class="card">
       <h2 style="margin:0 0 10px;">Add tonight’s tips</h2>
-      <form method="post">
+      <form method="post" id="addTipForm">
         {% csrf_token %}
         <div class="row">
           <div class="field">
@@ -235,9 +235,23 @@
         </div>
 
         <div style="margin-top: 14px;">
-          <button class="btn" type="submit">Save entry</button>
+          <button class="btn" type="submit" id="saveTipBtn">Save entry</button>
         </div>
       </form>
+
+      <script>
+        (function(){
+          // Prevent accidental double-submits on the add-entry form.
+          const f = document.getElementById('addTipForm');
+          const b = document.getElementById('saveTipBtn');
+          if(!f || !b) return;
+          f.addEventListener('submit', function(){
+            b.disabled = true;
+            b.style.opacity = '0.65';
+            b.textContent = 'Saving…';
+          });
+        })();
+      </script>
     </div>
 
     <div class="grid">
@@ -567,6 +581,7 @@
   </div>
 </body>
 </html>
+
 
 
 
