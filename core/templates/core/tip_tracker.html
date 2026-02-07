@@ -259,6 +259,100 @@
           </div>
         </div>
 
+
+        <!-- Deposit / Piggy bank (does NOT affect analytics) -->
+        <div style="margin: 10px 0 14px; padding: 12px 14px; border: 1px solid rgba(148,163,184,0.20); background: rgba(2,6,23,0.25); border-radius: 14px;">
+          <div style="display:flex; justify-content:space-between; gap:14px; align-items:center; flex-wrap:wrap;">
+            <div>
+              <div style="color: var(--text-muted); font-size: 0.78rem; letter-spacing: .08em; text-transform: uppercase;">Tips since last deposit</div>
+              <div style="font-size: 1.6rem; font-weight: 900; line-height: 1.1; margin-top: 4px;">
+                ${{ tips_since_last_deposit|floatformat:2 }}
+              </div>
+              <div class="muted" style="font-size: 0.85rem; margin-top: 4px;">
+                Banked all-time: <strong style="color: var(--accent)">${{ all_time_deposited|floatformat:2 }}</strong>
+                {% if last_deposit_at %}
+                  · Last deposit: {{ last_deposit_at|date:"M j, Y g:ia" }}
+                {% endif %}
+              </div>
+            </div>
+
+            <form method="post" id="depositForm" style="margin:0;">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="deposit_tips">
+              <button type="submit" class="btn" id="piggyBtn" style="width:auto; position:relative; overflow:hidden;">
+                <span id="piggyIcon" style="font-size: 1.15rem; margin-right: 8px;">🐷</span>
+                Deposit tips
+              </button>
+            </form>
+          </div>
+          <div class="muted" style="font-size:0.82rem; margin-top:10px;">
+            This resets “tips since last deposit” to $0 without changing your saved tip entries or analytics.
+          </div>
+        </div>
+
+        <style>
+          /* Piggy "explode" micro-interaction */
+          #piggyBtn.exploding { transform: translateZ(0); }
+          #piggyIcon.boom { animation: piggyBoom 520ms ease-out forwards; }
+          @keyframes piggyBoom {
+            0% { transform: scale(1) rotate(0deg); filter: none; opacity: 1; }
+            40% { transform: scale(1.55) rotate(12deg); filter: drop-shadow(0 0 16px rgba(250,204,21,0.55)); }
+            100% { transform: scale(0.1) rotate(-18deg); opacity: 0; }
+          }
+          .spark {
+            position:absolute;
+            width: 8px; height: 8px;
+            border-radius: 999px;
+            background: rgba(250,204,21,0.95);
+            pointer-events:none;
+            animation: sparkFly 650ms ease-out forwards;
+          }
+          @keyframes sparkFly {
+            0% { transform: translate(0,0) scale(1); opacity: 1; }
+            100% { transform: translate(var(--dx), var(--dy)) scale(0.1); opacity: 0; }
+          }
+        </style>
+
+        <script>
+          (function(){
+            const form = document.getElementById('depositForm');
+            const btn  = document.getElementById('piggyBtn');
+            const icon = document.getElementById('piggyIcon');
+            if(!form || !btn || !icon) return;
+
+            form.addEventListener('submit', function(e){
+              // If there is nothing to deposit, let server message handle it.
+              // Otherwise play animation and then submit.
+              const amount = Number('{{ tips_since_last_deposit|floatformat:2 }}'.replace(/,/g,''));
+              if (!isFinite(amount) || amount <= 0) return;
+
+              e.preventDefault();
+
+              btn.classList.add('exploding');
+              icon.classList.add('boom');
+
+              // sparks
+              const N = 16;
+              const rect = btn.getBoundingClientRect();
+              for(let i=0;i<N;i++){
+                const s = document.createElement('span');
+                s.className = 'spark';
+                const angle = (Math.PI * 2) * (i / N);
+                const radius = 40 + Math.random()*30;
+                s.style.left = (rect.width/2 - 4) + 'px';
+                s.style.top  = (rect.height/2 - 4) + 'px';
+                s.style.setProperty('--dx', (Math.cos(angle)*radius) + 'px');
+                s.style.setProperty('--dy', (Math.sin(angle)*radius) + 'px');
+                btn.appendChild(s);
+                setTimeout(()=>s.remove(), 700);
+              }
+
+              // submit after animation
+              setTimeout(()=> form.submit(), 560);
+            });
+          })();
+        </script>
+
         {% if entries %}
           <div class="scroll-x">
             <table>
@@ -426,6 +520,11 @@
   </div>
 </body>
 </html>
+
+
+
+
+
 
 
 
