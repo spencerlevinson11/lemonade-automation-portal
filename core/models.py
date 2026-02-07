@@ -158,6 +158,16 @@ class TipEntry(models.Model):
         minutes = end_minutes - start_minutes
         return round(minutes / 60.0, 2)
 
+    def tips_per_hour(self) -> float:
+        """Return tips per hour for this entry.
+
+        Analytics uses this helper. It does not affect stored data.
+        """
+        hours = float(self.shift_duration_hours() or 0)
+        if hours <= 0:
+            return 0.0
+        return float(self.tips_total) / hours
+
 
 class TipDeposit(models.Model):
     """A "banking" event for the Tip Tracker.
@@ -639,6 +649,9 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
+
 
 
 
