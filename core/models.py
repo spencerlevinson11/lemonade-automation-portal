@@ -158,11 +158,40 @@ class TipEntry(models.Model):
         minutes = end_minutes - start_minutes
         return round(minutes / 60.0, 2)
 
-    def tips_per_hour(self) -> float:
-        hrs = self.shift_duration_hours()
-        if hrs <= 0:
-            return 0.0
-        return float(self.tips_total) / hrs
+
+class TipDeposit(models.Model):
+    """A "banking" event for the Tip Tracker.
+
+    This lets the user click "deposit" to move tips earned since the last deposit
+    into an all-time banked total, while leaving raw tip entries intact.
+    Analytics/metrics are computed from TipEntry and are therefore unaffected.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="tip_deposits",
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="tip_deposits",
+    )
+
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=0,
+    )
+
+    deposited_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-deposited_at"]
+
+    def __str__(self) -> str:
+        return f"{self.user.username} {self.deposited_at:%Y-%m-%d} ${self.amount}"
 
 
 class PricingQuoteLine(models.Model):
@@ -610,6 +639,9 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
+
 
 
 
