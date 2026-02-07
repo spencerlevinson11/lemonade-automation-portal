@@ -27,7 +27,7 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
-from django.db.models import Sum, Q
+from django.db.models import Sum, Q, Max
 from django.http import FileResponse, HttpResponseForbidden
 from django.http import Http404
 from django.http import JsonResponse
@@ -60,6 +60,7 @@ from .models import (
     PricingCustomer,
     PricingQuoteLine,
     TipEntry,
+    TipDeposit,
     ProjectPlanEntry,
     ScheduleActivity,
     ScheduleGlobalNote,
@@ -1117,6 +1118,7 @@ def tip_tracker_view(request):
     # Two different POSTs hit this route:
     #   1) Add a new entry (main form)
     #   2) Inline edit of a prior entry's tips_total
+    #   3) "Deposit" tips since last deposit (piggy bank)
     if request.method == "POST" and request.POST.get("action") == "update_tip":
         entry_id = request.POST.get("entry_id")
         tips_raw = (request.POST.get("tips_total") or "").strip()
@@ -1131,6 +1133,30 @@ def tip_tracker_view(request):
 
         entry.save(update_fields=["tips_total"])
         messages.success(request, "Tip amount updated.")
+        return redirect("tip_tracker")
+
+    if request.method == "POST" and request.POST.get("action") == "deposit_tips":
+        # Compute "tips since last deposit" using TipDeposit timestamps.
+        last_deposit = (
+            TipDeposit.objects
+            .filter(company=company, user=user)
+            .order_by("-deposited_at")
+            .first()
+        )
+        last_deposit_at = last_deposit.deposited_at if last_deposit else None
+
+        since_qs = TipEntry.objects.filter(company=company, user=user)
+        if last_deposit_at:
+            since_qs = since_qs.filter(created_at__gt=last_deposit_at)
+
+        tips_since = (since_qs.aggregate(total=Sum("tips_total")).get("total")) or Decimal("0")
+
+        if tips_since <= 0:
+            messages.info(request, "No tips to deposit yet.")
+            return redirect("tip_tracker")
+
+        TipDeposit.objects.create(company=company, user=user, amount=tips_since)
+        messages.success(request, f"Deposited ${tips_since:.2f} 🎉")
         return redirect("tip_tracker")
 
     if request.method == "POST":
@@ -1158,6 +1184,29 @@ def tip_tracker_view(request):
     )
 
     all_time_qs = TipEntry.objects.filter(company=company, user=user)
+
+    # Deposit state (does NOT affect analytics)
+    last_deposit_at = (
+        TipDeposit.objects
+        .filter(company=company, user=user)
+        .aggregate(last=Max("deposited_at"))
+        .get("last")
+    )
+
+    qs_since = all_time_qs
+    if last_deposit_at:
+        qs_since = qs_since.filter(created_at__gt=last_deposit_at)
+
+    tips_since_last_deposit = (
+        qs_since.aggregate(total=Sum("tips_total")).get("total")
+    ) or Decimal("0")
+
+    all_time_deposited = (
+        TipDeposit.objects
+        .filter(company=company, user=user)
+        .aggregate(total=Sum("amount"))
+        .get("total")
+    ) or Decimal("0")
 
     grand_total_tips = (
         all_time_qs.aggregate(total=Sum("tips_total")).get("total")
@@ -1501,6 +1550,9 @@ def tip_tracker_view(request):
         "form": form,
         "entries": entries,
         "grand_total_tips": grand_total_tips,
+        "tips_since_last_deposit": tips_since_last_deposit,
+        "all_time_deposited": all_time_deposited,
+        "last_deposit_at": last_deposit_at,
         "avg_tips_per_hour_all_time": avg_tips_per_hour_all_time,
         "weekday_table_html": weekday_table_html,
         "start_hour_table_html": start_hour_table_html,
@@ -4573,10 +4625,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
-
-
 
 
 
