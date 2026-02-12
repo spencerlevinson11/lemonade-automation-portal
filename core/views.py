@@ -829,76 +829,70 @@ def _append_to_master_list(rows: list[dict]):
         if name and name not in headers2:
             bucket_cols[name] = c
 
-    # Next rows: insert ABOVE footer/summary section if present
-    rows_to_write = []
-    for rec in rows:
-        customer = rec.get("customer") or ""
-        bucket_type = rec.get("bucket_type") or ""
-        qty = _safe_float(rec.get("quantity"))
-        if not customer or not bucket_type:
-            continue
-        if abs(qty) < 1e-9:
-            continue
-        rows_to_write.append((customer, bucket_type, float(qty)))
-
-    if not rows_to_write:
-        return
-
-    # Many of your Master List sheets end with a summary/footer section (e.g. "% Ordered:")
-    # We want projections to appear *above* that footer so they're visible in the main table.
-    footer_row = None
-    cust_scan_col = c_cust2 or 7
-    for r in range(header_row2 + 1, (ws2.max_row or 1) + 1):
-        v = ws2.cell(r, cust_scan_col).value
-        if isinstance(v, str) and v.strip().lower().startswith("% ordered"):
-            footer_row = r
-            break
-
+    # Next row (trim trailing empties)
     def row_has_data2(r: int) -> bool:
         for cc in (c_nld2, c_cust2, c_bucket_type2):
-            if not cc:
-                continue
             v = ws2.cell(r, cc).value
             if v is not None and str(v).strip() != "":
                 return True
         return False
 
-    if footer_row:
-        # Make room above footer and write there
-        ws2.insert_rows(footer_row, amount=len(rows_to_write))
-        next_row2 = footer_row
-    else:
-        # Append to end of data region (trim trailing empties)
-        last2 = ws2.max_row
-        while last2 > header_row2 and not row_has_data2(last2):
-            last2 -= 1
-        next_row2 = max(last2 + 1, header_row2 + 1)
+    last2 = ws2.max_row
+    while last2 > header_row2 and not row_has_data2(last2):
+        last2 -= 1
+    next_row2 = max(last2 + 1, header_row2 + 1)
+    # If the Master List has a footer (e.g. a '% Ordered' summary row),
+    # insert new projection rows ABOVE that footer so they're visible.
+    footer_row = None
+    if c_cust2:
+        for r in range(header_row2 + 1, (ws2.max_row or 1) + 1):
+            v = ws2.cell(r, c_cust2).value
+            if v is not None and "% Ordered" in str(v):
+                footer_row = r
+                break
+
+    insert_at = footer_row if footer_row else next_row2
+
 
     highlight_fill2 = PatternFill("solid", fgColor="FFF2CC")
     italic_font2 = Font(italic=True, color="000000")
 
-    for customer, bucket_type, qty in rows_to_write:
-        # Match the style already present in the prognosis: put the label in NLD.
-        ws2.cell(next_row2, c_nld2).value = customer.upper()
-        if c_rpc2:
-            ws2.cell(next_row2, c_rpc2).value = "PROJECTION"
-        if c_city2:
-            ws2.cell(next_row2, c_city2).value = ""
-        if c_cust2:
-            ws2.cell(next_row2, c_cust2).value = customer.replace(" Projection", "").strip()
+    for rec in rows:
+        customer = rec.get("customer") or ""
+        bucket_type = rec.get("bucket_type") or ""
+        qty = _safe_float(rec.get("quantity"))
 
-        ws2.cell(next_row2, c_bucket_type2).value = bucket_type
+        if not customer or not bucket_type:
+            continue
+        if abs(qty) < 1e-9:
+            continue
+
+
+        # If we detected a footer, keep inserting rows above it.
+        if footer_row:
+            ws2.insert_rows(insert_at, amount=1)
+
+        # Match the style already present in the prognosis: put the label in NLD.
+        ws2.cell(insert_at, c_nld2).value = customer.upper()
+        if c_rpc2:
+            ws2.cell(insert_at, c_rpc2).value = "PROJECTION"
+        if c_city2:
+            ws2.cell(insert_at, c_city2).value = ""
+        if c_cust2:
+            ws2.cell(insert_at, c_cust2).value = customer.replace(" Projection", "").strip()
+
+        ws2.cell(insert_at, c_bucket_type2).value = bucket_type
 
         # Write the delta into the matching bucket column
         if bucket_type in bucket_cols:
-            ws2.cell(next_row2, bucket_cols[bucket_type]).value = float(qty)
+            ws2.cell(insert_at, bucket_cols[bucket_type]).value = float(qty)
 
         # SUB helps with quick scanning
         if c_sub2:
-            ws2.cell(next_row2, c_sub2).value = float(qty)
+            ws2.cell(insert_at, c_sub2).value = float(qty)
 
         if c_hold2:
-            ws2.cell(next_row2, c_hold2).value = 0
+            ws2.cell(insert_at, c_hold2).value = 0
 
         cols_to_style = {c_nld2, c_bucket_type2}
         if c_rpc2: cols_to_style.add(c_rpc2)
@@ -909,14 +903,17 @@ def _append_to_master_list(rows: list[dict]):
         if bucket_type in bucket_cols: cols_to_style.add(bucket_cols[bucket_type])
 
         for cc in cols_to_style:
-            cell = ws2.cell(next_row2, cc)
+            cell = ws2.cell(insert_at, cc)
             cell.fill = highlight_fill2
             cell.font = italic_font2
 
-        next_row2 += 1
+        insert_at += 1
+        if footer_row:
+            footer_row += 1
 
-_append_to_master_list(customer_rows)
-_append_to_master_list(general_rows)
+
+    _append_to_master_list(customer_rows)
+    _append_to_master_list(general_rows)
 
     wb.save(out_path)
 
