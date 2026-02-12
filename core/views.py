@@ -781,17 +781,16 @@ def _append_projection_rows_to_clean_data(
 # Also append projection rows to "Master List" (the main prognosis table)
 # so added line items are visible directly in the generated prognosis.
 # -----------------------------
-def _append_to_master_list(rows: list[dict]):
-    target_name = "Master List"
-    if target_name not in wb.sheetnames:
+def _append_to_master_list(ws2, rows: list[dict]):
+    # If sheet doesn't exist, just skip (some templates may omit it)
+    if ws2 is None:
         return
-    ws2 = wb[target_name]
 
     # Find the header row by locating "Bucket Type"
     header_row2 = None
     bucket_type_col = None
-    scan_rows2 = min(ws2.max_row or 1, 35)
-    scan_cols2 = min(ws2.max_column or 1, 200)
+    scan_rows2 = min(ws2.max_row or 1, 40)
+    scan_cols2 = min(ws2.max_column or 1, 250)
 
     def _norm(v):
         return str(v).strip() if v is not None else ""
@@ -804,10 +803,10 @@ def _append_to_master_list(rows: list[dict]):
                 break
         if header_row2:
             break
-    if not header_row2:
+    if not header_row2 or not bucket_type_col:
         return
 
-    # Map headers
+    # Map headers on that row
     headers2 = {}
     for c in range(1, scan_cols2 + 1):
         v = _norm(ws2.cell(header_row2, c).value)
@@ -822,27 +821,15 @@ def _append_to_master_list(rows: list[dict]):
     c_hold2 = headers2.get("HOLD", None)
     c_bucket_type2 = bucket_type_col
 
-    # Bucket columns: header cells that match bucket names
+    # Bucket columns: any header that's not one of the known meta headers
+    meta_headers = set(headers2.keys())
     bucket_cols = {}
     for c in range(1, scan_cols2 + 1):
         name = _norm(ws2.cell(header_row2, c).value)
-        if name and name not in headers2:
+        if name and name not in meta_headers:
             bucket_cols[name] = c
 
-    # Next row (trim trailing empties)
-    def row_has_data2(r: int) -> bool:
-        for cc in (c_nld2, c_cust2, c_bucket_type2):
-            v = ws2.cell(r, cc).value
-            if v is not None and str(v).strip() != "":
-                return True
-        return False
-
-    last2 = ws2.max_row
-    while last2 > header_row2 and not row_has_data2(last2):
-        last2 -= 1
-    next_row2 = max(last2 + 1, header_row2 + 1)
-    # If the Master List has a footer (e.g. a '% Ordered' summary row),
-    # insert new projection rows ABOVE that footer so they're visible.
+    # Detect footer start (e.g. '% Ordered') so inserts go ABOVE it
     footer_row = None
     if c_cust2:
         for r in range(header_row2 + 1, (ws2.max_row or 1) + 1):
@@ -851,29 +838,26 @@ def _append_to_master_list(rows: list[dict]):
                 footer_row = r
                 break
 
-    insert_at = footer_row if footer_row else next_row2
-
+    insert_at = footer_row if footer_row else (ws2.max_row + 1)
 
     highlight_fill2 = PatternFill("solid", fgColor="FFF2CC")
     italic_font2 = Font(italic=True, color="000000")
 
     for rec in rows:
-        customer = rec.get("customer") or ""
-        bucket_type = rec.get("bucket_type") or ""
+        customer = (rec.get("customer") or "").strip()
+        bucket_type = (rec.get("bucket_type") or "").strip()
         qty = _safe_float(rec.get("quantity"))
 
-        if not customer or not bucket_type:
-            continue
-        if abs(qty) < 1e-9:
+        if not customer or not bucket_type or abs(qty) < 1e-9:
             continue
 
-
-        # If we detected a footer, keep inserting rows above it.
+        # Keep inserting above footer if present
         if footer_row:
             ws2.insert_rows(insert_at, amount=1)
 
-        # Match the style already present in the prognosis: put the label in NLD.
+        # Match existing style: put label in NLD
         ws2.cell(insert_at, c_nld2).value = customer.upper()
+
         if c_rpc2:
             ws2.cell(insert_at, c_rpc2).value = "PROJECTION"
         if c_city2:
@@ -883,11 +867,10 @@ def _append_to_master_list(rows: list[dict]):
 
         ws2.cell(insert_at, c_bucket_type2).value = bucket_type
 
-        # Write the delta into the matching bucket column
+        # Write delta into bucket column if it exists, else fallback to SUB only
         if bucket_type in bucket_cols:
             ws2.cell(insert_at, bucket_cols[bucket_type]).value = float(qty)
 
-        # SUB helps with quick scanning
         if c_sub2:
             ws2.cell(insert_at, c_sub2).value = float(qty)
 
@@ -895,12 +878,18 @@ def _append_to_master_list(rows: list[dict]):
             ws2.cell(insert_at, c_hold2).value = 0
 
         cols_to_style = {c_nld2, c_bucket_type2}
-        if c_rpc2: cols_to_style.add(c_rpc2)
-        if c_city2: cols_to_style.add(c_city2)
-        if c_cust2: cols_to_style.add(c_cust2)
-        if c_sub2: cols_to_style.add(c_sub2)
-        if c_hold2: cols_to_style.add(c_hold2)
-        if bucket_type in bucket_cols: cols_to_style.add(bucket_cols[bucket_type])
+        if c_rpc2:
+            cols_to_style.add(c_rpc2)
+        if c_city2:
+            cols_to_style.add(c_city2)
+        if c_cust2:
+            cols_to_style.add(c_cust2)
+        if c_sub2:
+            cols_to_style.add(c_sub2)
+        if c_hold2:
+            cols_to_style.add(c_hold2)
+        if bucket_type in bucket_cols:
+            cols_to_style.add(bucket_cols[bucket_type])
 
         for cc in cols_to_style:
             cell = ws2.cell(insert_at, cc)
@@ -911,11 +900,13 @@ def _append_to_master_list(rows: list[dict]):
         if footer_row:
             footer_row += 1
 
+# Append to Master List if present
+ws_master = wb["Master List"] if "Master List" in wb.sheetnames else None
+_append_to_master_list(ws_master, customer_rows)
+_append_to_master_list(ws_master, general_rows)
 
-    _append_to_master_list(customer_rows)
-    _append_to_master_list(general_rows)
-
-    wb.save(out_path)
+# Finally, save the adjusted workbook
+wb.save(out_path)
 
 
 def _generate_adjusted_prognosis_from_current_session(
@@ -4934,6 +4925,8 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
 
 
 
