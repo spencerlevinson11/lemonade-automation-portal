@@ -777,124 +777,124 @@ def _append_projection_rows_to_clean_data(
         next_row += 1
 
 
-# -----------------------------
-# Also append projection rows to "Master List" (the main prognosis table)
-# so added line items are visible directly in the generated prognosis.
-# -----------------------------
-def _append_to_master_list(rows: list[dict]):
-    target_name = "Master List"
-    if target_name not in wb.sheetnames:
-        return
-    ws2 = wb[target_name]
-
-    # Find the header row by locating "Bucket Type"
-    header_row2 = None
-    bucket_type_col = None
-    scan_rows2 = min(ws2.max_row or 1, 35)
-    scan_cols2 = min(ws2.max_column or 1, 200)
-
-    def _norm(v):
-        return str(v).strip() if v is not None else ""
-
-    for r in range(1, scan_rows2 + 1):
-        for c in range(1, scan_cols2 + 1):
-            if _norm(ws2.cell(r, c).value) == "Bucket Type":
-                header_row2 = r
-                bucket_type_col = c
+    # -----------------------------
+    # Also append projection rows to "Master List" (the main prognosis table)
+    # so added line items are visible directly in the generated prognosis.
+    # -----------------------------
+    def _append_to_master_list(rows: list[dict]):
+        target_name = "Master List"
+        if target_name not in wb.sheetnames:
+            return
+        ws2 = wb[target_name]
+    
+        # Find the header row by locating "Bucket Type"
+        header_row2 = None
+        bucket_type_col = None
+        scan_rows2 = min(ws2.max_row or 1, 35)
+        scan_cols2 = min(ws2.max_column or 1, 200)
+    
+        def _norm(v):
+            return str(v).strip() if v is not None else ""
+    
+        for r in range(1, scan_rows2 + 1):
+            for c in range(1, scan_cols2 + 1):
+                if _norm(ws2.cell(r, c).value) == "Bucket Type":
+                    header_row2 = r
+                    bucket_type_col = c
+                    break
+            if header_row2:
                 break
-        if header_row2:
-            break
-    if not header_row2:
-        return
-
-    # Map headers
-    headers2 = {}
-    for c in range(1, scan_cols2 + 1):
-        v = _norm(ws2.cell(header_row2, c).value)
-        if v:
-            headers2[v] = c
-
-    c_nld2 = headers2.get("NLD", 1)
-    c_rpc2 = headers2.get("RPC#", headers2.get("RPC", None))
-    c_city2 = headers2.get("City", headers2.get("CITY", None))
-    c_cust2 = headers2.get("Customer", headers2.get("CUSTOMER", None))
-    c_sub2 = headers2.get("SUB", None)
-    c_hold2 = headers2.get("HOLD", None)
-    c_bucket_type2 = bucket_type_col
-
-    # Bucket columns: header cells that match bucket names
-    bucket_cols = {}
-    for c in range(1, scan_cols2 + 1):
-        name = _norm(ws2.cell(header_row2, c).value)
-        if name and name not in headers2:
-            bucket_cols[name] = c
-
-    # Next row (trim trailing empties)
-    def row_has_data2(r: int) -> bool:
-        for cc in (c_nld2, c_cust2, c_bucket_type2):
-            v = ws2.cell(r, cc).value
-            if v is not None and str(v).strip() != "":
-                return True
-        return False
-
-    last2 = ws2.max_row
-    while last2 > header_row2 and not row_has_data2(last2):
-        last2 -= 1
-    next_row2 = max(last2 + 1, header_row2 + 1)
-
-    highlight_fill2 = PatternFill("solid", fgColor="FFF2CC")
-    italic_font2 = Font(italic=True, color="000000")
-
-    for rec in rows:
-        customer = rec.get("customer") or ""
-        bucket_type = rec.get("bucket_type") or ""
-        qty = _safe_float(rec.get("quantity"))
-
-        if not customer or not bucket_type:
-            continue
-        if abs(qty) < 1e-9:
-            continue
-
-        # Match the style already present in the prognosis: put the label in NLD.
-        ws2.cell(next_row2, c_nld2).value = customer.upper()
-        if c_rpc2:
-            ws2.cell(next_row2, c_rpc2).value = "PROJECTION"
-        if c_city2:
-            ws2.cell(next_row2, c_city2).value = ""
-        if c_cust2:
-            ws2.cell(next_row2, c_cust2).value = customer.replace(" Projection", "").strip()
-
-        ws2.cell(next_row2, c_bucket_type2).value = bucket_type
-
-        # Write the delta into the matching bucket column
-        if bucket_type in bucket_cols:
-            ws2.cell(next_row2, bucket_cols[bucket_type]).value = float(qty)
-
-        # SUB helps with quick scanning
-        if c_sub2:
-            ws2.cell(next_row2, c_sub2).value = float(qty)
-
-        if c_hold2:
-            ws2.cell(next_row2, c_hold2).value = 0
-
-        cols_to_style = {c_nld2, c_bucket_type2}
-        if c_rpc2: cols_to_style.add(c_rpc2)
-        if c_city2: cols_to_style.add(c_city2)
-        if c_cust2: cols_to_style.add(c_cust2)
-        if c_sub2: cols_to_style.add(c_sub2)
-        if c_hold2: cols_to_style.add(c_hold2)
-        if bucket_type in bucket_cols: cols_to_style.add(bucket_cols[bucket_type])
-
-        for cc in cols_to_style:
-            cell = ws2.cell(next_row2, cc)
-            cell.fill = highlight_fill2
-            cell.font = italic_font2
-
-        next_row2 += 1
-
-_append_to_master_list(customer_rows)
-_append_to_master_list(general_rows)
-
+        if not header_row2:
+            return
+    
+        # Map headers
+        headers2 = {}
+        for c in range(1, scan_cols2 + 1):
+            v = _norm(ws2.cell(header_row2, c).value)
+            if v:
+                headers2[v] = c
+    
+        c_nld2 = headers2.get("NLD", 1)
+        c_rpc2 = headers2.get("RPC#", headers2.get("RPC", None))
+        c_city2 = headers2.get("City", headers2.get("CITY", None))
+        c_cust2 = headers2.get("Customer", headers2.get("CUSTOMER", None))
+        c_sub2 = headers2.get("SUB", None)
+        c_hold2 = headers2.get("HOLD", None)
+        c_bucket_type2 = bucket_type_col
+    
+        # Bucket columns: header cells that match bucket names
+        bucket_cols = {}
+        for c in range(1, scan_cols2 + 1):
+            name = _norm(ws2.cell(header_row2, c).value)
+            if name and name not in headers2:
+                bucket_cols[name] = c
+    
+        # Next row (trim trailing empties)
+        def row_has_data2(r: int) -> bool:
+            for cc in (c_nld2, c_cust2, c_bucket_type2):
+                v = ws2.cell(r, cc).value
+                if v is not None and str(v).strip() != "":
+                    return True
+            return False
+    
+        last2 = ws2.max_row
+        while last2 > header_row2 and not row_has_data2(last2):
+            last2 -= 1
+        next_row2 = max(last2 + 1, header_row2 + 1)
+    
+        highlight_fill2 = PatternFill("solid", fgColor="FFF2CC")
+        italic_font2 = Font(italic=True, color="000000")
+    
+        for rec in rows:
+            customer = rec.get("customer") or ""
+            bucket_type = rec.get("bucket_type") or ""
+            qty = _safe_float(rec.get("quantity"))
+    
+            if not customer or not bucket_type:
+                continue
+            if abs(qty) < 1e-9:
+                continue
+    
+            # Match the style already present in the prognosis: put the label in NLD.
+            ws2.cell(next_row2, c_nld2).value = customer.upper()
+            if c_rpc2:
+                ws2.cell(next_row2, c_rpc2).value = "PROJECTION"
+            if c_city2:
+                ws2.cell(next_row2, c_city2).value = ""
+            if c_cust2:
+                ws2.cell(next_row2, c_cust2).value = customer.replace(" Projection", "").strip()
+    
+            ws2.cell(next_row2, c_bucket_type2).value = bucket_type
+    
+            # Write the delta into the matching bucket column
+            if bucket_type in bucket_cols:
+                ws2.cell(next_row2, bucket_cols[bucket_type]).value = float(qty)
+    
+            # SUB helps with quick scanning
+            if c_sub2:
+                ws2.cell(next_row2, c_sub2).value = float(qty)
+    
+            if c_hold2:
+                ws2.cell(next_row2, c_hold2).value = 0
+    
+            cols_to_style = {c_nld2, c_bucket_type2}
+            if c_rpc2: cols_to_style.add(c_rpc2)
+            if c_city2: cols_to_style.add(c_city2)
+            if c_cust2: cols_to_style.add(c_cust2)
+            if c_sub2: cols_to_style.add(c_sub2)
+            if c_hold2: cols_to_style.add(c_hold2)
+            if bucket_type in bucket_cols: cols_to_style.add(bucket_cols[bucket_type])
+    
+            for cc in cols_to_style:
+                cell = ws2.cell(next_row2, cc)
+                cell.fill = highlight_fill2
+                cell.font = italic_font2
+    
+            next_row2 += 1
+    
+    _append_to_master_list(customer_rows)
+    _append_to_master_list(general_rows)
+    
     wb.save(out_path)
 
 
@@ -4914,8 +4914,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
 
 
 
