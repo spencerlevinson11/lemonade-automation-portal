@@ -779,17 +779,27 @@ def _append_projection_rows_to_clean_data(
 
 
     # -----------------------------
-    # Also append projection rows to "Master List" (the main prognosis table)
-    # so added line items are visible directly in the generated prognosis.
+    # Also append projection rows to "Master List".
+    #
+    # Spencer's "Master List" is a month-grouped table where bucket types are
+    # separate columns (there is *no* "Bucket Type" column). Earlier versions
+    # of this function tried to find a "Bucket Type" header and silently
+    # skipped Master List updates.
+    #
+    # We now:
+    #   1) detect the bucket columns from the main header row
+    #   2) locate the subtotal row for the target month (it contains SUM formulas)
+    #   3) insert one highlighted row per adjustment *inside that month block*
+    #      so it visibly appears under (e.g.) Feb 2026.
+    #   4) expand the month subtotal formulas to include the newly inserted rows.
     # -----------------------------
     def _append_to_master_list(ws2, rows: list[dict]):
-        # If sheet doesn't exist, just skip (some templates may omit it)
-        if ws2 is None:
+        if ws2 is None or not rows:
             return
 
-        # Find the header row by locating "Bucket Type"
+        # Header row: in this workbook it's row 3 (where column A is "NLD" and
+        # bucket columns start at I), but we still detect it robustly.
         header_row2 = None
-        bucket_type_col = None
         scan_rows2 = min(ws2.max_row or 1, 40)
         scan_cols2 = min(ws2.max_column or 1, 250)
 
@@ -797,111 +807,145 @@ def _append_projection_rows_to_clean_data(
             return str(v).strip() if v is not None else ""
 
         for r in range(1, scan_rows2 + 1):
-            for c in range(1, scan_cols2 + 1):
-                if _norm(ws2.cell(r, c).value) == "Bucket Type":
-                    header_row2 = r
-                    bucket_type_col = c
-                    break
-            if header_row2:
+            if _norm(ws2.cell(r, 1).value) == "NLD" and _norm(ws2.cell(r, 2).value) in {"Week #", "Week"}:
+                header_row2 = r
                 break
-        if not header_row2 or not bucket_type_col:
+        if not header_row2:
             return
 
-        # Map headers on that row
-        headers2 = {}
-        for c in range(1, scan_cols2 + 1):
-            v = _norm(ws2.cell(header_row2, c).value)
-            if v:
-                headers2[v] = c
+        # Column map (fixed meta columns)
+        col_nld = 1
+        col_week = 2
+        col_rpc = 5  # RPC#
+        col_city = 6
+        col_customer = 7
 
-        c_nld2 = headers2.get("NLD", 1)
-        c_rpc2 = headers2.get("RPC#", headers2.get("RPC", None))
-        c_city2 = headers2.get("City", headers2.get("CITY", None))
-        c_cust2 = headers2.get("Customer", headers2.get("CUSTOMER", None))
-        c_sub2 = headers2.get("SUB", None)
-        c_hold2 = headers2.get("HOLD", None)
-        c_bucket_type2 = bucket_type_col
+        # Bucket columns are any non-empty header from column 8 onward on the header row,
+        # excluding obvious meta headers.
+        meta_names = {
+            "NLD",
+            "Week #",
+            "Week",
+            "Departure Date",
+            "Client PO#",
+            "RPC#",
+            "City",
+            "Customer",
+            "CLASSIC HQ",
+            "CLASSIC",
+            "NextGen HQ",
+            "NextGen N2",
+            "5-liter round",
+            "5-liter Vase",
+        }
 
-        # Bucket columns: any header that's not one of the known meta headers
-        meta_headers = set(headers2.keys())
-        bucket_cols = {}
+        bucket_cols: dict[str, int] = {}
         for c in range(1, scan_cols2 + 1):
             name = _norm(ws2.cell(header_row2, c).value)
-            if name and name not in meta_headers:
+            if not name:
+                continue
+            # We include *all* bucket headers; meta_names is only used to avoid
+            # accidentally picking up repeated header blocks.
+            if c >= 8 and name not in {"RPC#", "City", "Customer"}:
                 bucket_cols[name] = c
 
-        # Detect footer start (e.g. '% Ordered') so inserts go ABOVE it
-        footer_row = None
-        if c_cust2:
-            for r in range(header_row2 + 1, (ws2.max_row or 1) + 1):
-                v = ws2.cell(r, c_cust2).value
-                if v is not None and "% Ordered" in str(v):
-                    footer_row = r
-                    break
-
-        insert_at = footer_row if footer_row else (ws2.max_row + 1)
+        if not bucket_cols:
+            return
 
         highlight_fill2 = PatternFill("solid", fgColor="FFF2CC")
         italic_font2 = Font(italic=True, color="000000")
 
+        # Helper: find the month subtotal row for a given month block.
+        # We look for the first SUM formula row after the last datetime row of that month.
+        def _find_month_subtotal_row(year: int, month: int) -> int | None:
+            last_date_row = None
+            for r in range(header_row2 + 1, (ws2.max_row or 1) + 1):
+                v = ws2.cell(r, col_nld).value
+                if isinstance(v, datetime.datetime) and v.year == year and v.month == month:
+                    last_date_row = r
+            if last_date_row is None:
+                return None
+            # scan forward for a SUM formula in first bucket col
+            first_bucket_col = min(bucket_cols.values())
+            for r in range(last_date_row + 1, min(last_date_row + 120, (ws2.max_row or 1)) + 1):
+                v = ws2.cell(r, first_bucket_col).value
+                if isinstance(v, str) and v.strip().upper().startswith("=SUM("):
+                    return r
+            return None
+
+        # Expand SUM formulas in the subtotal row to include newly inserted rows.
+        sum_re = re.compile(r"^=SUM\(([A-Z]+)(\d+):([A-Z]+)(\d+)\)\s*$", re.IGNORECASE)
+
+        # Write each adjustment into its month block
         for rec in rows:
+            nld = rec.get("nld")
             customer = (rec.get("customer") or "").strip()
             bucket_type = (rec.get("bucket_type") or "").strip()
             qty = _safe_float(rec.get("quantity"))
 
-            if not customer or not bucket_type or abs(qty) < 1e-9:
+            if nld is None or not customer or not bucket_type or abs(qty) < 1e-9:
                 continue
 
-            # Keep inserting above footer if present
-            if footer_row:
+            # normalize date
+            if isinstance(nld, datetime.date) and not isinstance(nld, datetime.datetime):
+                nld_dt = datetime.datetime(nld.year, nld.month, nld.day)
+            else:
+                nld_dt = nld
+
+            if not isinstance(nld_dt, datetime.datetime):
+                continue
+
+            subtotal_row = _find_month_subtotal_row(nld_dt.year, nld_dt.month)
+            if subtotal_row is None:
+                # If we can't locate the month block, fall back to appending to the end
+                subtotal_row = (ws2.max_row or 1) + 1
+
+            insert_at = subtotal_row
+            if insert_at <= (ws2.max_row or 1):
                 ws2.insert_rows(insert_at, amount=1)
 
-            # Match existing style: put label in NLD
-            ws2.cell(insert_at, c_nld2).value = customer.upper()
+            # If we inserted above the subtotal row, the subtotal row moved down by 1.
+            if insert_at == subtotal_row:
+                subtotal_row = subtotal_row + 1
 
-            if c_rpc2:
-                ws2.cell(insert_at, c_rpc2).value = "PROJECTION"
-            if c_city2:
-                ws2.cell(insert_at, c_city2).value = ""
-            if c_cust2:
-                ws2.cell(insert_at, c_cust2).value = customer.replace(" Projection", "").strip()
+            # Column A: use the month date so the adjustment appears as a real
+            # line item inside that month block (instead of a floating label row).
+            # We use the first-of-month date (nld_dt) provided by the projections.
+            ws2.cell(insert_at, col_nld).value = nld_dt
+            ws2.cell(insert_at, col_week).value = int(nld_dt.isocalendar()[1])
+            ws2.cell(insert_at, col_rpc).value = "PROJECTION"
+            ws2.cell(insert_at, col_city).value = ""
+            ws2.cell(insert_at, col_customer).value = customer.replace(" Projection", "").strip()
 
-            ws2.cell(insert_at, c_bucket_type2).value = bucket_type
-
-            # Write delta into bucket column if it exists, else fallback to SUB only
+            # Bucket quantity
             if bucket_type in bucket_cols:
                 ws2.cell(insert_at, bucket_cols[bucket_type]).value = float(qty)
 
-            if c_sub2:
-                ws2.cell(insert_at, c_sub2).value = float(qty)
-
-            if c_hold2:
-                ws2.cell(insert_at, c_hold2).value = 0
-
-            cols_to_style = {c_nld2, c_bucket_type2}
-            if c_rpc2:
-                cols_to_style.add(c_rpc2)
-            if c_city2:
-                cols_to_style.add(c_city2)
-            if c_cust2:
-                cols_to_style.add(c_cust2)
-            if c_sub2:
-                cols_to_style.add(c_sub2)
-            if c_hold2:
-                cols_to_style.add(c_hold2)
+            # Styling: highlight a reasonable span (meta columns + the one bucket col)
+            cols_to_style = {col_nld, col_week, col_rpc, col_city, col_customer}
             if bucket_type in bucket_cols:
                 cols_to_style.add(bucket_cols[bucket_type])
-
             for cc in cols_to_style:
                 cell = ws2.cell(insert_at, cc)
                 cell.fill = highlight_fill2
                 cell.font = italic_font2
 
-            insert_at += 1
-            if footer_row:
-                footer_row += 1
+            # Expand the subtotal formulas to include this new row if we have a proper subtotal row
+            # and it contains SUM(colStart:colEnd) patterns.
+            if subtotal_row <= (ws2.max_row or 1):
+                for col_name, cidx in bucket_cols.items():
+                    v = ws2.cell(subtotal_row, cidx).value
+                    if not isinstance(v, str):
+                        continue
+                    m = sum_re.match(v.strip())
+                    if not m:
+                        continue
+                    col_a, start_row, col_b, end_row = m.group(1).upper(), int(m.group(2)), m.group(3).upper(), int(m.group(4))
+                    # Keep the same start, but ensure the end reaches just above subtotal row.
+                    new_end = subtotal_row - 1
+                    if new_end > end_row:
+                        ws2.cell(subtotal_row, cidx).value = f"=SUM({col_a}{start_row}:{col_b}{new_end})"
 
-    # Append to Master List if present
     ws_master = wb["Master List"] if "Master List" in wb.sheetnames else None
     _append_to_master_list(ws_master, customer_rows)
     _append_to_master_list(ws_master, general_rows)
@@ -4925,7 +4969,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
 
 
 
