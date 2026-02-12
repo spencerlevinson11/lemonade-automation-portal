@@ -221,47 +221,74 @@ def bucket_projections_zip_export_view(request):
       - Prognosis_With_Projections.xlsx
     as a single ZIP.
 
-    It also ensures the adjusted prognosis is generated fresh at click-time.
+    IMPORTANT:
+      This rebuilds BOTH exports at click-time using the CURRENT session edits:
+        - Growth %
+        - YoY absolute overrides
+        - YoY extra %
+        - Customer micro-adjustments
+
+      And it regenerates the prognosis copy with highlighted added lines.
     """
     tmp_path = request.session.get("bucket_metrics_tmp_path")
     if not tmp_path or not os.path.exists(tmp_path):
         return HttpResponseForbidden("Your uploaded file has expired. Please upload again.")
 
-    projections_path = request.session.get("bucket_metrics_projection_export_path")
-    if not projections_path or not os.path.exists(projections_path):
-        return HttpResponseForbidden("No projections export available yet. Open projections first.")
+    # Session edits
+    applied_overrides = _get_applied_yoy_overrides(request)
+    applied_yoy_pct = _get_applied_yoy_pct_overrides(request)
+    applied_customer_deltas = _get_applied_customer_deltas(request)
+    applied_growth = _get_applied_growth_overrides(request)
 
-    # Ensure adjusted prognosis exists (generate it if missing)
-    prognosis_path = request.session.get("bucket_metrics_adjusted_prognosis_export_path")
-    if not prognosis_path or not os.path.exists(prognosis_path):
-        try:
-            # Baseline projection (from original prognosis)
-            with open(tmp_path, "rb") as fh:
-                f = BytesIO(fh.read())
-            results = analyze_prognosis_workbook(f)
-            baseline_projection_df = results.get("projection_df")
+    try:
+        # Baseline projection (from the original prognosis workbook, before any tweaks)
+        with open(tmp_path, "rb") as fh:
+            base_bytes = fh.read()
 
-            # Adjusted projection = what we're exporting (read it back from the export file)
-            adjusted_projection_df = pd.read_excel(projections_path, sheet_name="Projections")
+        baseline_results = analyze_prognosis_workbook(BytesIO(base_bytes))
+        baseline_projection_df = baseline_results.get("projection_df")
+        if baseline_projection_df is None:
+            return HttpResponseForbidden("Could not read baseline projections from the uploaded workbook.")
 
-            applied_customer_deltas = _get_applied_customer_deltas(request)
-
-            prognosis_out = _generate_adjusted_prognosis_from_current_session(
-                tmp_path=tmp_path,
-                user_id=request.user.id,
-                baseline_projection_df=baseline_projection_df,
-                adjusted_projection_df=adjusted_projection_df,
-                applied_customer_deltas=applied_customer_deltas,
+        # Start from either baseline or the growth-adjusted projection (if growth edits exist)
+        if applied_growth:
+            projection_df, _yoy_df_unused, _start_label_unused = rebuild_projection_with_growth(
+                BytesIO(base_bytes),
+                applied_growth,
             )
+        else:
+            projection_df = baseline_projection_df.copy()
 
-            if prognosis_out and os.path.exists(prognosis_out):
-                prognosis_path = prognosis_out
-                request.session["bucket_metrics_adjusted_prognosis_export_path"] = prognosis_out
-                request.session.modified = True
-            else:
-                return HttpResponseForbidden("Could not generate adjusted prognosis export.")
-        except Exception as e:
-            return HttpResponseForbidden(f"Could not generate adjusted prognosis export: {e}")
+        # Apply all other edits on top
+        projection_df = _apply_yoy_overrides_to_projection(projection_df, applied_overrides)
+        projection_df = _apply_yoy_pct_overrides_to_projection(projection_df, applied_yoy_pct)
+        projection_df = _apply_customer_deltas_to_projection(projection_df, applied_customer_deltas)
+
+        # Always write a FRESH projections export (so the ZIP always reflects current edits)
+        projections_path = os.path.join(tempfile.gettempdir(), f"bucket_projections_{request.user.id}.xlsx")
+        with pd.ExcelWriter(projections_path, engine="openpyxl") as writer:
+            projection_df.to_excel(writer, index=False, sheet_name="Projections")
+
+        request.session["bucket_metrics_projection_export_path"] = projections_path
+
+        # Always write a FRESH adjusted prognosis export (with highlighted added projection lines)
+        prognosis_out = _generate_adjusted_prognosis_from_current_session(
+            tmp_path=tmp_path,
+            user_id=request.user.id,
+            baseline_projection_df=baseline_projection_df,
+            adjusted_projection_df=projection_df,
+            applied_customer_deltas=applied_customer_deltas,
+        )
+        if not prognosis_out or not os.path.exists(prognosis_out):
+            return HttpResponseForbidden("Could not generate adjusted prognosis export.")
+
+        request.session["bucket_metrics_adjusted_prognosis_export_path"] = prognosis_out
+        request.session.modified = True
+
+        prognosis_path = prognosis_out
+
+    except Exception as e:
+        return HttpResponseForbidden(f"Could not generate export ZIP: {e}")
 
     # Build ZIP
     zip_path = os.path.join(tempfile.gettempdir(), f"bucket_exports_{request.user.id}.zip")
@@ -278,8 +305,10 @@ def bucket_projections_zip_export_view(request):
     return FileResponse(
         open(zip_path, "rb"),
         as_attachment=True,
-        filename="Bucket_Exports.zip",
+        filename="bucket_exports.zip",
+        content_type="application/zip",
     )
+
 
 
 def get_or_create_customer_safe(company, name: str):
@@ -1993,6 +2022,31 @@ def _set_applied_yoy_pct_overrides(request, overrides: dict) -> None:
     request.session["bucket_metrics_applied_yoy_pct"] = {str(k): float(v) for k, v in overrides.items()}
     request.session.modified = True
 
+def _get_applied_growth_overrides(request) -> dict:
+    """
+    Stores growth % values (as decimals) keyed by the REAL bucket column name:
+      { "CLASSIC HQ": 0.05, "10 Conical": -0.02, ... }
+    This lets us rebuild the same "apply_growth" projection later (exports, ZIP, etc).
+    """
+    data = request.session.get("bucket_metrics_applied_growth", {})
+    if not isinstance(data, dict):
+        return {}
+
+    cleaned: dict[str, float] = {}
+    for k, v in data.items():
+        try:
+            cleaned[str(k)] = float(v)
+        except Exception:
+            continue
+    return cleaned
+
+
+def _set_applied_growth_overrides(request, overrides: dict) -> None:
+    request.session["bucket_metrics_applied_growth"] = {str(k): float(v) for k, v in overrides.items()}
+    request.session.modified = True
+
+
+
 
 def _apply_yoy_overrides_to_projection(projection_df, applied_overrides: dict):
     """
@@ -2169,6 +2223,25 @@ def bucket_projections_view(request):
     applied_yoy_pct = _get_applied_yoy_pct_overrides(request)
     applied_customer_deltas = _get_applied_customer_deltas(request)
 
+    applied_growth = _get_applied_growth_overrides(request)
+
+    # If growth edits were applied earlier, rebuild projections from that persisted growth dict
+    if applied_growth:
+        try:
+            with open(tmp_path, "rb") as _fh:
+                _bytes = _fh.read()
+            projection_df_growth, yoy_suggestions_growth, start_month_label_growth = rebuild_projection_with_growth(
+                BytesIO(_bytes),
+                applied_growth,
+            )
+            results["projection_df"] = projection_df_growth
+            results["yoy_suggestions"] = yoy_suggestions_growth
+            results["start_month_label"] = start_month_label_growth
+        except Exception:
+            # If rebuild fails, fall back to baseline projections
+            pass
+
+
     # Baseline = what the file said BEFORE any tweaks
     baseline_projection_df = results.get("projection_df")
 
@@ -2306,6 +2379,10 @@ def bucket_projections_view(request):
                 real = rev.get(safe_key)
                 if real:
                     growth_real[real] = pct
+
+
+            # Persist growth settings so exports/ZIP rebuilds include them
+            _set_applied_growth_overrides(request, growth_real)
 
             with open(tmp_path, "rb") as fh2:
                 f2 = BytesIO(fh2.read())
@@ -3469,6 +3546,10 @@ def bucket_metrics_view(request, automation_id=None):
             if real:
                 growth_real[real] = pct
 
+
+        # Persist growth settings so exports/ZIP rebuilds include them
+        _set_applied_growth_overrides(request, growth_real)
+
         try:
             with open(tmp_path, "rb") as fh:
                 f = BytesIO(fh.read())
@@ -3508,6 +3589,9 @@ def bucket_metrics_view(request, automation_id=None):
 
             request.session["bucket_metrics_tmp_path"] = tmp_path
             request.session["bucket_metrics_uploaded_name"] = excel_file.name
+
+            # New upload: clear persisted growth edits
+            _set_applied_growth_overrides(request, {})
 
             with open(tmp_path, "rb") as fh:
                 f = BytesIO(fh.read())
@@ -4665,6 +4749,8 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
 
 
 
