@@ -2,9 +2,7 @@ import re
 from datetime import date
 from typing import Dict, List
 
-import pandas as pd
-import openpyxl
-import calendar
+\1\1import calendar
 
 # Columns that actually represent bucket quantities (source columns)
 BUCKET_COLUMNS = [
@@ -22,16 +20,7 @@ BUCKET_COLUMNS = [
     "8 liter round NG",
     "13 NextGen",
     "3 liter round",
-    # Added (workbook columns Y/Z)
-    "8 liter wide NIR grey",
-    "10 liter wide NIR grey",
-
-    # NOTE: MAXIMA/Amalia are stored in a single numeric column ("MAXIMA") in the workbook,
-    # but are split into the following derived columns using the row's "Bucket Type" label.
-    "Maxima Buckets",
-    "Maxima Lids",
-    "Amalia Buckets",
-    "Amalia Lids",
+    "MAXIMA",
     "SUB",
     "HOLD",
 ]
@@ -52,14 +41,6 @@ PROJECTION_COLUMNS = [
     "8 liter round NG",
     "13 NextGen",
     "3 liter round",
-
-    # New columns that should appear in the projections table
-    "8 liter wide NIR grey",
-    "10 liter wide NIR grey",
-    "Maxima Buckets",
-    "Maxima Lids",
-    "Amalia Buckets",
-    "Amalia Lids",
 ]
 
 _YEAR_RE = re.compile(r"^\s*(19|20)\d{2}\s*$")
@@ -177,16 +158,6 @@ def _read_master_list(uploaded_file) -> pd.DataFrame:
     data = df.iloc[3:].copy()
     data.columns = header_row
 
-    # Normalize minor header variations we've seen in the workbook over time
-    # (so downstream logic can use stable column names)
-    header_renames = {}
-    if "10 liter wideNIR grey" in data.columns and "10 liter wide NIR grey" not in data.columns:
-        header_renames["10 liter wideNIR grey"] = "10 liter wide NIR grey"
-    if "10 liter wideNIR grey " in data.columns and "10 liter wide NIR grey" not in data.columns:
-        header_renames["10 liter wideNIR grey "] = "10 liter wide NIR grey"
-    if header_renames:
-        data = data.rename(columns=header_renames)
-
     data = data.rename(columns={"NLD": "date", "Customer": "customer", "City": "city"})
 
     data["date"] = pd.to_datetime(data["date"], errors="coerce")
@@ -197,195 +168,120 @@ def _read_master_list(uploaded_file) -> pd.DataFrame:
     data = data[data["customer"].astype(str).str.strip() != ""].copy()
 
     # Only bucket columns that exist
-    # 1) Coerce any *direct* bucket columns that exist (excludes derived MAXIMA/Amalia columns)
-    direct_bucket_cols = [
-        c for c in BUCKET_COLUMNS
-        if c in data.columns and c not in {"Maxima Buckets", "Maxima Lids", "Amalia Buckets", "Amalia Lids"}
-    ]
-    if direct_bucket_cols:
-        data[direct_bucket_cols] = data[direct_bucket_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
+    bucket_cols = [c for c in BUCKET_COLUMNS if c in data.columns]
 
-    # 2) Split workbook "MAXIMA" numeric column into 4 derived columns based on "Bucket Type" (col AC)
-    #    - Maxima Buckets / Maxima Lids / Amalia Buckets / Amalia Lids
-    #    - If bucket type indicates "set(s)", count 1 bucket + 1 lid per set
-    for c in ["Maxima Buckets", "Maxima Lids", "Amalia Buckets", "Amalia Lids"]:
-        if c not in data.columns:
-            data[c] = 0
-
-    if "MAXIMA" in data.columns and "Bucket Type" in data.columns:
-        maxima_qty = pd.to_numeric(data["MAXIMA"], errors="coerce").fillna(0)
-        bt = data["Bucket Type"].astype(str).str.lower().fillna("")
-
-        is_maxima = bt.str.contains("maxima", na=False)
-        is_amalia = bt.str.contains("amalia", na=False)
-        is_lid = bt.str.contains("lid", na=False)
-        is_bucket = bt.str.contains("bucket", na=False)
-        is_set = bt.str.contains("set", na=False)
-
-        # Sets: treat as 1 bucket + 1 lid each
-        data.loc[is_set & is_maxima, "Maxima Buckets"] += maxima_qty[is_set & is_maxima]
-        data.loc[is_set & is_maxima, "Maxima Lids"] += maxima_qty[is_set & is_maxima]
-
-        data.loc[is_set & is_amalia, "Amalia Buckets"] += maxima_qty[is_set & is_amalia]
-        data.loc[is_set & is_amalia, "Amalia Lids"] += maxima_qty[is_set & is_amalia]
-
-        # Explicit lids / buckets
-        data.loc[(~is_set) & is_maxima & is_lid, "Maxima Lids"] += maxima_qty[(~is_set) & is_maxima & is_lid]
-        data.loc[(~is_set) & is_maxima & is_bucket, "Maxima Buckets"] += maxima_qty[(~is_set) & is_maxima & is_bucket]
-
-        data.loc[(~is_set) & is_amalia & is_lid, "Amalia Lids"] += maxima_qty[(~is_set) & is_amalia & is_lid]
-        data.loc[(~is_set) & is_amalia & is_bucket, "Amalia Buckets"] += maxima_qty[(~is_set) & is_amalia & is_bucket]
-
-        # Fallbacks if the label doesn't explicitly say "bucket" or "lid"
-        data.loc[(~is_set) & is_maxima & (~is_lid) & (~is_bucket), "Maxima Buckets"] += maxima_qty[(~is_set) & is_maxima & (~is_lid) & (~is_bucket)]
-        data.loc[(~is_set) & is_amalia & (~is_lid) & (~is_bucket), "Amalia Buckets"] += maxima_qty[(~is_set) & is_amalia & (~is_lid) & (~is_bucket)]
-
-        # Ensure derived cols are numeric
-        for c in ["Maxima Buckets", "Maxima Lids", "Amalia Buckets", "Amalia Lids"]:
-            data[c] = pd.to_numeric(data[c], errors="coerce").fillna(0)
+    # Ensure numeric
+    data[bucket_cols] = data[bucket_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
 
     data["month"] = data["date"].dt.to_period("M")
 
     return data
 
 
+de
+def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFrame:
+    """Build monthly totals from the 'Master List' sheet, summing ONLY this-year detail lines.
 
-def _build_monthly_totals_from_month_blocks(uploaded_file) -> pd.DataFrame:
-    """
-    Build monthly totals by *summing the detail lines inside each month block* on the
-    'Master List' sheet, instead of relying on the month-total formula rows.
+    Important: The Master List contains two totals rows at the end of each month block:
+      1) This year's totals (blank NLD + blank Customer) – formulas
+      2) Last Year Totals (blank NLD + Customer == 'Last Year Totals')
 
-    Why: Excel formula totals often have no cached values in uploaded files, and
-    the existing reader ignores non-date rows. This method matches what you see
-    on the sheet, and includes projection/adjustment lines even if column A isn't a date.
+    We must NOT add last year's totals into this year's totals. To avoid formula-cached-value issues,
+    we sum the *detail lines* inside each month block and STOP before the totals rows.
     """
-    wb = openpyxl.load_workbook(uploaded_file, data_only=True)
+    try:
+        wb = openpyxl.load_workbook(uploaded_file, data_only=True)
+    except Exception:
+        return pd.DataFrame()
+
     if "Master List" not in wb.sheetnames:
         return pd.DataFrame()
 
     ws = wb["Master List"]
 
-    # Find the real header row (the one that contains NLD + Customer + bucket columns).
-    header_row = None
-    for r in range(1, 10):
-        vals = [ws.cell(r, c).value for c in range(1, 15)]
-        if "NLD" in vals and "Customer" in vals:
-            header_row = r
-            # In this template, row 3 is the true header; row 1 is a banner header.
-            # Prefer the lower one if both exist.
-            if r < 9:
-                # keep searching in case there's another header below
-                continue
-    if header_row is None:
-        # Fallback: assume row 3
-        header_row = 3
-    else:
-        # If we found multiple, take the last one (lowest row)
-        # Re-scan to get the last match
-        last = None
-        for r in range(1, 15):
-            vals = [ws.cell(r, c).value for c in range(1, 20)]
-            if "NLD" in vals and "Customer" in vals:
-                last = r
-        header_row = last or header_row
-
-    headers: dict[str, int] = {}
+    # Header row (1-based). In your template the real header is row 3.
+    header_row = 3
+    header_map: Dict[str, int] = {}
     for c in range(1, ws.max_column + 1):
         v = ws.cell(header_row, c).value
         if isinstance(v, str) and v.strip():
-            headers[v.strip()] = c
+            header_map[v.strip()] = c
 
-    bucket_headers = [c for c in BUCKET_COLUMNS if c in headers]
-    if not bucket_headers:
+    bucket_cols = [c for c in BUCKET_COLUMNS if c in header_map]
+    if not bucket_cols:
         return pd.DataFrame()
 
-    # Month name lookup (case-insensitive)
-    month_to_num = {calendar.month_name[i].upper(): i for i in range(1, 13)}
+    month_to_num = {calendar.month_name[i]: i for i in range(1, 13)}
 
     current_year: int | None = None
-    current_month_num: int | None = None
+    current_month_name: str | None = None
+    month_accum: Dict[pd.Period, Dict[str, float]] = {}
 
-    totals: dict[pd.Period, dict[str, float]] = {}
+    # We iterate from the first data row onward (row 4 typically)
+    for r in range(header_row + 1, ws.max_row + 1):
+        a = ws.cell(r, 1).value  # Column A
+        cust = ws.cell(r, header_map.get("Customer", 7)).value  # Column G usually
 
-    # Start scanning after the header row
-    r = header_row + 1
-    while r <= ws.max_row:
-        a = ws.cell(r, 1).value
-
-        # Year row: 2025, 2026, etc.
+        # Year marker row: e.g. 2026 in col A
         if isinstance(a, (int, float)) and 2000 <= int(a) <= 2100:
             current_year = int(a)
-            current_month_num = None
-            r += 1
+            current_month_name = None
             continue
 
-        # Month header row: "January", "FEBRUARY", etc.
+        # Month header row: "January", "February", ...
         if isinstance(a, str):
-            m = a.strip().upper()
+            m = a.strip()
             if m in month_to_num:
-                current_month_num = month_to_num[m]
-                # Initialize this month
+                current_month_name = m
+                # Ensure period entry exists
                 if current_year is not None:
-                    period = pd.Period(f"{current_year}-{current_month_num:02d}", freq="M")
-                    if period not in totals:
-                        totals[period] = {bh: 0.0 for bh in bucket_headers}
-                r += 1
+                    period = pd.Period(f"{current_year}-{month_to_num[m]:02d}", freq="M")
+                    month_accum.setdefault(period, {bc: 0.0 for bc in bucket_cols})
                 continue
 
-        # If we're in a month block, sum detail lines until we hit the totals/summary area.
-        if current_year is not None and current_month_num is not None:
-            # Stop conditions for the month block:
-            # - another header row ("NLD") appears
-            # - next month header appears in col A
-            # - we hit the "Last Year Totals" label in customer column (G)
-            g = ws.cell(r, headers.get("Customer", 7)).value
-
-            # Detect next month header quickly
-            if isinstance(a, str) and a.strip().upper() in month_to_num:
-                # will be handled next loop, but keep safe
-                r += 1
-                continue
-
-            if isinstance(a, str) and a.strip() == "NLD":
-                # header row repeats before next month
-                r += 1
-                continue
-
-            if isinstance(g, str) and g.strip().upper() == "LAST YEAR TOTALS":
-                # month summary section starts; skip ahead until next header/month
-                r += 1
-                continue
-
-            # Sum bucket columns if any numeric values exist on this row.
-            period = pd.Period(f"{current_year}-{current_month_num:02d}", freq="M")
-            row_has_numbers = False
-            for bh in bucket_headers:
-                v = ws.cell(r, headers[bh]).value
-                if isinstance(v, (int, float)) and v != 0:
-                    row_has_numbers = True
-                    totals[period][bh] += float(v)
-
-            # If this row is completely blank and we're past a run of blanks, just move on.
-            r += 1
+        # If we aren't inside a year+month block, skip
+        if current_year is None or current_month_name is None:
             continue
 
-        r += 1
+        # Stop conditions inside a month block:
+        # - This-year totals row: blank NLD + blank Customer
+        # - Last-year totals row: Customer == 'Last Year Totals'
+        if a is None and (cust is None or (isinstance(cust, str) and cust.strip() == "")):
+            # this-year totals row reached -> stop adding detail lines (but keep scanning for next blocks)
+            continue
+        if isinstance(cust, str) and cust.strip().lower() == "last year totals":
+            continue
+        # Skip other summary rows in the footer area
+        if isinstance(cust, str) and cust.strip() in {"Total Ordered:", "Buckets Remaining:", "% Ordered:", "Naber Projection - Total Classics"}:
+            continue
 
-    if not totals:
+        # Include detail lines: require some customer text
+        if cust is None or (isinstance(cust, str) and cust.strip() == ""):
+            continue
+
+        period = pd.Period(f"{current_year}-{month_to_num[current_month_name]:02d}", freq="M")
+        month_accum.setdefault(period, {bc: 0.0 for bc in bucket_cols})
+
+        for bc in bucket_cols:
+            v = ws.cell(r, header_map[bc]).value
+            if isinstance(v, (int, float)) and v:
+                month_accum[period][bc] += float(v)
+
+    if not month_accum:
         return pd.DataFrame()
 
-    monthly = pd.DataFrame.from_dict(totals, orient="index").sort_index()
-    monthly.index.name = "month"
+    df = pd.DataFrame.from_dict(month_accum, orient="index").sort_index()
+    df.index.name = "month"
 
-    # Ensure any missing bucket columns exist (for downstream display)
+    # Ensure all bucket columns exist
     for c in BUCKET_COLUMNS:
-        if c not in monthly.columns:
-            monthly[c] = 0.0
+        if c not in df.columns:
+            df[c] = 0.0
 
-    return monthly
+    return df
 
 
-def build_monthly_totals(data: pd.DataFrame) -> pd.DataFrame:
+f build_monthly_totals(data: pd.DataFrame) -> pd.DataFrame:
     """
     Returns monthly totals by bucket type with PeriodIndex 'month'.
     """
@@ -678,7 +574,7 @@ def analyze_prognosis_workbook(uploaded_file):
         .head(20)
     )
 
-    monthly = _build_monthly_totals_from_month_blocks(uploaded_file)
+    monthly = _build_monthly_totals_master_list_this_year_only(uploaded_file)
     if monthly is None or monthly.empty:
         monthly = build_monthly_totals(data)
 
@@ -726,7 +622,7 @@ def rebuild_projection_with_growth(uploaded_file, growth_pct_by_col: Dict[str, f
     (Keeps original return signature for backwards compatibility.)
     """
     data = _read_master_list(uploaded_file)
-    monthly = _build_monthly_totals_from_month_blocks(uploaded_file)
+    monthly = _build_monthly_totals_master_list_this_year_only(uploaded_file)
     if monthly is None or monthly.empty:
         monthly = build_monthly_totals(data)
 
@@ -751,7 +647,7 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     Same as rebuild_projection_with_growth, but also returns customer_delta_suggestions.
     """
     data = _read_master_list(uploaded_file)
-    monthly = _build_monthly_totals_from_month_blocks(uploaded_file)
+    monthly = _build_monthly_totals_master_list_this_year_only(uploaded_file)
     if monthly is None or monthly.empty:
         monthly = build_monthly_totals(data)
 
@@ -774,4 +670,3 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     )
 
     return projection_df, yoy_suggestions, _period_to_label(start_month), customer_delta_suggestions
-
