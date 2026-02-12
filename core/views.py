@@ -902,20 +902,38 @@ def _append_projection_rows_to_clean_data(
                 subtotal_row = (ws2.max_row or 1) + 1
 
             insert_at = subtotal_row
+
+            # If there is a blank spacer row immediately above the subtotal row, insert
+            # ABOVE the spacer so the projection sits right under the last line item
+            # for the month (and still above the totals).
+            try:
+                spacer_row = subtotal_row - 1
+                if spacer_row > header_row2:
+                    cols_to_check = set([col_nld, col_week, col_rpc, col_city, col_customer]) | set(bucket_cols.values())
+                    is_blank = True
+                    for cc in cols_to_check:
+                        v = ws2.cell(spacer_row, cc).value
+                        if v is not None and str(v).strip() != "":
+                            is_blank = False
+                            break
+                    if is_blank:
+                        insert_at = spacer_row
+            except Exception:
+                pass
+
             if insert_at <= (ws2.max_row or 1):
                 ws2.insert_rows(insert_at, amount=1)
 
-            # If we inserted above the subtotal row, the subtotal row moved down by 1.
-            if insert_at == subtotal_row:
+            # If we inserted at/above the subtotal row, the subtotal row moved down by 1.
+            if insert_at <= subtotal_row:
                 subtotal_row = subtotal_row + 1
 
-            # Column A: use the month date so the adjustment appears as a real
-            # line item inside that month block (instead of a floating label row).
-            # We use the first-of-month date (nld_dt) provided by the projections.
-            ws2.cell(insert_at, col_nld).value = nld_dt
-            ws2.cell(insert_at, col_week).value = int(nld_dt.isocalendar()[1])
-            ws2.cell(insert_at, col_rpc).value = "PROJECTION"
-            ws2.cell(insert_at, col_city).value = ""
+            # Column A: match Spencer's existing "CUSTOMER PROJECTION" style (string label),
+            # not a date. Keep the real customer name in the Customer column.
+            ws2.cell(insert_at, col_nld).value = f"{customer.upper()} PROJECTION"
+            ws2.cell(insert_at, col_week).value = None
+            ws2.cell(insert_at, col_rpc).value = None
+            ws2.cell(insert_at, col_city).value = None
             ws2.cell(insert_at, col_customer).value = customer.replace(" Projection", "").strip()
 
             # Bucket quantity
@@ -4970,7 +4988,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
 
 
 
