@@ -160,7 +160,11 @@
 
       <!-- UPDATED: one-click ZIP download -->
       <a href="{% url 'bucket_projections_export_zip' %}" style="text-decoration:none;">
-        <button type="button">Download ZIP (projections + updated prognosis)</button>
+        <button type="button">Download ZIP (projections + adjustments to paste)</button>
+      </a>
+
+      <a href="{% url 'bucket_adjustments_export' %}" style="text-decoration:none;">
+        <button class="ghost" type="button">Download adjustments only</button>
       </a>
 
       {% if applied_yoy %}
@@ -206,10 +210,21 @@
       Click Apply to add <strong>Delta</strong> (Prev Year − Projection) onto the month + bucket total.
     </p>
 
-    <div class="section-card">
+    <form method="post" class="section-card" style="margin:0;">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="apply_customer_deltas_bulk">
+
+      <div class="row" style="margin: 0 0 10px;">
+        <button type="submit" class="tiny">Apply selected</button>
+        <span class="notice" style="margin:0;">Tip: select multiple rows, then apply once.</span>
+      </div>
+
       <table>
         <thead>
           <tr>
+            <th style="width:1%; white-space: nowrap;">
+              <input type="checkbox" id="selectAllDeltas" aria-label="Select all">
+            </th>
             <th>Month</th>
             <th>Customer</th>
             <th>Bucket Type</th>
@@ -222,6 +237,17 @@
         <tbody>
           {% for r in customer_delta_records %}
             <tr>
+              <td>
+                {% if not r.applied and r.delta|default_if_none:'' != '' %}
+                  <input
+                    type="checkbox"
+                    name="delta_item"
+                    value="{{ r.month_label }}||{{ r.col_name }}||{{ r.customer_name }}||{{ r.delta }}"
+                    class="deltaCheck"
+                    aria-label="Select"
+                  >
+                {% endif %}
+              </td>
               <td>{{ r.month_label }}</td>
               <td>{{ r.customer_name }}</td>
               <td>{{ r.col_name }}</td>
@@ -251,24 +277,16 @@
                     <button class="ghost tiny" type="submit">Unapply</button>
                   </form>
                 {% else %}
-                  <form method="post" style="margin:0;">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="apply_customer_delta">
-                    <input type="hidden" name="month_label" value="{{ r.month_label }}">
-                    <input type="hidden" name="col_name" value="{{ r.col_name }}">
-                    <input type="hidden" name="customer_name" value="{{ r.customer_name }}">
-                    <input type="hidden" name="delta" value="{{ r.delta }}">
-                    <button type="submit">Apply</button>
-                  </form>
+                  <span class="mini-help">Select &amp; Apply above</span>
                 {% endif %}
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="7">No customer delta suggestions available.</td></tr>
+            <tr><td colspan="8">No customer delta suggestions available.</td></tr>
           {% endfor %}
         </tbody>
       </table>
-    </div>
+    </form>
 
     <h2>YoY suggestions</h2>
     <p class="subtitle" style="margin-top:-6px;">
@@ -372,5 +390,17 @@
     </form>
   </div>
 </div>
+<script>
+  (function() {
+    var selectAll = document.getElementById('selectAllDeltas');
+    if (!selectAll) return;
+    selectAll.addEventListener('change', function() {
+      var checks = document.querySelectorAll('.deltaCheck');
+      for (var i = 0; i < checks.length; i++) {
+        checks[i].checked = selectAll.checked;
+      }
+    });
+  })();
+</script>
 </body>
 </html>
