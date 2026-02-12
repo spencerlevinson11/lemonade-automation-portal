@@ -1037,7 +1037,7 @@ def _generate_adjustments_to_paste_workbook(
 
     col_nld = _find_col("NLD") or 1
     col_customer = _find_col("Customer")
-    
+    col_sub = _find_col("SUB")
     col_hold = _find_col("HOLD")
     col_bucket_type = _find_col("Bucket Type")
 
@@ -1130,9 +1130,7 @@ def _generate_adjustments_to_paste_workbook(
         if bucket_name in bucket_cols:
             ws_out.cell(out_row, bucket_cols[bucket_name]).value = int(round(qty))
 
-        # SUB (optional) – set equal to qty so the pasted line has a total
-        if col_sub:
-            ws_out.cell(out_row, col_sub).value = int(round(qty))
+  
 
         # HOLD required
         if col_hold:
@@ -5181,6 +5179,14 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
 
 
 
