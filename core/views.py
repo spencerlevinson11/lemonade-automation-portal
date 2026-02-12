@@ -219,7 +219,7 @@ def bucket_projections_zip_export_view(request):
     """
     Downloads BOTH:
       - Bucket_Projections.xlsx
-      - Prognosis_With_Projections.xlsx
+      - Bucket_Adjustments_To_Paste.xlsx
     as a single ZIP.
 
     IMPORTANT:
@@ -229,7 +229,8 @@ def bucket_projections_zip_export_view(request):
         - YoY extra %
         - Customer micro-adjustments
 
-      And it regenerates the prognosis copy with highlighted added lines.
+      And it generates a paste-ready list of adjustment line-items (highlighted)
+      so you can paste them into the Master List manually.
     """
     tmp_path = request.session.get("bucket_metrics_tmp_path")
     if not tmp_path or not os.path.exists(tmp_path):
@@ -272,21 +273,19 @@ def bucket_projections_zip_export_view(request):
 
         request.session["bucket_metrics_projection_export_path"] = projections_path
 
-        # Always write a FRESH adjusted prognosis export (with highlighted added projection lines)
-        prognosis_out = _generate_adjusted_prognosis_from_current_session(
+        # Always write a FRESH adjustments-to-paste export
+        adjustments_out = _generate_adjustments_to_paste_workbook(
             tmp_path=tmp_path,
             user_id=request.user.id,
-            baseline_projection_df=baseline_projection_df,
-            adjusted_projection_df=projection_df,
             applied_customer_deltas=applied_customer_deltas,
         )
-        if not prognosis_out or not os.path.exists(prognosis_out):
-            return HttpResponseForbidden("Could not generate adjusted prognosis export.")
+        if not adjustments_out or not os.path.exists(adjustments_out):
+            return HttpResponseForbidden("Could not generate adjustments export.")
 
-        request.session["bucket_metrics_adjusted_prognosis_export_path"] = prognosis_out
+        request.session["bucket_metrics_adjustments_export_path"] = adjustments_out
         request.session.modified = True
 
-        prognosis_path = prognosis_out
+        adjustments_path = adjustments_out
 
     except Exception as e:
         return HttpResponseForbidden(f"Could not generate export ZIP: {e}")
@@ -301,7 +300,7 @@ def bucket_projections_zip_export_view(request):
 
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.write(projections_path, arcname="Bucket_Projections.xlsx")
-        z.write(prognosis_path, arcname="Prognosis_With_Projections.xlsx")
+        z.write(adjustments_path, arcname="Bucket_Adjustments_To_Paste.xlsx")
 
     return FileResponse(
         open(zip_path, "rb"),
@@ -971,6 +970,195 @@ def _append_projection_rows_to_clean_data(
 
     # Finally, save the adjusted workbook
     wb.save(out_path)
+
+
+def _generate_adjustments_to_paste_workbook(
+    *,
+    tmp_path: str,
+    user_id: int,
+    applied_customer_deltas: dict,
+) -> str | None:
+    """Create a small workbook containing ONLY the added adjustment line-items.
+
+    This avoids re-generating / mutating the full prognosis. The output is designed
+    so the user can paste rows directly into the Master List.
+
+    Requirements (per user):
+      - Column A: "<Month>, <Customer>, PROJECTION" (highlighted)
+      - Place bucket quantity in the correct bucket column
+      - Column AB (HOLD): quantity
+      - Column AC (Bucket Type): bucket name
+      - Sorted by month
+    """
+    if not tmp_path or not os.path.exists(tmp_path):
+        return None
+
+    # Load the uploaded prognosis to copy the Master List header structure.
+    wb_in = openpyxl.load_workbook(tmp_path)
+    if "Master List" not in wb_in.sheetnames:
+        return None
+    ws_in = wb_in["Master List"]
+
+    # Locate the header row that contains "Bucket Type" (this is the row that
+    # defines the exact columns the user wants to paste into).
+    header_row = None
+    bucket_type_col = None
+    max_scan_rows = min(ws_in.max_row or 1, 40)
+    max_scan_cols = min(ws_in.max_column or 1, 80)
+    for r in range(1, max_scan_rows + 1):
+        for c in range(1, max_scan_cols + 1):
+            if str(ws_in.cell(r, c).value).strip().lower() == "bucket type":
+                header_row = r
+                bucket_type_col = c
+                break
+        if header_row:
+            break
+
+    if not header_row:
+        return None
+
+    # Build a map of bucket column name -> column index from the header row.
+    # Bucket cols are the ones between the first known bucket col and "SUB".
+    bucket_cols: dict[str, int] = {}
+    header_values: dict[int, str] = {}
+    for c in range(1, (ws_in.max_column or max_scan_cols) + 1):
+        v = ws_in.cell(header_row, c).value
+        if v is None:
+            continue
+        header_values[c] = str(v).strip()
+
+    # Identify important columns by name
+    def _find_col(name: str) -> int | None:
+        name_low = name.strip().lower()
+        for c, v in header_values.items():
+            if str(v).strip().lower() == name_low:
+                return c
+        return None
+
+    col_nld = _find_col("NLD") or 1
+    col_customer = _find_col("Customer")
+    col_sub = _find_col("SUB")
+    col_hold = _find_col("HOLD")
+    col_bucket_type = _find_col("Bucket Type")
+
+    # Bucket columns are everything that looks like a bucket name, excluding meta columns.
+    # In your sheet, bucket columns are between the first bucket header and the "SUB" header.
+    if col_sub:
+        for c in range(1, col_sub):
+            v = header_values.get(c)
+            if not v:
+                continue
+            v_low = v.lower()
+            if v_low in {"nld", "week #", "departure date", "rpc#", "city", "customer"}:
+                continue
+            if v_low in {"sub", "hold", "bucket type", "due by"}:
+                continue
+            # Treat as bucket column
+            bucket_cols[v] = c
+
+    # Build output workbook
+    wb_out = openpyxl.Workbook()
+    ws_out = wb_out.active
+    ws_out.title = "Adjustment Lines"
+
+    # Copy column widths (best-effort)
+    for c in range(1, (ws_in.max_column or max_scan_cols) + 1):
+        col_letter = openpyxl.utils.get_column_letter(c)
+        try:
+            ws_out.column_dimensions[col_letter].width = ws_in.column_dimensions[col_letter].width
+        except Exception:
+            pass
+
+    # Copy header row values + styles into row 1
+    for c in range(1, (ws_in.max_column or max_scan_cols) + 1):
+        src = ws_in.cell(header_row, c)
+        dst = ws_out.cell(1, c)
+        dst.value = src.value
+        try:
+            dst._style = copy(src._style)
+        except Exception:
+            pass
+
+    # Highlight style for added adjustments
+    highlight_fill = PatternFill(start_color="FFF59D", end_color="FFF59D", fill_type="solid")
+    bold_font = Font(bold=True)
+
+    # Parse applied deltas -> rows
+    rows: list[dict] = []
+    for key, delta in (applied_customer_deltas or {}).items():
+        try:
+            month_label, bucket_name, customer_name = key.split("||", 2)
+        except ValueError:
+            continue
+
+        month_label = str(month_label).strip()
+        bucket_name = str(bucket_name).strip()
+        customer_name = str(customer_name).strip()
+        qty = _safe_float(delta)
+        if not month_label or not bucket_name or not customer_name:
+            continue
+        if abs(qty) < 1e-9:
+            continue
+
+        rows.append(
+            {
+                "month": month_label,
+                "bucket": bucket_name,
+                "customer": customer_name,
+                "qty": qty,
+                "nld_sort": _month_label_to_first_of_month(month_label) or datetime.date(1900, 1, 1),
+            }
+        )
+
+    rows.sort(key=lambda r: (r["nld_sort"], r["customer"], r["bucket"]))
+
+    out_row = 2
+    for r in rows:
+        month_label = r["month"]
+        bucket_name = r["bucket"]
+        customer_name = r["customer"]
+        qty = r["qty"]
+
+        label = f"{month_label}, {customer_name}, PROJECTION"
+
+        ws_out.cell(out_row, col_nld).value = label
+
+        if col_customer:
+            ws_out.cell(out_row, col_customer).value = customer_name
+
+        # Put qty in the correct bucket column
+        if bucket_name in bucket_cols:
+            ws_out.cell(out_row, bucket_cols[bucket_name]).value = int(round(qty))
+
+        # SUB (optional) – set equal to qty so the pasted line has a total
+        if col_sub:
+            ws_out.cell(out_row, col_sub).value = int(round(qty))
+
+        # HOLD required
+        if col_hold:
+            ws_out.cell(out_row, col_hold).value = int(round(qty))
+
+        # Bucket Type required
+        if col_bucket_type:
+            ws_out.cell(out_row, col_bucket_type).value = bucket_name
+
+        # Highlight the row across A..AC (at least through Bucket Type)
+        max_highlight_col = col_bucket_type or 29
+        for c in range(1, max_highlight_col + 1):
+            cell = ws_out.cell(out_row, c)
+            if cell.value is None:
+                # Keep blanks as blanks – but still highlight so it stands out.
+                pass
+            cell.fill = highlight_fill
+            # Make the label bold so it stands out when pasted
+            if c == col_nld:
+                cell.font = bold_font
+
+        out_row += 1
+
+    out_path = os.path.join(tempfile.gettempdir(), f"bucket_adjustments_to_paste_{user_id}.xlsx")
+    wb_out.save(out_path)
+    return out_path
 
 def _generate_adjusted_prognosis_from_current_session(
     *,
@@ -2583,6 +2771,38 @@ def bucket_projections_view(request):
 
             return redirect("bucket_projections")
 
+        # Bulk apply customer deltas (multi-select from the UI)
+        if action == "apply_customer_deltas_bulk":
+            items = request.POST.getlist("delta_item")
+            changed = False
+            for raw in items:
+                # Format: month||bucket||customer||delta
+                try:
+                    month_label, col_name, customer_name, delta_str = raw.split("||", 3)
+                except ValueError:
+                    continue
+
+                month_label = (month_label or "").strip()
+                col_name = (col_name or "").strip()
+                customer_name = (customer_name or "").strip()
+
+                try:
+                    delta_val = float(delta_str)
+                except Exception:
+                    continue
+
+                if not (month_label and col_name and customer_name):
+                    continue
+
+                key = _cust_delta_session_key(month_label, col_name, customer_name)
+                applied_customer_deltas[key] = float(delta_val)
+                changed = True
+
+            if changed:
+                _set_applied_customer_deltas(request, applied_customer_deltas)
+
+            return redirect("bucket_projections")
+
         if action == "unapply_customer_delta":
             month_label = (request.POST.get("month_label") or "").strip()
             col_name = (request.POST.get("col_name") or "").strip()
@@ -2655,21 +2875,23 @@ def bucket_projections_view(request):
     request.session["bucket_metrics_projection_export_path"] = export_path
     request.session.modified = True
 
-    # NEW: Build adjusted prognosis workbook (appends highlighted projection lines)
+    # Also keep a paste-ready adjustments workbook in-session so the user can
+    # download it without regenerating the entire prognosis.
     try:
-        prognosis_out = _generate_adjusted_prognosis_from_current_session(
+        adjustments_out = _generate_adjustments_to_paste_workbook(
             tmp_path=tmp_path,
             user_id=request.user.id,
-            baseline_projection_df=baseline_projection_df,
-            adjusted_projection_df=projection_df,
             applied_customer_deltas=applied_customer_deltas,
         )
-        if prognosis_out:
-            request.session["bucket_metrics_adjusted_prognosis_export_path"] = prognosis_out
+        if adjustments_out and os.path.exists(adjustments_out):
+            request.session["bucket_metrics_adjustments_export_path"] = adjustments_out
             request.session.modified = True
     except Exception:
-        # Don't break the page if prognosis generation fails
+        # Don't break the page if adjustments export generation fails
         pass
+
+    # NOTE: We intentionally do NOT regenerate the full prognosis workbook here.
+    # Instead, the export ZIP includes a paste-ready "Adjustment Lines" workbook.
 
     # Build YoY records
     yoy_df = results.get("yoy_suggestions")
@@ -2795,8 +3017,6 @@ def bucket_projections_view(request):
             # NEW:
             "customer_delta_records": customer_delta_records,
             "applied_customer_deltas": applied_customer_list,
-            # NEW: you can use this in the template to show a download button
-            "adjusted_prognosis_available": bool(request.session.get("bucket_metrics_adjusted_prognosis_export_path")),
         }
     )
 
@@ -2813,33 +3033,6 @@ def bucket_projections_export_view(request):
     if not export_path or not os.path.exists(export_path):
         return HttpResponseForbidden("No export available yet. Open projections first.")
 
-    # Ensure adjusted prognosis exists (or re-generate it) at export time
-    try:
-        # Baseline projection (from original prognosis)
-        with open(tmp_path, "rb") as fh:
-            f = BytesIO(fh.read())
-        results = analyze_prognosis_workbook(f)
-        baseline_projection_df = results.get("projection_df")
-
-        # Current adjusted projection (what we're exporting)
-        adjusted_projection_df = pd.read_excel(export_path, sheet_name="Projections")
-
-        applied_customer_deltas = _get_applied_customer_deltas(request)
-
-        prognosis_out = _generate_adjusted_prognosis_from_current_session(
-            tmp_path=tmp_path,
-            user_id=request.user.id,
-            baseline_projection_df=baseline_projection_df,
-            adjusted_projection_df=adjusted_projection_df,
-            applied_customer_deltas=applied_customer_deltas,
-        )
-        if prognosis_out:
-            request.session["bucket_metrics_adjusted_prognosis_export_path"] = prognosis_out
-            request.session.modified = True
-    except Exception as e:
-        # IMPORTANT: don't swallow silently; at least show a message
-        messages.warning(request, f"Could not generate adjusted prognosis: {e}")
-
     return FileResponse(
         open(export_path, "rb"),
         as_attachment=True,
@@ -2847,17 +3040,17 @@ def bucket_projections_export_view(request):
     )
 
 
-# NEW: download the prognosis workbook with highlighted projection lines added
+# Download the adjustments-only workbook (paste into Master List)
 @login_required
-def bucket_adjusted_prognosis_export_view(request):
-    export_path = request.session.get("bucket_metrics_adjusted_prognosis_export_path")
+def bucket_adjustments_export_view(request):
+    export_path = request.session.get("bucket_metrics_adjustments_export_path")
     if not export_path or not os.path.exists(export_path):
-        return HttpResponseForbidden("No adjusted prognosis export available yet. Open projections first.")
+        return HttpResponseForbidden("No adjustments export available yet. Open projections and apply adjustments first.")
 
     return FileResponse(
         open(export_path, "rb"),
         as_attachment=True,
-        filename="Prognosis_With_Projections.xlsx",
+        filename="Bucket_Adjustments_To_Paste.xlsx",
     )
 
 
@@ -4988,6 +5181,14 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
 
 
 
