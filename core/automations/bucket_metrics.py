@@ -1,10 +1,10 @@
 import re
 from datetime import date
 from typing import Dict, List
-import calendar
 
-import openpyxl
 import pandas as pd
+import openpyxl
+import calendar
 
 # Columns that actually represent bucket quantities (source columns)
 BUCKET_COLUMNS = [
@@ -249,103 +249,135 @@ def _read_master_list(uploaded_file) -> pd.DataFrame:
     return data
 
 
-def _build_monthly_totals_from_master_list_totals_rows(uploaded_file) -> pd.DataFrame:
-    """Build monthly totals from the *totals rows* at the bottom of each month block.
 
-    Your 'Continual Updates' prognosis uses month blocks with:
-      - detail lines with real dates in column A
-      - a totals row (blank column A) with SUMs across bucket columns
-      - a 'last year totals' row underneath
-
-    The projections should be driven by that totals row, not by re-summing the detail lines.
+def _build_monthly_totals_from_month_blocks(uploaded_file) -> pd.DataFrame:
     """
+    Build monthly totals by *summing the detail lines inside each month block* on the
+    'Master List' sheet, instead of relying on the month-total formula rows.
 
-    # Ensure we can re-read the stream after pandas has consumed it
-    try:
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(0)
-    except Exception:
-        pass
-
+    Why: Excel formula totals often have no cached values in uploaded files, and
+    the existing reader ignores non-date rows. This method matches what you see
+    on the sheet, and includes projection/adjustment lines even if column A isn't a date.
+    """
     wb = openpyxl.load_workbook(uploaded_file, data_only=True)
     if "Master List" not in wb.sheetnames:
         return pd.DataFrame()
 
     ws = wb["Master List"]
 
-    # The workbook's true headers are on the 2nd visible row (row index 2 in Excel = 3 in 1-based)
-    header_row = 3
-    headers: Dict[str, int] = {}
+    # Find the real header row (the one that contains NLD + Customer + bucket columns).
+    header_row = None
+    for r in range(1, 10):
+        vals = [ws.cell(r, c).value for c in range(1, 15)]
+        if "NLD" in vals and "Customer" in vals:
+            header_row = r
+            # In this template, row 3 is the true header; row 1 is a banner header.
+            # Prefer the lower one if both exist.
+            if r < 9:
+                # keep searching in case there's another header below
+                continue
+    if header_row is None:
+        # Fallback: assume row 3
+        header_row = 3
+    else:
+        # If we found multiple, take the last one (lowest row)
+        # Re-scan to get the last match
+        last = None
+        for r in range(1, 15):
+            vals = [ws.cell(r, c).value for c in range(1, 20)]
+            if "NLD" in vals and "Customer" in vals:
+                last = r
+        header_row = last or header_row
+
+    headers: dict[str, int] = {}
     for c in range(1, ws.max_column + 1):
         v = ws.cell(header_row, c).value
         if isinstance(v, str) and v.strip():
             headers[v.strip()] = c
 
-    # Normalize minor header variations
-    if "10 liter wideNIR grey" in headers and "10 liter wide NIR grey" not in headers:
-        headers["10 liter wide NIR grey"] = headers["10 liter wideNIR grey"]
-    if "10 liter wideNIR grey " in headers and "10 liter wide NIR grey" not in headers:
-        headers["10 liter wide NIR grey"] = headers["10 liter wideNIR grey "]
-
     bucket_headers = [c for c in BUCKET_COLUMNS if c in headers]
     if not bucket_headers:
         return pd.DataFrame()
 
-    month_to_num = {calendar.month_name[i]: i for i in range(1, 13)}
-    current_year = None
-    current_month_name = None
+    # Month name lookup (case-insensitive)
+    month_to_num = {calendar.month_name[i].upper(): i for i in range(1, 13)}
 
-    out: Dict[pd.Period, Dict[str, float]] = {}
+    current_year: int | None = None
+    current_month_num: int | None = None
 
-    for r in range(1, ws.max_row + 1):
-        a = ws.cell(r, 1).value  # Column A
+    totals: dict[pd.Period, dict[str, float]] = {}
 
-        # Year header row (usually a numeric year in column A)
-        if isinstance(a, (int, float)):
-            try:
-                yy = int(a)
-            except Exception:
-                yy = None
-            if yy and 2000 <= yy <= 2100:
-                current_year = yy
-                current_month_name = None
-                continue
+    # Start scanning after the header row
+    r = header_row + 1
+    while r <= ws.max_row:
+        a = ws.cell(r, 1).value
 
-        # Month header row (month name in column A)
+        # Year row: 2025, 2026, etc.
+        if isinstance(a, (int, float)) and 2000 <= int(a) <= 2100:
+            current_year = int(a)
+            current_month_num = None
+            r += 1
+            continue
+
+        # Month header row: "January", "FEBRUARY", etc.
         if isinstance(a, str):
-            m = a.strip()
+            m = a.strip().upper()
             if m in month_to_num:
-                current_month_name = m
+                current_month_num = month_to_num[m]
+                # Initialize this month
+                if current_year is not None:
+                    period = pd.Period(f"{current_year}-{current_month_num:02d}", freq="M")
+                    if period not in totals:
+                        totals[period] = {bh: 0.0 for bh in bucket_headers}
+                r += 1
                 continue
 
-        # Totals row: column A blank AND we have a current year/month context.
-        # In your template, the totals row has no customer name (col G is blank).
-        if a is None and current_year and current_month_name:
-            customer_cell = ws.cell(r, 7).value  # Column G
-            if customer_cell is not None and str(customer_cell).strip() != "":
+        # If we're in a month block, sum detail lines until we hit the totals/summary area.
+        if current_year is not None and current_month_num is not None:
+            # Stop conditions for the month block:
+            # - another header row ("NLD") appears
+            # - next month header appears in col A
+            # - we hit the "Last Year Totals" label in customer column (G)
+            g = ws.cell(r, headers.get("Customer", 7)).value
+
+            # Detect next month header quickly
+            if isinstance(a, str) and a.strip().upper() in month_to_num:
+                # will be handled next loop, but keep safe
+                r += 1
                 continue
 
-            vals = []
+            if isinstance(a, str) and a.strip() == "NLD":
+                # header row repeats before next month
+                r += 1
+                continue
+
+            if isinstance(g, str) and g.strip().upper() == "LAST YEAR TOTALS":
+                # month summary section starts; skip ahead until next header/month
+                r += 1
+                continue
+
+            # Sum bucket columns if any numeric values exist on this row.
+            period = pd.Period(f"{current_year}-{current_month_num:02d}", freq="M")
+            row_has_numbers = False
             for bh in bucket_headers:
                 v = ws.cell(r, headers[bh]).value
-                vals.append(v)
+                if isinstance(v, (int, float)) and v != 0:
+                    row_has_numbers = True
+                    totals[period][bh] += float(v)
 
-            if any(isinstance(v, (int, float)) and v != 0 for v in vals):
-                month_num = month_to_num[current_month_name]
-                period = pd.Period(f"{current_year}-{month_num:02d}", freq="M")
-                out[period] = {
-                    bh: float(ws.cell(r, headers[bh]).value or 0)
-                    for bh in bucket_headers
-                }
+            # If this row is completely blank and we're past a run of blanks, just move on.
+            r += 1
+            continue
 
-    if not out:
+        r += 1
+
+    if not totals:
         return pd.DataFrame()
 
-    monthly = pd.DataFrame.from_dict(out, orient="index")
+    monthly = pd.DataFrame.from_dict(totals, orient="index").sort_index()
     monthly.index.name = "month"
-    monthly = monthly.sort_index()
 
-    # Make sure any missing bucket columns exist as 0
+    # Ensure any missing bucket columns exist (for downstream display)
     for c in BUCKET_COLUMNS:
         if c not in monthly.columns:
             monthly[c] = 0.0
@@ -646,14 +678,8 @@ def analyze_prognosis_workbook(uploaded_file):
         .head(20)
     )
 
-    # Prefer the workbook's month-total rows (bottom of each month block) if present.
-    # This matches the 'Continual Updates' prognosis layout and ensures projections reflect
-    # the totals you see in Excel.
-    try:
-        monthly = _build_monthly_totals_from_master_list_totals_rows(uploaded_file)
-        if monthly is None or monthly.empty:
-            monthly = build_monthly_totals(data)
-    except Exception:
+    monthly = _build_monthly_totals_from_month_blocks(uploaded_file)
+    if monthly is None or monthly.empty:
         monthly = build_monthly_totals(data)
 
     today = date.today()
@@ -700,7 +726,9 @@ def rebuild_projection_with_growth(uploaded_file, growth_pct_by_col: Dict[str, f
     (Keeps original return signature for backwards compatibility.)
     """
     data = _read_master_list(uploaded_file)
-    monthly = build_monthly_totals(data)
+    monthly = _build_monthly_totals_from_month_blocks(uploaded_file)
+    if monthly is None or monthly.empty:
+        monthly = build_monthly_totals(data)
 
     today = date.today()
     start_month = pd.Period(today, freq="M")
@@ -723,7 +751,9 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     Same as rebuild_projection_with_growth, but also returns customer_delta_suggestions.
     """
     data = _read_master_list(uploaded_file)
-    monthly = build_monthly_totals(data)
+    monthly = _build_monthly_totals_from_month_blocks(uploaded_file)
+    if monthly is None or monthly.empty:
+        monthly = build_monthly_totals(data)
 
     today = date.today()
     start_month = pd.Period(today, freq="M")
@@ -744,3 +774,4 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     )
 
     return projection_df, yoy_suggestions, _period_to_label(start_month), customer_delta_suggestions
+
