@@ -2,7 +2,7 @@ import re
 from datetime import date
 from typing import Dict, List
 
-\1\1import calendar
+import calendar
 
 # Columns that actually represent bucket quantities (source columns)
 BUCKET_COLUMNS = [
