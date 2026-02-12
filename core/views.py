@@ -580,8 +580,24 @@ def _month_label_to_first_of_month(label: str):
     s = (label or "").strip()
     if not s:
         return None
+    # Primary format used by the projection table: "Jan-26"
     try:
         dt = pd.to_datetime(s, format="%b-%y")
+        return dt.to_pydatetime().date().replace(day=1)
+    except Exception:
+        pass
+
+    # Be forgiving: some sheets/edits may store months like "Jan-2026", "2026-01", or full dates
+    for fmt in ("%b-%Y", "%Y-%m", "%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+        try:
+            dt = pd.to_datetime(s, format=fmt)
+            return dt.to_pydatetime().date().replace(day=1)
+        except Exception:
+            continue
+
+    # Last resort: let pandas guess
+    try:
+        dt = pd.to_datetime(s)
         return dt.to_pydatetime().date().replace(day=1)
     except Exception:
         return None
@@ -646,14 +662,42 @@ def _append_projection_rows_to_clean_data(
     else:
         ws = wb[sheet_name]
 
-    # Map header names -> column index (1-based)
+    # -----------------------------
+    # Robust header detection
+    # Many of Spencer's prognosis sheets have a couple of title rows, so
+    # the actual headers are not guaranteed to be on row 1.
+    #
+    # We search the first N rows for the row that best matches the expected
+    # field headers.
+    # -----------------------------
+    expected = {"NLD", "Customer", "Bucket Type", "Quantity"}
+
+    def _normalize_header(v) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
+
     header_row = 1
+    best_score = -1
+    scan_rows = min(ws.max_row or 1, 25)
+    scan_cols = min(ws.max_column or 1, 200)
+
+    for r in range(1, scan_rows + 1):
+        row_vals = {_normalize_header(ws.cell(r, c).value) for c in range(1, scan_cols + 1)}
+        score = len({h for h in row_vals if h in expected})
+        if score > best_score:
+            best_score = score
+            header_row = r
+        # Early exit if we found all expected headers
+        if score >= len(expected):
+            header_row = r
+            break
+
+    # Map header names -> column index (1-based)
     headers = {}
     for c in range(1, ws.max_column + 1):
         v = ws.cell(header_row, c).value
-        if v is None:
-            continue
-        key = str(v).strip()
+        key = _normalize_header(v)
         if key:
             headers[key] = c
 
@@ -668,7 +712,7 @@ def _append_projection_rows_to_clean_data(
     c_qty = col_idx("Quantity", 6)
     c_deliv = col_idx("Delivered", 7)
 
-    # Find the last used row (based on key columns)
+    # Find the last used row (based on key columns), but only scan BELOW the header row
     def row_has_data(r: int) -> bool:
         for cc in (c_nld, c_cust, c_bucket, c_qty):
             v = ws.cell(r, cc).value
@@ -677,9 +721,10 @@ def _append_projection_rows_to_clean_data(
         return False
 
     last = ws.max_row
-    while last > 1 and not row_has_data(last):
+    # Trim trailing empties
+    while last > header_row and not row_has_data(last):
         last -= 1
-    next_row = last + 1
+    next_row = max(last + 1, header_row + 1)
 
     highlight_fill = PatternFill("solid", fgColor="FFF2CC")  # light yellow
     italic_font = Font(italic=True, color="000000")
@@ -687,12 +732,13 @@ def _append_projection_rows_to_clean_data(
 
     def write_row(r: int, *, nld, customer, bucket_type, quantity):
         ws.cell(r, c_nld).value = nld
-        ws.cell(r, c_rpc).value = ""  # blank
+        # Tag these rows so they are easy to find even if highlighting is missed
+        ws.cell(r, c_rpc).value = "PROJECTION"  # tag
         ws.cell(r, c_city).value = ""  # blank
         ws.cell(r, c_cust).value = customer
         ws.cell(r, c_bucket).value = bucket_type
         ws.cell(r, c_qty).value = quantity
-        ws.cell(r, c_deliv).value = ""  # blank
+        ws.cell(r, c_deliv).value = "ADDED"  # tag
 
         # Highlight + italicize the “projection” line
         for cc in (c_nld, c_rpc, c_city, c_cust, c_bucket, c_qty, c_deliv):
@@ -4749,8 +4795,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
 
 
 
