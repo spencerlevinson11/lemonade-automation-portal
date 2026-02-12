@@ -20,7 +20,16 @@ BUCKET_COLUMNS = [
     "8 liter round NG",
     "13 NextGen",
     "3 liter round",
-    "MAXIMA",
+    # Added (workbook columns Y/Z)
+    "8 liter wide NIR grey",
+    "10 liter wide NIR grey",
+
+    # NOTE: MAXIMA/Amalia are stored in a single numeric column ("MAXIMA") in the workbook,
+    # but are split into the following derived columns using the row's "Bucket Type" label.
+    "Maxima Buckets",
+    "Maxima Lids",
+    "Amalia Buckets",
+    "Amalia Lids",
     "SUB",
     "HOLD",
 ]
@@ -41,6 +50,14 @@ PROJECTION_COLUMNS = [
     "8 liter round NG",
     "13 NextGen",
     "3 liter round",
+
+    # New columns that should appear in the projections table
+    "8 liter wide NIR grey",
+    "10 liter wide NIR grey",
+    "Maxima Buckets",
+    "Maxima Lids",
+    "Amalia Buckets",
+    "Amalia Lids",
 ]
 
 _YEAR_RE = re.compile(r"^\s*(19|20)\d{2}\s*$")
@@ -158,6 +175,16 @@ def _read_master_list(uploaded_file) -> pd.DataFrame:
     data = df.iloc[3:].copy()
     data.columns = header_row
 
+    # Normalize minor header variations we've seen in the workbook over time
+    # (so downstream logic can use stable column names)
+    header_renames = {}
+    if "10 liter wideNIR grey" in data.columns and "10 liter wide NIR grey" not in data.columns:
+        header_renames["10 liter wideNIR grey"] = "10 liter wide NIR grey"
+    if "10 liter wideNIR grey " in data.columns and "10 liter wide NIR grey" not in data.columns:
+        header_renames["10 liter wideNIR grey "] = "10 liter wide NIR grey"
+    if header_renames:
+        data = data.rename(columns=header_renames)
+
     data = data.rename(columns={"NLD": "date", "Customer": "customer", "City": "city"})
 
     data["date"] = pd.to_datetime(data["date"], errors="coerce")
@@ -168,10 +195,52 @@ def _read_master_list(uploaded_file) -> pd.DataFrame:
     data = data[data["customer"].astype(str).str.strip() != ""].copy()
 
     # Only bucket columns that exist
-    bucket_cols = [c for c in BUCKET_COLUMNS if c in data.columns]
+    # 1) Coerce any *direct* bucket columns that exist (excludes derived MAXIMA/Amalia columns)
+    direct_bucket_cols = [
+        c for c in BUCKET_COLUMNS
+        if c in data.columns and c not in {"Maxima Buckets", "Maxima Lids", "Amalia Buckets", "Amalia Lids"}
+    ]
+    if direct_bucket_cols:
+        data[direct_bucket_cols] = data[direct_bucket_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
 
-    # Ensure numeric
-    data[bucket_cols] = data[bucket_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
+    # 2) Split workbook "MAXIMA" numeric column into 4 derived columns based on "Bucket Type" (col AC)
+    #    - Maxima Buckets / Maxima Lids / Amalia Buckets / Amalia Lids
+    #    - If bucket type indicates "set(s)", count 1 bucket + 1 lid per set
+    for c in ["Maxima Buckets", "Maxima Lids", "Amalia Buckets", "Amalia Lids"]:
+        if c not in data.columns:
+            data[c] = 0
+
+    if "MAXIMA" in data.columns and "Bucket Type" in data.columns:
+        maxima_qty = pd.to_numeric(data["MAXIMA"], errors="coerce").fillna(0)
+        bt = data["Bucket Type"].astype(str).str.lower().fillna("")
+
+        is_maxima = bt.str.contains("maxima", na=False)
+        is_amalia = bt.str.contains("amalia", na=False)
+        is_lid = bt.str.contains("lid", na=False)
+        is_bucket = bt.str.contains("bucket", na=False)
+        is_set = bt.str.contains("set", na=False)
+
+        # Sets: treat as 1 bucket + 1 lid each
+        data.loc[is_set & is_maxima, "Maxima Buckets"] += maxima_qty[is_set & is_maxima]
+        data.loc[is_set & is_maxima, "Maxima Lids"] += maxima_qty[is_set & is_maxima]
+
+        data.loc[is_set & is_amalia, "Amalia Buckets"] += maxima_qty[is_set & is_amalia]
+        data.loc[is_set & is_amalia, "Amalia Lids"] += maxima_qty[is_set & is_amalia]
+
+        # Explicit lids / buckets
+        data.loc[(~is_set) & is_maxima & is_lid, "Maxima Lids"] += maxima_qty[(~is_set) & is_maxima & is_lid]
+        data.loc[(~is_set) & is_maxima & is_bucket, "Maxima Buckets"] += maxima_qty[(~is_set) & is_maxima & is_bucket]
+
+        data.loc[(~is_set) & is_amalia & is_lid, "Amalia Lids"] += maxima_qty[(~is_set) & is_amalia & is_lid]
+        data.loc[(~is_set) & is_amalia & is_bucket, "Amalia Buckets"] += maxima_qty[(~is_set) & is_amalia & is_bucket]
+
+        # Fallbacks if the label doesn't explicitly say "bucket" or "lid"
+        data.loc[(~is_set) & is_maxima & (~is_lid) & (~is_bucket), "Maxima Buckets"] += maxima_qty[(~is_set) & is_maxima & (~is_lid) & (~is_bucket)]
+        data.loc[(~is_set) & is_amalia & (~is_lid) & (~is_bucket), "Amalia Buckets"] += maxima_qty[(~is_set) & is_amalia & (~is_lid) & (~is_bucket)]
+
+        # Ensure derived cols are numeric
+        for c in ["Maxima Buckets", "Maxima Lids", "Amalia Buckets", "Amalia Lids"]:
+            data[c] = pd.to_numeric(data[c], errors="coerce").fillna(0)
 
     data["month"] = data["date"].dt.to_period("M")
 
