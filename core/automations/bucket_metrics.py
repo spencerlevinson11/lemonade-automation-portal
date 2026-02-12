@@ -281,7 +281,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
     return df
 
 
-f build_monthly_totals(data: pd.DataFrame) -> pd.DataFrame:
+def build_monthly_totals(data: pd.DataFrame) -> pd.DataFrame:
     """
     Returns monthly totals by bucket type with PeriodIndex 'month'.
     """
