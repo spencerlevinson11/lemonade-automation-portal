@@ -1037,7 +1037,7 @@ def _generate_adjustments_to_paste_workbook(
 
     col_nld = _find_col("NLD") or 1
     col_customer = _find_col("Customer")
-    col_sub = _find_col("SUB")
+    
     col_hold = _find_col("HOLD")
     col_bucket_type = _find_col("Bucket Type")
 
