@@ -1,3 +1,11 @@
+
+import re
+
+def rpc_number_as_int(order):
+    rpc = (order.rpc_number or "").strip()
+    match = re.match(r"(\d+)", rpc)
+    return int(match.group(1)) if match else 999999999
+
 from __future__ import annotations
 
 import copy
@@ -5211,6 +5219,8 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
 
 
 
