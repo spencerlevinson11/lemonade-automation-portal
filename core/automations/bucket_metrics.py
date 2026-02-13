@@ -1,4 +1,5 @@
 import re
+import math
 from datetime import date
 from typing import Dict, List
 import pandas as pd
@@ -64,6 +65,29 @@ def _safe_key(col: str) -> str:
     # Example: "CLASSIC HQ" -> "CLASSIC_HQ", "5-liter Vase" -> "5_liter_Vase"
     return col.replace("-", "_").replace(" ", "_").replace("/", "_").replace(".", "")
 
+
+
+def _to_float(x, default: float = 0.0) -> float:
+    """Convert x to float, returning default for blanks/NaN."""
+    try:
+        if x is None:
+            return default
+        # pandas / numpy NaN
+        if isinstance(x, float) and math.isnan(x):
+            return default
+        if hasattr(pd, 'isna') and pd.isna(x):
+            return default
+        return _to_float(x)
+    except Exception:
+        return default
+
+
+def _to_int(x, default: int = 0) -> int:
+    """Convert numeric x to int safely, returning default for blanks/NaN."""
+    f = _to_float(x, default=_to_float(default))
+    if isinstance(f, float) and (math.isnan(f) or math.isinf(f)):
+        return default
+    return _to_int(f)
 
 def normalize_customer_name(raw) -> str:
     """
@@ -337,7 +361,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         for bc in bucket_cols:
             v = ws.cell(totals_row, header_map[bc]).value
             if isinstance(v, (int, float)):
-                month_accum[period][bc] = float(v)
+                month_accum[period][bc] = _to_float(v)
             else:
                 month_accum[period][bc] = 0.0
 
@@ -351,7 +375,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
             for bc in bucket_cols:
                 v = ws.cell(last_year_row, header_map[bc]).value
                 if isinstance(v, (int, float)):
-                    month_accum[prev_period][bc] = float(v)
+                    month_accum[prev_period][bc] = _to_float(v)
                 else:
                     month_accum[prev_period][bc] = 0.0
 
@@ -413,11 +437,11 @@ def build_projection_table(
         out = {}
         out["Month"] = _period_to_label(p)
 
-        classic_hq = float(row.get("CLASSIC HQ", 0))
-        classic = float(row.get("CLASSIC", 0))
+        classic_hq = _to_float(row.get("CLASSIC HQ", 0))
+        classic = _to_float(row.get("CLASSIC", 0))
 
         def apply_growth(col_name: str, value: float) -> float:
-            pct = float(growth_pct_by_col.get(col_name, 0) or 0)
+            pct = _to_float(growth_pct_by_col.get(col_name, 0) or 0)
             return value * (1.0 + pct / 100.0)
 
         classic_hq = apply_growth("CLASSIC HQ", classic_hq)
@@ -430,7 +454,7 @@ def build_projection_table(
         for col in PROJECTION_COLUMNS:
             if col in {"Month", "CLASSIC HQ", "CLASSIC", "Total Classics"}:
                 continue
-            base_val = float(row.get(col, 0))
+            base_val = _to_float(row.get(col, 0))
             base_val = apply_growth(col, base_val)
             out[col] = round(base_val)
 
@@ -443,7 +467,7 @@ def build_projection_table(
 
     totals = {"Month": total_label}
     for col in PROJECTION_COLUMNS:
-        totals[col] = int(proj_df[col].sum())
+        totals[col] = _to_int(proj_df[col].sum())
 
     prior_periods = [p - 12 for p in idx_periods]
     prior_rows = []
@@ -458,16 +482,16 @@ def build_projection_table(
     prior_label = f"Total {start_month.year - 1}-{str(end_month.year - 1)[-2:]}"
     prior_totals = {"Month": prior_label}
 
-    prior_classic_hq = float(prior_sum.get("CLASSIC HQ", 0))
-    prior_classic = float(prior_sum.get("CLASSIC", 0))
-    prior_totals["CLASSIC HQ"] = int(round(prior_classic_hq))
-    prior_totals["CLASSIC"] = int(round(prior_classic))
-    prior_totals["Total Classics"] = int(round(prior_classic_hq + prior_classic))
+    prior_classic_hq = _to_float(prior_sum.get("CLASSIC HQ", 0))
+    prior_classic = _to_float(prior_sum.get("CLASSIC", 0))
+    prior_totals["CLASSIC HQ"] = _to_int(prior_classic_hq)
+    prior_totals["CLASSIC"] = _to_int(prior_classic)
+    prior_totals["Total Classics"] = _to_int(prior_classic_hq + prior_classic)
 
     for col in PROJECTION_COLUMNS:
         if col in {"CLASSIC HQ", "CLASSIC", "Total Classics"}:
             continue
-        prior_totals[col] = int(round(float(prior_sum.get(col, 0))))
+        prior_totals[col] = _to_int(prior_sum.get(col, 0))
 
     proj_df = pd.concat([proj_df, pd.DataFrame([totals, prior_totals])], ignore_index=True)
 
@@ -498,8 +522,8 @@ def build_yoy_suggestions(
         prev = monthly.loc[p_prev] if p_prev in monthly.index else pd.Series({c: 0 for c in monthly.columns})
 
         for col in needed_cols:
-            cur_val = float(cur.get(col, 0))
-            prev_val = float(prev.get(col, 0))
+            cur_val = _to_float(cur.get(col, 0))
+            prev_val = _to_float(prev.get(col, 0))
 
             if prev_val == 0:
                 yoy = None
@@ -510,8 +534,8 @@ def build_yoy_suggestions(
                 {
                     "Month": _period_to_label(p),
                     "Bucket Type": col,
-                    "This Year (current prognosis)": int(round(cur_val)),
-                    "Last Year (same month)": int(round(prev_val)),
+                    "This Year (current prognosis)": _to_int(cur_val),
+                    "Last Year (same month)": _to_int(prev_val),
                     "YoY %": None if yoy is None else round(yoy, 1),
                 }
             )
@@ -562,7 +586,7 @@ def build_customer_delta_suggestions(
 
     # lookup: (customer, month, bucket_type) -> qty
     lookup = {
-        (r["customer"], r["month"], r["bucket_type"]): float(r["qty"])
+        (r["customer"], r["month"], r["bucket_type"]): _to_float(r["qty"])
         for r in per.to_dict("records")
     }
 
@@ -592,9 +616,9 @@ def build_customer_delta_suggestions(
                         "Month": _period_to_label(p),
                         "Customer": cust,
                         "Bucket Type": bucket,
-                        "Prev Year": int(round(prev_val)),
-                        "Projection": int(round(cur_val)),
-                        "Delta": int(round(delta)),
+                        "Prev Year": _to_int(prev_val),
+                        "Projection": _to_int(cur_val),
+                        "Delta": _to_int(delta),
                     }
                 )
 
@@ -758,4 +782,5 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     )
 
     return projection_df, yoy_suggestions, _period_to_label(start_month), customer_delta_suggestions
+
 
