@@ -301,6 +301,17 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
     def _cell_str(v) -> str:
         return v.strip().lower() if isinstance(v, str) else ""
 
+    def _row_contains_phrase(row_idx: int, phrase: str) -> bool:
+        """Return True if any cell in the row contains the given phrase (case-insensitive)."""
+        target = phrase.strip().lower()
+        if not target:
+            return False
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(row_idx, c).value
+            if isinstance(v, str) and target in v.strip().lower():
+                return True
+        return False
+
     def _numeric_density(row_idx: int, header_map: Dict[str, int], bucket_cols: List[str]) -> tuple[int, float]:
         """Return (numeric_cell_count, numeric_abs_sum) across bucket columns."""
         cnt = 0
@@ -326,6 +337,8 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         # Year marker: 2026, 2027, ...
         if isinstance(a, (int, float)) and 2000 <= int(a) <= 2100:
             current_year = int(a)
+            # Explicit year marker: reset month tracking so we don't double-increment on rollover.
+            last_month_num = None
             continue
 
         if not _is_month_header(a) or current_year is None:
@@ -374,12 +387,14 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
             cust_val = ws.cell(rr, cust_col).value
             cust_s = _cell_str(cust_val)
 
-            if cust_s == "last year totals":
+            if cust_s == "last year totals" or _row_contains_phrase(rr, "last year totals"):
                 last_year_row = rr
                 continue
 
             # this-year totals row should have blank-ish customer cell
-            if cust_s:
+            # Also ensure we don't accidentally select the 'Last Year Totals' row even if the
+            # customer column is misaligned for a given header row.
+            if cust_s or _row_contains_phrase(rr, "last year totals"):
                 continue
 
             cnt, ssum = _numeric_density(rr, header_map, bucket_cols)
@@ -393,6 +408,19 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
                 best_totals_row = rr
                 best_cnt = cnt
                 best_sum = ssum
+
+        # If we found an explicit 'Last Year Totals' row, the THIS YEAR totals row is typically
+        # immediately above it. Prefer that row (when it matches our totals-row criteria), because
+        # it prevents any chance of selecting last-year totals as the current month.
+        if last_year_row is not None:
+            cand = last_year_row - 1
+            if cand >= r + 1 and cand <= block_end:
+                cand_cust = _cell_str(ws.cell(cand, cust_col).value)
+                cand_cnt, cand_sum = _numeric_density(cand, header_map, bucket_cols)
+                if (not cand_cust) and (not _row_contains_phrase(cand, "last year totals")) and cand_cnt >= threshold:
+                    best_totals_row = cand
+                    best_cnt = cand_cnt
+                    best_sum = cand_sum
 
         if best_totals_row is None:
             continue
@@ -823,6 +851,10 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     )
 
     return projection_df, yoy_suggestions, _period_to_label(start_month), customer_delta_suggestions
+
+
+
+
 
 
 
