@@ -364,6 +364,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         # Year marker: 2026, 2027, ...
         if isinstance(a, (int, float)) and 2000 <= int(a) <= 2100:
             current_year = int(a)
+            last_month_num = None
             continue
 
         if not _is_month_header(a) or current_year is None:
@@ -409,10 +410,19 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         threshold = max(5, int(len(bucket_cols) * 0.5))
 
         for rr in range(r + 1, block_end + 1):
+            # Column G contains explicit labels you've added (e.g., 'THIS YEARS TOTALS').
+            g_val = ws.cell(rr, 7).value
+            g_s = _cell_str(g_val)
+            if g_s in ("this years totals", "this year's totals", "this year totals"):
+                best_totals_row = rr
+                best_cnt = 10**9
+                best_sum = float('inf')
+                # Keep scanning to still find Last Year Totals, but never overwrite best_totals_row.
+            
             cust_val = ws.cell(rr, cust_col).value
             cust_s = _cell_str(cust_val)
 
-            if cust_s == "last year totals":
+            if cust_s == "last year totals" or g_s == "last year totals":
                 last_year_row = rr
                 continue
 
@@ -427,6 +437,10 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
                 continue
 
             # Pick the strongest totals-like row (max numeric count, then max sum)
+            # If we already found an explicit 'THIS YEARS TOTALS' label, do not overwrite it.
+            if best_cnt >= 10**8:
+                continue
+
             if cnt > best_cnt or (cnt == best_cnt and ssum > best_sum):
                 best_totals_row = rr
                 best_cnt = cnt
@@ -861,6 +875,11 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     )
 
     return projection_df, yoy_suggestions, _period_to_label(start_month), customer_delta_suggestions
+
+
+
+
+
 
 
 
