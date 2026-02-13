@@ -68,26 +68,42 @@ def _safe_key(col: str) -> str:
 
 
 def _to_float(x, default: float = 0.0) -> float:
-    """Convert x to float, returning default for blanks/NaN."""
+    """Convert x to float safely.
+
+    Returns `default` for blanks/None/NaN/inf and for values that can't be cast.
+    """
     try:
         if x is None:
             return default
-        # pandas / numpy NaN
-        if isinstance(x, float) and math.isnan(x):
+        # pandas / numpy NaN, or blank cells that come through as NaN
+        if hasattr(pd, "isna") and pd.isna(x):
             return default
-        if hasattr(pd, 'isna') and pd.isna(x):
+        # guard infinities
+        if isinstance(x, (int, float)):
+            xf = float(x)
+            if math.isnan(xf) or math.isinf(xf):
+                return default
+            return xf
+        # strings, decimals, etc.
+        xf = float(x)
+        if math.isnan(xf) or math.isinf(xf):
             return default
-        return _to_float(x)
+        return xf
     except Exception:
         return default
 
 
 def _to_int(x, default: int = 0) -> int:
     """Convert numeric x to int safely, returning default for blanks/NaN."""
-    f = _to_float(x, default=_to_float(default))
-    if isinstance(f, float) and (math.isnan(f) or math.isinf(f)):
+    f = _to_float(x, default=float(default))
+    try:
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return int(round(f))
+    except Exception:
         return default
-    return _to_int(f)
+
+
 
 def normalize_customer_name(raw) -> str:
     """
@@ -782,5 +798,7 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     )
 
     return projection_df, yoy_suggestions, _period_to_label(start_month), customer_delta_suggestions
+
+
 
 
