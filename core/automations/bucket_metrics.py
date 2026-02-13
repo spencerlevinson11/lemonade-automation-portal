@@ -180,7 +180,7 @@ def _read_master_list(uploaded_file) -> pd.DataFrame:
     return data
 
 
-de
+
 def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFrame:
     """Build monthly totals from the 'Master List' sheet, summing ONLY this-year detail lines.
 
