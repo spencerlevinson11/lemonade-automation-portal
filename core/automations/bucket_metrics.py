@@ -184,14 +184,17 @@ def _read_master_list(uploaded_file) -> pd.DataFrame:
 
 
 def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFrame:
-    """Build monthly totals from the 'Master List' sheet, summing ONLY this-year detail lines.
+    """Build monthly totals from the *monthly totals rows* in the 'Master List' sheet.
 
-    Important: The Master List contains two totals rows at the end of each month block:
-      1) This year's totals (blank NLD + blank Customer) – formulas
-      2) Last Year Totals (blank NLD + Customer == 'Last Year Totals')
+    Your Master List template is organized in month blocks, where:
+      - Row (month_header_row - 1) contains the bucket-type headers (e.g., 'CLASSIC HQ', 'NextGen N2', ...)
+      - Row (month_header_row) contains the month label repeated across columns (e.g., 'FEBRUARY')
+      - A black separator row appears at the bottom of the month block
+      - The *very next row* after that black separator contains **this year's monthly totals** (numbers)
+      - The following row typically contains **last year's totals** and has Customer == 'Last Year Totals'
 
-    We must NOT add last year's totals into this year's totals. To avoid formula-cached-value issues,
-    we sum the *detail lines* inside each month block and STOP before the totals rows.
+    The projections table must use the *this-year totals row* for each month ahead, and (optionally)
+    use the 'Last Year Totals' row to populate (month-12) for YoY comparisons / the final comparison row.
     """
     try:
         wb = openpyxl.load_workbook(uploaded_file, data_only=True)
@@ -203,20 +206,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
 
     ws = wb["Master List"]
 
-    # Header row (1-based). In your template the real header is row 3.
-    header_row = 3
-    header_map: Dict[str, int] = {}
-    for c in range(1, ws.max_column + 1):
-        v = ws.cell(header_row, c).value
-        if isinstance(v, str) and v.strip():
-            header_map[v.strip()] = c
-
-    bucket_cols = [c for c in BUCKET_COLUMNS if c in header_map]
-    if not bucket_cols:
-        return pd.DataFrame()
-
-    # Master List month headers sometimes appear as "January" and sometimes as "FEBRUARY".
-    # They may also include extra text (e.g. "FEBRUARY 2026").
+    # Month parsing helpers (case-insensitive, tolerant of extra text like "FEBRUARY 2026")
     month_name_to_num = {calendar.month_name[i].lower(): i for i in range(1, 13)}
     month_abbr_to_num = {calendar.month_abbr[i].lower(): i for i in range(1, 13)}
 
@@ -226,7 +216,6 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         s = val.strip()
         if not s:
             return None
-        # Keep letters/spaces only, then take the first token
         s = re.sub(r"[^A-Za-z]+", " ", s).strip()
         if not s:
             return None
@@ -235,67 +224,136 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
             return month_name_to_num[token]
         if token in month_abbr_to_num:
             return month_abbr_to_num[token]
-        # Handle weird casing / partials (e.g. "Febru" or "FEB")
         for k, v in month_name_to_num.items():
             if k.startswith(token) or token.startswith(k[:3]):
                 return v
         return None
 
-    current_year: int | None = None
-    current_month_num: int | None = None
+    def _is_month_header(val) -> bool:
+        """True only for pure month header labels like 'FEBRUARY' (not 'Feb-26, ...')."""
+        if not isinstance(val, str):
+            return False
+        s = val.strip()
+        if not s:
+            return False
+        if any(ch.isdigit() for ch in s):
+            return False
+        cleaned = re.sub(r"[^A-Za-z]", "", s).lower()
+        if cleaned in month_name_to_num:
+            return True
+        if cleaned in month_abbr_to_num and len(cleaned) <= 3:
+            return True
+        return False
+
+    def _is_black_separator_row(row_idx: int) -> bool:
+        # In your file, the black separator row uses a solid fill with theme=1.
+        c = ws.cell(row_idx, 1)
+        try:
+            fill = c.fill
+            if not fill or fill.patternType != "solid":
+                return False
+            fg = fill.fgColor
+            # Most of your styling is theme-based (not RGB)
+            if getattr(fg, "type", None) == "theme" and getattr(fg, "theme", None) == 1:
+                # separator row usually has no values in the first columns
+                vals = [ws.cell(row_idx, j).value for j in range(1, 9)]
+                return all(v is None or (isinstance(v, str) and v.strip() == "") for v in vals)
+        except Exception:
+            return False
+        return False
+
+    def _build_header_map(header_row: int) -> Dict[str, int]:
+        hm: Dict[str, int] = {}
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(header_row, c).value
+            if isinstance(v, str) and v.strip():
+                hm[v.strip()] = c
+        return hm
+
     month_accum: Dict[pd.Period, Dict[str, float]] = {}
+    current_year: int | None = None
 
-    # We iterate the whole sheet because some templates place the year marker
-    # *above* the header row (e.g. row 2 contains 2025). Starting only at the
-    # first data row would miss that first year and shift month parsing.
+    # Scan all rows: year markers appear above the month blocks
     for r in range(1, ws.max_row + 1):
-        a = ws.cell(r, 1).value  # Column A
-        cust = ws.cell(r, header_map.get("Customer", 7)).value  # Column G usually
+        a = ws.cell(r, 1).value
 
-        # Year marker row: e.g. 2026 in col A
+        # Year marker: 2026, 2027, ...
         if isinstance(a, (int, float)) and 2000 <= int(a) <= 2100:
             current_year = int(a)
-            current_month_num = None
             continue
 
-        # Month header row: "January", "February", ...
-        if isinstance(a, str):
-            mnum = _parse_month_num(a)
-            if mnum is not None:
-                current_month_num = mnum
-                # Ensure period entry exists
-                if current_year is not None:
-                    period = pd.Period(f"{current_year}-{mnum:02d}", freq="M")
-                    month_accum.setdefault(period, {bc: 0.0 for bc in bucket_cols})
-                continue
-
-        # If we aren't inside a year+month block, skip
-        if current_year is None or current_month_num is None:
+        # Month header row: "FEBRUARY" etc in column A
+        if not _is_month_header(a) or current_year is None:
             continue
 
-        # Stop conditions inside a month block:
-        # - This-year totals row: blank NLD + blank Customer
-        # - Last-year totals row: Customer == 'Last Year Totals'
-        if a is None and (cust is None or (isinstance(cust, str) and cust.strip() == "")):
-            # this-year totals row reached -> stop adding detail lines (but keep scanning for next blocks)
-            continue
-        if isinstance(cust, str) and cust.strip().lower() == "last year totals":
-            continue
-        # Skip other summary rows in the footer area
-        if isinstance(cust, str) and cust.strip() in {"Total Ordered:", "Buckets Remaining:", "% Ordered:", "Naber Projection - Total Classics"}:
+        mnum = _parse_month_num(a)
+        if mnum is None:
             continue
 
-        # Include detail lines: require some customer text
-        if cust is None or (isinstance(cust, str) and cust.strip() == ""):
+        # The bucket headers are on the row above the month header row
+        header_row = r - 1
+        if header_row < 1:
             continue
 
-        period = pd.Period(f"{current_year}-{current_month_num:02d}", freq="M")
+        header_map = _build_header_map(header_row)
+        bucket_cols = [c for c in BUCKET_COLUMNS if c in header_map]
+        if not bucket_cols:
+            continue
+
+        # Find the black separator row within a reasonable window below the month header
+        sep_row = None
+        scan_limit = min(ws.max_row, r + 300)  # month blocks are well under this
+        for rr in range(r + 1, scan_limit + 1):
+            # Stop early if we hit another month header (something went wrong)
+            a2 = ws.cell(rr, 1).value
+            if _is_month_header(a2):
+                break
+            if _is_black_separator_row(rr):
+                sep_row = rr
+                break
+
+        if sep_row is None:
+            continue
+
+        # This year's totals row is the first row after the separator that contains numbers in bucket columns
+        totals_row = None
+        for rr in range(sep_row + 1, min(ws.max_row, sep_row + 10) + 1):
+            any_num = False
+            for bc in bucket_cols:
+                v = ws.cell(rr, header_map[bc]).value
+                if isinstance(v, (int, float)) and v != 0:
+                    any_num = True
+                    break
+            if any_num:
+                totals_row = rr
+                break
+
+        if totals_row is None:
+            continue
+
+        period = pd.Period(f"{current_year}-{mnum:02d}", freq="M")
         month_accum.setdefault(period, {bc: 0.0 for bc in bucket_cols})
 
         for bc in bucket_cols:
-            v = ws.cell(r, header_map[bc]).value
-            if isinstance(v, (int, float)) and v:
-                month_accum[period][bc] += float(v)
+            v = ws.cell(totals_row, header_map[bc]).value
+            if isinstance(v, (int, float)):
+                month_accum[period][bc] = float(v)
+            else:
+                month_accum[period][bc] = 0.0
+
+        # If the next row is "Last Year Totals", store it into (period - 12)
+        cust_col = header_map.get("Customer", 7)
+        last_year_row = totals_row + 1
+        cust = ws.cell(last_year_row, cust_col).value
+        if isinstance(cust, str) and cust.strip().lower() == "last year totals":
+            prev_period = period - 12
+            month_accum.setdefault(prev_period, {bc: 0.0 for bc in bucket_cols})
+            for bc in bucket_cols:
+                v = ws.cell(last_year_row, header_map[bc]).value
+                if isinstance(v, (int, float)):
+                    month_accum[prev_period][bc] = float(v)
+                else:
+                    month_accum[prev_period][bc] = 0.0
 
     if not month_accum:
         return pd.DataFrame()
