@@ -4570,7 +4570,10 @@ def _fmt_short_date(d: dt.date | None) -> str:
 
 @login_required
 def order_tracker_recap_docx_view(request):
-    """Download an Order Recap DOCX sorted by Customer + Location, for all (filtered) containers."""
+    """Download an Order Recap DOCX for all (filtered) containers.
+
+    Output is ordered by RPC# (requested), with reasonable tie-breakers.
+    """
     user = request.user
 
     # Superusers see ALL containers across companies.
@@ -4599,14 +4602,43 @@ def order_tracker_recap_docx_view(request):
     if assigned_to:
         containers = containers.filter(assigned_to__iexact=assigned_to)
 
-    # Sort by Customer + Location (requested), then by Requested Date, then by PO.
-    containers = containers.order_by(
-        "customer_name",
-        "location_name",
-        "requested_date",
-        "po_number",
-        "-updated_at",
-    ).prefetch_related("lines")
+    # Prefetch lines first; we'll do a Python-side sort so we can sort by the
+    # leading numeric portion of RPC# even when rpc_number includes extra text
+    # like "6066 Miami".
+    containers = containers.prefetch_related("lines")
+
+    def _rpc_sort_key(raw: str | None) -> tuple[int, str]:
+        """Return (numeric_rpc, raw_rpc) for sorting.
+
+        Examples:
+        - "6066 Miami" -> (6066, "6066 Miami")
+        - "6066" -> (6066, "6066")
+        - "TBD"/None/"" -> (10**9, "")  (push to end)
+        """
+        s = (raw or "").strip()
+        if not s:
+            return (10**9, "")
+        first = s.split()[0]
+        digits = "".join(ch for ch in first if ch.isdigit())
+        if digits:
+            try:
+                return (int(digits), s)
+            except Exception:
+                pass
+        return (10**9, s)
+
+    # Sort by RPC#, then fall back to Customer/Location/Requested/PO for a stable, sensible order.
+    containers = sorted(
+        list(containers),
+        key=lambda c: (
+            _rpc_sort_key(getattr(c, "rpc_number", None)),
+            (getattr(c, "customer_name", "") or "").strip().lower(),
+            (getattr(c, "location_name", "") or "").strip().lower(),
+            getattr(c, "requested_date", None) or dt.date.min,
+            (getattr(c, "po_number", "") or "").strip(),
+            -(getattr(c, "updated_at", None).timestamp() if getattr(c, "updated_at", None) else 0),
+        ),
+    )
 
     doc = Document()
 
@@ -5179,6 +5211,10 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
 
 
 
