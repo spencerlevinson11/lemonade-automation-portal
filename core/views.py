@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import copy
@@ -45,14 +44,6 @@ from django.views.decorators.http import require_POST
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
 from .bol_generation import generate_bol_from_form, generate_bol_from_templates
 from .forms import (
-
-import re
-
-def rpc_number_as_int(order):
-    rpc = (order.rpc_number or "").strip()
-    match = re.match(r"(\d+)", rpc)
-    return int(match.group(1)) if match else 999999999
-
     BOLForm,
     PricingUploadForm,
     RpcMasterFormatUploadForm,
@@ -4636,13 +4627,13 @@ def order_tracker_recap_docx_view(request):
                 pass
         return (10**9, s)
 
-    # Sort by RPC#, then fall back to Customer/Location/Requested/PO for a stable, sensible order.
+    # Sort by Customer, then Location, then RPC# (numeric), with tie-breakers for stability.
     containers = sorted(
         list(containers),
         key=lambda c: (
-            _rpc_sort_key(getattr(c, "rpc_number", None)),
             (getattr(c, "customer_name", "") or "").strip().lower(),
             (getattr(c, "location_name", "") or "").strip().lower(),
+            _rpc_sort_key(getattr(c, "rpc_number", None)),
             getattr(c, "requested_date", None) or dt.date.min,
             (getattr(c, "po_number", "") or "").strip(),
             -(getattr(c, "updated_at", None).timestamp() if getattr(c, "updated_at", None) else 0),
@@ -5220,11 +5211,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
-
-
-
 
 
 
