@@ -3,6 +3,8 @@ from datetime import date
 from typing import Dict, List
 import pandas as pd
 
+import openpyxl
+
 
 import calendar
 
@@ -213,36 +215,62 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
     if not bucket_cols:
         return pd.DataFrame()
 
-    month_to_num = {calendar.month_name[i]: i for i in range(1, 13)}
+    # Master List month headers sometimes appear as "January" and sometimes as "FEBRUARY".
+    # They may also include extra text (e.g. "FEBRUARY 2026").
+    month_name_to_num = {calendar.month_name[i].lower(): i for i in range(1, 13)}
+    month_abbr_to_num = {calendar.month_abbr[i].lower(): i for i in range(1, 13)}
+
+    def _parse_month_num(val) -> int | None:
+        if not isinstance(val, str):
+            return None
+        s = val.strip()
+        if not s:
+            return None
+        # Keep letters/spaces only, then take the first token
+        s = re.sub(r"[^A-Za-z]+", " ", s).strip()
+        if not s:
+            return None
+        token = s.split()[0].lower()
+        if token in month_name_to_num:
+            return month_name_to_num[token]
+        if token in month_abbr_to_num:
+            return month_abbr_to_num[token]
+        # Handle weird casing / partials (e.g. "Febru" or "FEB")
+        for k, v in month_name_to_num.items():
+            if k.startswith(token) or token.startswith(k[:3]):
+                return v
+        return None
 
     current_year: int | None = None
-    current_month_name: str | None = None
+    current_month_num: int | None = None
     month_accum: Dict[pd.Period, Dict[str, float]] = {}
 
-    # We iterate from the first data row onward (row 4 typically)
-    for r in range(header_row + 1, ws.max_row + 1):
+    # We iterate the whole sheet because some templates place the year marker
+    # *above* the header row (e.g. row 2 contains 2025). Starting only at the
+    # first data row would miss that first year and shift month parsing.
+    for r in range(1, ws.max_row + 1):
         a = ws.cell(r, 1).value  # Column A
         cust = ws.cell(r, header_map.get("Customer", 7)).value  # Column G usually
 
         # Year marker row: e.g. 2026 in col A
         if isinstance(a, (int, float)) and 2000 <= int(a) <= 2100:
             current_year = int(a)
-            current_month_name = None
+            current_month_num = None
             continue
 
         # Month header row: "January", "February", ...
         if isinstance(a, str):
-            m = a.strip()
-            if m in month_to_num:
-                current_month_name = m
+            mnum = _parse_month_num(a)
+            if mnum is not None:
+                current_month_num = mnum
                 # Ensure period entry exists
                 if current_year is not None:
-                    period = pd.Period(f"{current_year}-{month_to_num[m]:02d}", freq="M")
+                    period = pd.Period(f"{current_year}-{mnum:02d}", freq="M")
                     month_accum.setdefault(period, {bc: 0.0 for bc in bucket_cols})
                 continue
 
         # If we aren't inside a year+month block, skip
-        if current_year is None or current_month_name is None:
+        if current_year is None or current_month_num is None:
             continue
 
         # Stop conditions inside a month block:
@@ -261,7 +289,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         if cust is None or (isinstance(cust, str) and cust.strip() == ""):
             continue
 
-        period = pd.Period(f"{current_year}-{month_to_num[current_month_name]:02d}", freq="M")
+        period = pd.Period(f"{current_year}-{current_month_num:02d}", freq="M")
         month_accum.setdefault(period, {bc: 0.0 for bc in bucket_cols})
 
         for bc in bucket_cols:
@@ -672,3 +700,4 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     )
 
     return projection_df, yoy_suggestions, _period_to_label(start_month), customer_delta_suggestions
+
