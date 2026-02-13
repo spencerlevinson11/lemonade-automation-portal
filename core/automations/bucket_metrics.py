@@ -50,7 +50,11 @@ PROJECTION_COLUMNS = [
     "8 liter round NG",
     "13 NextGen",
     "3 liter round",
-    "MAXIMA",
+    # MAXIMA is split into 4 categories based on the Bucket Type column (AC)
+    "Maxima Buckets",
+    "Maxima Lids",
+    "Amalia Buckets",
+    "Amalia Lids",
     "8 liter wide NIR grey",
     "10 liter wide NIR grey",
 ]
@@ -328,12 +332,22 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         cleaned = re.sub(r"[^A-Za-z]", "", s).lower()
         return cleaned in month_name_to_num
 
+    def _canon_header(v: str) -> str:
+        # Normalize headers so minor formatting differences don't break matching.
+        s = str(v).replace("\xa0", " ").strip().lower()
+        s = re.sub(r"\s+", " ", s)
+        # Fix common missing-space patterns found in prognosis headers
+        s = re.sub(r"(wide)\s*(nir)", r"\1 \2", s)
+        s = re.sub(r"(liter)\s*(wide)", r"\1 \2", s)
+        return s
+
     def _build_header_map(header_row: int) -> Dict[str, int]:
         hm: Dict[str, int] = {}
         for c in range(1, ws.max_column + 1):
             v = ws.cell(header_row, c).value
             if isinstance(v, str) and v.strip():
-                hm[v.strip()] = c
+                key = _canon_header(v)
+                hm[key] = c
         return hm
 
     def _cell_str(v) -> str:
@@ -344,7 +358,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         cnt = 0
         ssum = 0.0
         for bc in bucket_cols:
-            c = header_map.get(bc)
+            c = header_map.get(_canon_header(bc))
             if not c:
                 continue
             v = ws.cell(row_idx, c).value
@@ -386,7 +400,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         header_map = _build_header_map(header_row)
 
         # Only keep bucket columns that exist in this sheet's header row
-        bucket_cols = [c for c in BUCKET_COLUMNS if c in header_map]
+        bucket_cols = [c for c in BUCKET_COLUMNS if _canon_header(c) in header_map]
         if not bucket_cols:
             continue
 
@@ -450,27 +464,60 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
             continue
 
         period = pd.Period(f"{current_year}-{mnum:02d}", freq="M")
-        month_accum.setdefault(period, {bc: 0.0 for bc in bucket_cols})
+        month_accum.setdefault(period, {**{bc: 0.0 for bc in bucket_cols}, **{'Maxima Buckets':0.0,'Maxima Lids':0.0,'Amalia Buckets':0.0,'Amalia Lids':0.0}})
 
         for bc in bucket_cols:
-            v = ws.cell(best_totals_row, header_map[bc]).value
+            v = ws.cell(best_totals_row, header_map[_canon_header(bc)]).value
             month_accum[period][bc] = _to_float(v)
+        
+        # Split MAXIMA into 4 categories by inspecting the Bucket Type column (AC) and summing
+        # the MAXIMA quantity from detail rows within the month block (since the totals row combines them).
+        maxima_col = header_map.get(_canon_header("MAXIMA"))
+        bucket_type_col = header_map.get(_canon_header("Bucket Type"))
+        if maxima_col and bucket_type_col:
+            mb = ml = ab = al = 0.0
+            for rr2 in range(r + 1, best_totals_row):
+                qty = _to_float(ws.cell(rr2, maxima_col).value)
+                if qty == 0:
+                    continue
+                bt = _cell_str(ws.cell(rr2, bucket_type_col).value)
+                if "maxima" in bt and "lid" in bt:
+                    ml += qty
+                elif "maxima" in bt:
+                    mb += qty
+                elif "amalia" in bt and "lid" in bt:
+                    al += qty
+                elif "amalia" in bt:
+                    ab += qty
+            month_accum[period]["Maxima Buckets"] = mb
+            month_accum[period]["Maxima Lids"] = ml
+            month_accum[period]["Amalia Buckets"] = ab
+            month_accum[period]["Amalia Lids"] = al
+        else:
+            # Ensure the split columns exist even if headers move
+            month_accum[period].setdefault("Maxima Buckets", 0.0)
+            month_accum[period].setdefault("Maxima Lids", 0.0)
+            month_accum[period].setdefault("Amalia Buckets", 0.0)
+            month_accum[period].setdefault("Amalia Lids", 0.0)
 
-        # Normalize the 10-liter wide NIR header variants into the single logical column
-        if "10 liter wideNIR grey" in header_map and "10 liter wide NIR grey" in month_accum[period]:
-            v_no_space = ws.cell(best_totals_row, header_map["10 liter wideNIR grey"]).value
+# Normalize NIR header variants into the single logical columns
+        # (some spreadsheets use missing spaces like '10 liter wideNIR grey')
+        nir10_key = _canon_header("10 liter wide NIR grey")
+        nir10_alt = _canon_header("10 liter wideNIR grey")
+        if nir10_alt in header_map:
+            v_no_space = ws.cell(best_totals_row, header_map[nir10_alt]).value
             month_accum[period]["10 liter wide NIR grey"] = _to_float(v_no_space)
 
         # If we found last-year totals in this block, populate period-12
         if last_year_row is not None:
             prev_period = period - 12
-            month_accum.setdefault(prev_period, {bc: 0.0 for bc in bucket_cols})
+            month_accum.setdefault(prev_period, {**{bc: 0.0 for bc in bucket_cols}, **{'Maxima Buckets':0.0,'Maxima Lids':0.0,'Amalia Buckets':0.0,'Amalia Lids':0.0}})
             for bc in bucket_cols:
-                v = ws.cell(last_year_row, header_map[bc]).value
+                v = ws.cell(last_year_row, header_map[_canon_header(bc)]).value
                 month_accum[prev_period][bc] = _to_float(v)
-
-            if "10 liter wideNIR grey" in header_map and "10 liter wide NIR grey" in month_accum[prev_period]:
-                v_no_space = ws.cell(last_year_row, header_map["10 liter wideNIR grey"]).value
+            nir10_alt = _canon_header("10 liter wideNIR grey")
+            if nir10_alt in header_map:
+                v_no_space = ws.cell(last_year_row, header_map[nir10_alt]).value
                 month_accum[prev_period]["10 liter wide NIR grey"] = _to_float(v_no_space)
 
     if not month_accum:
@@ -480,7 +527,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
     df.index.name = "month"
 
     # Ensure all bucket columns exist
-    for c in BUCKET_COLUMNS:
+    for c in list(BUCKET_COLUMNS) + ['Maxima Buckets','Maxima Lids','Amalia Buckets','Amalia Lids']:
         if c not in df.columns:
             df[c] = 0.0
 
