@@ -1,5 +1,6 @@
 import re
 import math
+import io
 from datetime import date
 from typing import Dict, List
 import pandas as pd
@@ -55,6 +56,43 @@ PROJECTION_COLUMNS = [
 ]
 
 _YEAR_RE = re.compile(r"^\s*(19|20)\d{2}\s*$")
+
+
+def _excel_io(uploaded_file):
+    """Return a fresh, seekable file-like for Excel readers.
+
+    In Django, uploaded files are file-like objects. If we pass the same object
+    through multiple readers (pandas/openpyxl), the stream pointer can end up at
+    EOF and subsequent reads can fail or produce partial data.
+
+    This helper snapshots the bytes and returns a new BytesIO each time.
+    If `uploaded_file` is already a path-like or bytes buffer, it's returned as-is.
+    """
+    # Path-like (str/Path) is fine for both readers.
+    if isinstance(uploaded_file, (str, bytes, bytearray)):
+        return uploaded_file
+
+    # File-like: snapshot bytes.
+    if hasattr(uploaded_file, "read"):
+        try:
+            # Preserve current position if possible.
+            pos = uploaded_file.tell() if hasattr(uploaded_file, "tell") else None
+        except Exception:
+            pos = None
+        try:
+            if hasattr(uploaded_file, "seek"):
+                uploaded_file.seek(0)
+            data = uploaded_file.read()
+        finally:
+            # Best-effort restore.
+            try:
+                if pos is not None and hasattr(uploaded_file, "seek"):
+                    uploaded_file.seek(pos)
+            except Exception:
+                pass
+        return io.BytesIO(data)
+
+    return uploaded_file
 
 
 def _looks_like_year(s: str) -> bool:
@@ -198,7 +236,7 @@ def _read_master_list(uploaded_file) -> pd.DataFrame:
     Reads 'Master List' and returns a cleaned dataframe with:
       date, customer, city, month (Period), plus numeric bucket columns.
     """
-    xls = pd.ExcelFile(uploaded_file)
+    xls = pd.ExcelFile(_excel_io(uploaded_file))
     df = pd.read_excel(xls, sheet_name="Master List")
 
     # In your file, row 1 (0-based index) is the true header row
@@ -243,7 +281,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
     We also look for the row where Customer == 'Last Year Totals' to populate (month-12) for YoY comparisons.
     """
     try:
-        wb = openpyxl.load_workbook(uploaded_file, data_only=True)
+        wb = openpyxl.load_workbook(_excel_io(uploaded_file), data_only=True)
     except Exception:
         return pd.DataFrame()
 
@@ -301,17 +339,6 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
     def _cell_str(v) -> str:
         return v.strip().lower() if isinstance(v, str) else ""
 
-    def _row_contains_phrase(row_idx: int, phrase: str) -> bool:
-        """Return True if any cell in the row contains the given phrase (case-insensitive)."""
-        target = phrase.strip().lower()
-        if not target:
-            return False
-        for c in range(1, ws.max_column + 1):
-            v = ws.cell(row_idx, c).value
-            if isinstance(v, str) and target in v.strip().lower():
-                return True
-        return False
-
     def _numeric_density(row_idx: int, header_map: Dict[str, int], bucket_cols: List[str]) -> tuple[int, float]:
         """Return (numeric_cell_count, numeric_abs_sum) across bucket columns."""
         cnt = 0
@@ -337,8 +364,6 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         # Year marker: 2026, 2027, ...
         if isinstance(a, (int, float)) and 2000 <= int(a) <= 2100:
             current_year = int(a)
-            # Explicit year marker: reset month tracking so we don't double-increment on rollover.
-            last_month_num = None
             continue
 
         if not _is_month_header(a) or current_year is None:
@@ -387,14 +412,12 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
             cust_val = ws.cell(rr, cust_col).value
             cust_s = _cell_str(cust_val)
 
-            if cust_s == "last year totals" or _row_contains_phrase(rr, "last year totals"):
+            if cust_s == "last year totals":
                 last_year_row = rr
                 continue
 
             # this-year totals row should have blank-ish customer cell
-            # Also ensure we don't accidentally select the 'Last Year Totals' row even if the
-            # customer column is misaligned for a given header row.
-            if cust_s or _row_contains_phrase(rr, "last year totals"):
+            if cust_s:
                 continue
 
             cnt, ssum = _numeric_density(rr, header_map, bucket_cols)
@@ -408,19 +431,6 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
                 best_totals_row = rr
                 best_cnt = cnt
                 best_sum = ssum
-
-        # If we found an explicit 'Last Year Totals' row, the THIS YEAR totals row is typically
-        # immediately above it. Prefer that row (when it matches our totals-row criteria), because
-        # it prevents any chance of selecting last-year totals as the current month.
-        if last_year_row is not None:
-            cand = last_year_row - 1
-            if cand >= r + 1 and cand <= block_end:
-                cand_cust = _cell_str(ws.cell(cand, cust_col).value)
-                cand_cnt, cand_sum = _numeric_density(cand, header_map, bucket_cols)
-                if (not cand_cust) and (not _row_contains_phrase(cand, "last year totals")) and cand_cnt >= threshold:
-                    best_totals_row = cand
-                    best_cnt = cand_cnt
-                    best_sum = cand_sum
 
         if best_totals_row is None:
             continue
@@ -851,11 +861,6 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     )
 
     return projection_df, yoy_suggestions, _period_to_label(start_month), customer_delta_suggestions
-
-
-
-
-
 
 
 
