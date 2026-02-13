@@ -26,6 +26,9 @@ BUCKET_COLUMNS = [
     "13 NextGen",
     "3 liter round",
     "MAXIMA",
+    "8 liter wide NIR grey",
+    "10 liter wide NIR grey",
+    "10 liter wideNIR grey",
     "SUB",
     "HOLD",
 ]
@@ -46,6 +49,9 @@ PROJECTION_COLUMNS = [
     "8 liter round NG",
     "13 NextGen",
     "3 liter round",
+    "MAXIMA",
+    "8 liter wide NIR grey",
+    "10 liter wide NIR grey",
 ]
 
 _YEAR_RE = re.compile(r"^\s*(19|20)\d{2}\s*$")
@@ -286,21 +292,60 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         return False
 
     def _is_black_separator_row(row_idx: int) -> bool:
-        # In your file, the black separator row uses a solid fill with theme=1.
-        c = ws.cell(row_idx, 1)
+        """Detect the black month-separator row.
+
+        The template isn't perfectly consistent:
+          - Some months use theme=1 black fill
+          - Some have a stray bracket like ']' in an otherwise blank cell
+        We treat the row as a separator if it has a solid dark fill and is *mostly* empty
+        in the first ~20 columns.
+        """
         try:
-            fill = c.fill
-            if not fill or fill.patternType != "solid":
+            # Look at a few early cells; sometimes A is blank but the fill still applies.
+            def _is_dark_fill(cell) -> bool:
+                fill = getattr(cell, "fill", None)
+                if not fill or fill.patternType != "solid":
+                    return False
+                fg = getattr(fill, "fgColor", None)
+                t = getattr(fg, "type", None)
+                # theme black
+                if t == "theme" and getattr(fg, "theme", None) == 1:
+                    return True
+                # rgb black-ish
+                rgb = getattr(fg, "rgb", None)
+                if isinstance(rgb, str) and rgb.upper().endswith("000000"):
+                    return True
+                # indexed black-ish (often 8 or 64 depending on the file)
+                idx = getattr(fg, "indexed", None)
+                if isinstance(idx, int) and idx in {8, 64}:
+                    return True
                 return False
-            fg = fill.fgColor
-            # Most of your styling is theme-based (not RGB)
-            if getattr(fg, "type", None) == "theme" and getattr(fg, "theme", None) == 1:
-                # separator row usually has no values in the first columns
-                vals = [ws.cell(row_idx, j).value for j in range(1, 9)]
-                return all(v is None or (isinstance(v, str) and v.strip() == "") for v in vals)
+
+            has_dark = any(_is_dark_fill(ws.cell(row_idx, j)) for j in range(1, 6))
+
+            if not has_dark:
+                return False
+
+            # Consider the first 20 columns; ignore harmless single-character artifacts.
+            ignorable = {"]", "[", "}", "{", "|", "¦", "¬"}
+            non_empty = 0
+            for j in range(1, 21):
+                v = ws.cell(row_idx, j).value
+                if v is None:
+                    continue
+                if isinstance(v, str):
+                    s = v.strip()
+                    if not s:
+                        continue
+                    if s in ignorable:
+                        continue
+                non_empty += 1
+                if non_empty > 1:
+                    return False
+
+            return True
         except Exception:
             return False
-        return False
 
     def _build_header_map(header_row: int) -> Dict[str, int]:
         hm: Dict[str, int] = {}
@@ -312,6 +357,7 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
 
     month_accum: Dict[pd.Period, Dict[str, float]] = {}
     current_year: int | None = None
+    last_month_num: int | None = None
 
     # Scan all rows: year markers appear above the month blocks
     for r in range(1, ws.max_row + 1):
@@ -329,6 +375,12 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
         mnum = _parse_month_num(a)
         if mnum is None:
             continue
+
+        # Some templates roll into a new year without repeating the year marker row.
+        # If month number goes backwards (e.g., DECEMBER -> JANUARY), assume year rollover.
+        if last_month_num is not None and current_year is not None and mnum < last_month_num:
+            current_year += 1
+        last_month_num = mnum
 
         # The bucket headers are on the row above the month header row
         header_row = r - 1
@@ -381,7 +433,13 @@ def _build_monthly_totals_master_list_this_year_only(uploaded_file) -> pd.DataFr
             else:
                 month_accum[period][bc] = 0.0
 
-        # If the next row is "Last Year Totals", store it into (period - 12)
+        # Normalize the 10-liter wide NIR header variants into a single logical column
+        # Some sheets have "10 liter wideNIR grey" (missing a space).
+        if "10 liter wideNIR grey" in header_map and "10 liter wide NIR grey" in month_accum[period]:
+            v_no_space = ws.cell(totals_row, header_map["10 liter wideNIR grey"]).value
+            if isinstance(v_no_space, (int, float)):
+                month_accum[period]["10 liter wide NIR grey"] = _to_float(v_no_space)
+
         cust_col = header_map.get("Customer", 7)
         last_year_row = totals_row + 1
         cust = ws.cell(last_year_row, cust_col).value
@@ -798,6 +856,8 @@ def rebuild_projection_with_growth_and_customer_deltas(uploaded_file, growth_pct
     )
 
     return projection_df, yoy_suggestions, _period_to_label(start_month), customer_delta_suggestions
+
+
 
 
 
