@@ -5,6 +5,9 @@
   <title>{{ automation_name }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <!-- Leaflet (map) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
   <style>
     :root {
       --bg-main: #020617;
@@ -26,7 +29,7 @@
     }
     .wrap { max-width: 1200px; margin: 0 auto; }
     .top {
-      display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+      display:flex; justify-content:space-between; align-items:center; gap:12px;
       margin-bottom: 14px;
     }
     .title h1 { margin:0; font-size: 1.25rem; }
@@ -43,13 +46,10 @@
       box-shadow: 0 22px 60px rgba(0,0,0,0.55);
     }
 
-    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
-
-    .row { display:flex; gap:12px; flex-wrap:wrap; }
-    .field { flex: 1; min-width: 240px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+    .field { flex: 1; min-width: 220px; }
     label { display:block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; }
-    input, textarea, select {
+    input, select, textarea {
       width: 100%;
       padding: 10px 10px;
       border-radius: 10px;
@@ -58,7 +58,7 @@
       color: var(--text-main);
       outline: none;
     }
-    textarea { resize: vertical; }
+    textarea { min-height: 40px; resize: vertical; }
 
     .btn {
       display:inline-flex; align-items:center; justify-content:center;
@@ -68,41 +68,74 @@
       background: rgba(250,204,21,0.12);
       color: var(--accent);
       cursor:pointer;
-      font-weight: 800;
+      font-weight: 700;
       text-decoration:none;
     }
     .btn:hover { background: rgba(250,204,21,0.18); text-decoration:none; }
 
-    .btn2 {
-      display:inline-flex; align-items:center; justify-content:center;
-      padding: 10px 14px;
-      border-radius: 12px;
-      border: 1px solid rgba(148,163,184,0.25);
-      background: rgba(15,23,42,0.55);
-      color: var(--text-main);
-      cursor:pointer;
-      font-weight: 700;
-      text-decoration:none;
-    }
-
-    /* Added: danger button styling for delete */
-    .btn.danger {
-      border: 1px solid rgba(249, 115, 115, 0.55);
-      background: rgba(249, 115, 115, 0.12);
+    .btn-danger {
+      border: 1px solid rgba(249,115,115,0.55);
+      background: rgba(249,115,115,0.10);
       color: #fecaca;
     }
-    .btn.danger:hover { background: rgba(249, 115, 115, 0.18); }
-
-    .errorlist { margin: 6px 0 0; padding: 0; list-style: none; color: var(--danger); font-size: 0.85rem; }
-    .muted { color: var(--text-muted); }
+    .btn-danger:hover { background: rgba(249,115,115,0.16); }
 
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 10px 8px; border-bottom: 1px solid rgba(148,163,184,0.16); vertical-align: top; }
-    th { text-align:left; font-size: 0.85rem; color: var(--text-muted); font-weight: 800; }
+    th { text-align:left; font-size: 0.85rem; color: var(--text-muted); font-weight: 700; }
     td { font-size: 0.95rem; }
+    .muted { color: var(--text-muted); }
+    .badge {
+      display:inline-flex; align-items:center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.25);
+      background: rgba(15,23,42,0.55);
+      font-size: 0.8rem;
+      color: var(--text-main);
+      white-space: nowrap;
+    }
 
-    .right { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
-    .tiny { font-size: 0.85rem; }
+    /* Collapsible add form */
+    details { border-radius: 14px; }
+    summary {
+      cursor: pointer;
+      list-style: none;
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 12px;
+      font-weight: 800;
+      user-select: none;
+    }
+    summary::-webkit-details-marker { display:none; }
+    .summary-left { display:flex; align-items:center; gap:10px; }
+    .chev {
+      width: 10px; height: 10px;
+      border-right: 2px solid rgba(250,204,21,0.9);
+      border-bottom: 2px solid rgba(250,204,21,0.9);
+      transform: rotate(-45deg);
+      transition: transform 160ms ease;
+      margin-top: 2px;
+    }
+    details[open] .chev { transform: rotate(45deg); }
+    .hint { font-size: 0.85rem; color: var(--text-muted); margin-top: 6px; }
+
+    .divider {
+      height: 1px;
+      background: rgba(148,163,184,0.16);
+      margin: 14px 0;
+    }
+
+    .actions { display:flex; gap:10px; flex-wrap:wrap; }
+
+    #vesselMap {
+      height: 380px;
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.16);
+      overflow: hidden;
+    }
   </style>
 </head>
 
@@ -110,397 +143,432 @@
   <div class="wrap">
     <div class="top">
       <div class="title">
-        <h1>{% if container %}Edit container{% else %}New container{% endif %}</h1>
-        <p class="muted">{{ company.name }} • Everything is editable — update as the container moves.</p>
+        <h1>Order Tracker</h1>
+        <p class="muted">{{ company_display }} • Track sea containers by customer + location</p>
       </div>
-      <div class="right">
-        <a class="btn2" href="{% url 'order_tracker' %}">← Back</a>
+      <div class="actions">
+        <!-- Keep your existing "full edit page" flow available -->
+        <a class="btn" href="{% url 'order_container_new' %}">Open full editor</a>
 
-        {% if container %}
-          <form method="post" action="{% url 'order_container_delete' container.id %}"
-                onsubmit="return confirm('Delete this order? This cannot be undone.');"
-                style="display:inline;">
-            {% csrf_token %}
-            <button class="btn danger" type="submit">Delete</button>
-          </form>
-        {% endif %}
-
-        <!-- Keep a visible Save button in the header, but make sure it always submits the main form -->
-        <button class="btn" type="button" id="topSaveBtn">Save</button>
+        <!-- Order recap export (DOCX) -->
+        <a class="btn" href="{% url 'order_tracker_recap_docx' %}?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}">Download order recap</a>
       </div>
     </div>
 
-    {#
-      IMPORTANT:
-      Explicitly set action so POST always goes to the correct endpoint.
-      Some browsers + reverse proxies can behave oddly with an empty action on complex pages.
-    #}
-    <form id="mainForm"
-          method="post"
-          enctype="multipart/form-data"
-          action="{% if container %}{% url 'order_container_edit' container.id %}{% else %}{% url 'order_container_new' %}{% endif %}">
-      {% csrf_token %}
+    {% if messages %}
+      <div class="card">
+        {% for message in messages %}
+          <div class="{% if message.tags %}{{ message.tags }}{% endif %}" style="margin-bottom:6px;">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
 
-      {# CRITICAL: formset management fields must be inside the main form on BOTH GET and POST #}
-      <div style="display:none;">
-        {{ doc_formset.management_form }}
-        {{ formset.management_form }}
+    <!-- Vessel map (shows vessels for containers that have MMSI/IMO saved) -->
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:900;">Vessel Map</div>
+          <div class="muted tiny">Latest terrestrial AIS position for any container with a saved MMSI/IMO.</div>
+        </div>
+        <div class="badge">Live</div>
       </div>
 
-      {# Flash messages (success / error) #}
-      {% if messages %}
-        <div class="card" style="border-color: rgba(250,204,21,0.35);">
-          {% for message in messages %}
-            <div style="margin:6px 0; font-weight:800;" class="{% if message.tags %}{{ message.tags }}{% endif %}">
-              {{ message }}
-            </div>
-          {% endfor %}
-        </div>
+      {% if vessel_map_error %}
+        <div class="muted" style="margin-top:10px;">{{ vessel_map_error }}</div>
       {% endif %}
 
-      <div class="card">
-        <div class="grid">
-          <div class="field">
-            <label>Customer name</label>
-            {{ form.customer_name }}
-            {{ form.customer_name.errors }}
-          </div>
-          <div class="field">
-            <label>Location</label>
-            {{ form.location_name }}
-            {{ form.location_name.errors }}
-          </div>
+      <div style="margin-top:12px;">
+        <div id="vesselMap"></div>
+        <div id="vesselMapHint" class="muted tiny" style="margin-top:8px; display:none;">No vessels to show yet. Add a vessel MMSI (recommended) or IMO to any container.</div>
+      </div>
+    </div>
 
-          <div class="field">
-            <label>PO#</label>
-            {{ form.po_number }}
-            {{ form.po_number.errors }}
+    <!-- NEW: Inline "Add container" form (collapsible) -->
+    <div class="card">
+      <details {% if request.method == "POST" %}open{% endif %}>
+        <summary>
+          <div class="summary-left">
+            <span class="chev"></span>
+            <span>+ Add a new container</span>
           </div>
-          <div class="field">
-            <label>Requested date</label>
-            <div style="display:flex; gap:10px; align-items:center;">
-              <div style="flex:1;">
-                {{ form.requested_date }}
-                {{ form.requested_date.errors }}
-              </div>
-              <label style="display:flex; align-items:center; gap:8px; margin:0; color: var(--text-muted); white-space:nowrap;">
-                {{ form.requested_asap }} <span>ASAP</span>
-              </label>
+          <span class="badge">Quick add</span>
+        </summary>
+        <div class="hint">Creates a container fast — you can open it afterward to add line items, documents, etc.</div>
+
+        <div class="divider"></div>
+
+        <!--
+          Posts to your existing "new container" view.
+          This assumes that URL exists and accepts POST for creation.
+        -->
+        <form method="post" action="{% url 'order_container_new' %}">
+          {% csrf_token %}
+
+          <div class="row">
+            <div class="field">
+              <label>Customer</label>
+              <input name="customer_name" placeholder="e.g., Native, Falcon, Designers Choice" required />
             </div>
-            {{ form.requested_asap.errors }}
-          </div>
-
-          <div class="field">
-            <label>Status</label>
-            {{ form.status }}
-            {{ form.status.errors }}
-          </div>
-          <div class="field">
-            <label>Owner (Jaime / Spencer)</label>
-            <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; padding:6px 0;">
-              {{ form.assigned_to }}
+            <div class="field">
+              <label>Location</label>
+              <input name="location_name" placeholder="e.g., City of Industry, Miami, Lebanon" />
             </div>
-            {{ form.assigned_to.errors }}
-          </div>
-          <div class="field">
-            <label>RPC#</label>
-            {{ form.rpc_number }}
-            {{ form.rpc_number.errors }}
-          </div>
-
-          <div class="field">
-            <label>Loading date</label>
-            {{ form.loading_date }}
-            {{ form.loading_date.errors }}
-          </div>
-          <div class="field">
-            <label>Booking #</label>
-            {{ form.booking_number }}
-            {{ form.booking_number.errors }}
-          </div>
-
-          <div class="field">
-            <label>Bill of lading #</label>
-            {{ form.bill_of_lading_number }}
-            {{ form.bill_of_lading_number.errors }}
-          </div>
-
-          <div class="field">
-            <label>Vessel name</label>
-            {{ form.vessel_name }}
-            {{ form.vessel_name.errors }}
-            <div class="muted tiny" style="margin-top:6px;">Used for your dashboard map. Add MMSI for best results.</div>
-          </div>
-          <div class="field">
-            <label>Vessel MMSI</label>
-            {{ form.vessel_mmsi }}
-            {{ form.vessel_mmsi.errors }}
-          </div>
-          <div class="field">
-            <label>Vessel IMO (optional)</label>
-            {{ form.vessel_imo }}
-            {{ form.vessel_imo.errors }}
-          </div>
-          <div class="field">
-            <label>ETD</label>
-            {{ form.etd }}
-            {{ form.etd.errors }}
-          </div>
-
-          <div class="field">
-            <label>ETA</label>
-            <div style="display:flex; gap:10px; align-items:center;">
-              <div style="flex:1;">
-                {{ form.eta }}
-                {{ form.eta.errors }}
-              </div>
-              <div style="flex:1; min-width:220px;">
-                {{ form.eta_city }}
-                {{ form.eta_city.errors }}
-              </div>
+            <div class="field" style="max-width:260px;">
+              <label>Owner</label>
+              <select name="assigned_to">
+                <option value="" selected>—</option>
+                <option value="Spencer">Spencer</option>
+                <option value="Jaime">Jaime</option>
+              </select>
+            </div>
+            <div class="field" style="max-width:260px;">
+              <label>Status</label>
+              <input name="status" placeholder="e.g., booked, on water, customs..." />
             </div>
           </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field">
+              <label>PO#</label>
+              <input name="po_number" placeholder="PO number" />
+            </div>
+            <div class="field">
+              <label>RPC#</label>
+              <input name="rpc_number" placeholder="RPC number" />
+            </div>
+            <div class="field">
+              <label>Booking #</label>
+              <input name="booking_number" placeholder="Booking number" />
+            </div>
+            <div class="field">
+              <label>BOL #</label>
+              <input name="bill_of_lading_number" placeholder="Bill of Lading number" />
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field">
+              <label>Vessel name (optional)</label>
+              <input name="vessel_name" placeholder="e.g., BLUE STAR DELOS" />
+            </div>
+            <div class="field" style="max-width:320px;">
+              <label>Vessel MMSI (recommended)</label>
+              <input name="vessel_mmsi" inputmode="numeric" placeholder="9-digit MMSI" />
+            </div>
+            <div class="field" style="max-width:320px;">
+              <label>Vessel IMO (optional)</label>
+              <input name="vessel_imo" inputmode="numeric" placeholder="7-digit IMO" />
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field" style="max-width:220px;">
+              <label>Loading date</label>
+              <input type="date" name="loading_date" />
+            </div>
+            <div class="field" style="max-width:220px;">
+              <label>ETD</label>
+              <input type="date" name="etd" />
+            </div>
+            <div class="field" style="max-width:220px;">
+              <label>ETA</label>
+              <input type="date" name="eta" />
+            </div>
+            <div class="field" style="max-width:260px;">
+              <label>Estimated delivery</label>
+              <input type="date" name="estimated_delivery_date" />
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="field" style="min-width: 320px;">
+              <label>Notes (optional)</label>
+              <textarea name="notes" placeholder="Anything important (forwarder, port, issues, etc.)"></textarea>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
+            <button class="btn" type="submit">Create container</button>
+            <a class="btn btn-danger" href="{% url 'order_tracker' %}">Cancel</a>
+          </div>
+        </form>
+      </details>
+    </div>
+
+    <div class="card">
+      <form method="get">
+        <div class="row">
           <div class="field">
-            <label>Estimated delivery date</label>
-            {{ form.estimated_delivery_date }}
-            {{ form.estimated_delivery_date.errors }}
+            <label>Search</label>
+            <input name="q" value="{{ q }}" placeholder="Customer, location, PO#, RPC#, booking, BOL..." />
+          </div>
+          <div class="field" style="max-width:260px;">
+            <label>Status (type anything)</label>
+            <input name="status" value="{{ status }}" placeholder="e.g., booked, on water, customs..." />
+          </div>
+          <div class="field" style="max-width:260px;">
+            <label>Owner</label>
+            <select name="assigned_to">
+              <option value="" {% if not assigned_to %}selected{% endif %}>All</option>
+              <option value="Spencer" {% if assigned_to == "Spencer" %}selected{% endif %}>Spencer</option>
+              <option value="Jaime" {% if assigned_to == "Jaime" %}selected{% endif %}>Jaime</option>
+            </select>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn" type="submit">Filter</button>
+            <a class="btn" href="{% url 'order_tracker' %}">Reset</a>
           </div>
         </div>
+      </form>
+    </div>
 
-        <div class="field" style="margin-top:14px;">
-          <label>Notes</label>
-          {{ form.notes }}
-          {{ form.notes.errors }}
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:900;">Active Orders</div>
+          <div class="muted tiny">Use “Mark delivered” once an order has arrived — it will move to the Delivered section below.</div>
         </div>
       </div>
 
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
-          <div>
-            <div style="font-weight:900;">Documents (PDFs, BOL, booking, etc.)</div>
-            <div class="muted tiny">Attach one or more PDFs to this container. You can add more rows as needed.</div>
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=customer&dir={% if sort == 'customer' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Customer
+              </a>
+              /
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=location&dir={% if sort == 'location' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Location
+              </a>
+            </th>
+            <th>PO#</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=requested&dir={% if sort == 'requested' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Requested
+              </a>
+            </th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=assigned_to&dir={% if sort == 'assigned_to' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Owner
+              </a>
+            </th>
+            <th>Status</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=loading&dir={% if sort == 'loading' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Loading Date
+              </a>
+            </th>
+            <th>ETD</th>
+            <th>ETA</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=est_delivery&dir={% if sort == 'est_delivery' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                Est. Delivery
+              </a>
+            </th>
+            <th>Updated</th>
+            <th style="width:140px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in containers %}
+            <tr>
+              <td>
+                <div style="font-weight:800;">
+                  <a href="{% url 'order_container_edit' container_id=c.id %}">
+                    {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
+                  </a>
+                </div>
+                <div class="muted" style="font-size:0.85rem; margin-top:2px;">
+                  {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
+                  {% if c.booking_number %}Booking: {{ c.booking_number }} • {% endif %}
+                  {% if c.bill_of_lading_number %}BOL: {{ c.bill_of_lading_number }}{% endif %}
+                </div>
+              </td>
+              <td>{% if c.po_number %}{{ c.po_number }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>
+                {% if c.requested_asap %}
+                  <span class="badge" style="border-color: rgba(249,115,115,0.55); color:#fecaca; background: rgba(249,115,115,0.12);">ASAP</span>
+                {% elif c.requested_date_text %}
+                  {{ c.requested_date_text }}
+                {% elif c.requested_date %}
+                  {{ c.requested_date }}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td>{% if c.assigned_to %}<span class="badge">{{ c.assigned_to }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{% if c.status %}<span class="badge">{{ c.status }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{% if c.loading_date %}{{ c.loading_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{% if c.etd %}{{ c.etd }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>
+                {% if c.eta %}
+                  {{ c.eta }}{% if c.eta_city %} {{ c.eta_city }}{% endif %}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
+              <td>
+                <form method="post" action="{% url 'order_container_toggle_delivered' c.id %}" style="display:inline;">
+                  {% csrf_token %}
+                  <button class="btn" type="submit" onclick="return confirm('Mark this order as Delivered?');">Mark delivered</button>
+                </form>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="11" class="muted">No active orders. (Delivered orders show below.)</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>
+          <div class="summary-left">
+            <span class="chev"></span>
+            <span>Delivered Orders ({{ delivered_containers|length }})</span>
           </div>
-          <button class="btn2" type="button" id="addDocBtn">+ Add document</button>
-        </div>
-        <table id="docsTable">
+          <span class="badge">Archive</span>
+        </summary>
+
+        <div class="hint">These are orders whose status is <strong>Delivered</strong>. You can reopen an order if needed.</div>
+        <div class="divider"></div>
+
+        <table>
           <thead>
             <tr>
-              <th style="width:55%;">File</th>
-              <th style="width:30%;">Label</th>
-              <th style="width:15%;">Delete</th>
+              <th>Customer / Location</th>
+              <th>PO#</th>
+              <th>Requested</th>
+              <th>Owner</th>
+              <th>Status</th>
+              <th>Loading Date</th>
+              <th>ETD</th>
+              <th>ETA</th>
+              <th>Est. Delivery</th>
+              <th>Updated</th>
+              <th style="width:140px;">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {% for d in doc_formset.forms %}
-              <tr class="docRow">
+            {% for c in delivered_containers %}
+              <tr>
                 <td>
-                  {% if d.instance and d.instance.file %}
-                    <div style="margin-bottom:6px;">
-                      <a href="{{ d.instance.file.url }}" target="_blank">View current file</a>
-                      <span class="muted tiny">({{ d.instance.file.name }})</span>
-                    </div>
+                  <div style="font-weight:800;">
+                    <a href="{% url 'order_container_edit' container_id=c.id %}">
+                      {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
+                    </a>
+                  </div>
+                  <div class="muted" style="font-size:0.85rem; margin-top:2px;">
+                    {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
+                    {% if c.booking_number %}Booking: {{ c.booking_number }} • {% endif %}
+                    {% if c.bill_of_lading_number %}BOL: {{ c.bill_of_lading_number }}{% endif %}
+                  </div>
+                </td>
+                <td>{% if c.po_number %}{{ c.po_number }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>
+                  {% if c.requested_asap %}
+                    <span class="badge" style="border-color: rgba(249,115,115,0.55); color:#fecaca; background: rgba(249,115,115,0.12);">ASAP</span>
+                  {% elif c.requested_date_text %}
+                    {{ c.requested_date_text }}
+                  {% elif c.requested_date %}
+                    {{ c.requested_date }}
+                  {% else %}
+                    <span class="muted">—</span>
                   {% endif %}
-                  {{ d.file }}
-                  {{ d.file.errors }}
-                  {{ d.id }}
                 </td>
+                <td>{% if c.assigned_to %}<span class="badge">{{ c.assigned_to }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td><span class="badge">{{ c.status }}</span></td>
+                <td>{% if c.loading_date %}{{ c.loading_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>{% if c.etd %}{{ c.etd }}{% else %}<span class="muted">—</span>{% endif %}</td>
                 <td>
-                  {{ d.label }}
-                  {{ d.label.errors }}
+                  {% if c.eta %}
+                    {{ c.eta }}{% if c.eta_city %} {{ c.eta_city }}{% endif %}
+                  {% else %}
+                    <span class="muted">—</span>
+                  {% endif %}
                 </td>
+                <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
                 <td>
-                  <div style="display:flex; align-items:center; gap:8px;">
-                    {{ d.DELETE }} <span class="muted tiny">mark</span>
-                  </div>
+                  <form method="post" action="{% url 'order_container_toggle_delivered' c.id %}" style="display:inline;">
+                    {% csrf_token %}
+                    <button class="btn" type="submit" onclick="return confirm('Move this order back to Active?');">Reopen</button>
+                  </form>
                 </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="11" class="muted">No delivered orders yet.</td>
               </tr>
             {% endfor %}
           </tbody>
         </table>
+      </details>
+    </div>
 
-        <template id="emptyDocTemplate">
-          <tr class="docRow">
-            <td>__FILE____ID__</td>
-            <td>__LABEL__</td>
-            <td>
-              <div style="display:flex; align-items:center; gap:8px;">
-                __DEL__ <span class="muted tiny">mark</span>
-              </div>
-            </td>
-          </tr>
-        </template>
-      </div>
-
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
-          <div>
-            <div style="font-weight:900;">Contents (mixed containers supported)</div>
-            <div class="muted tiny">Add one line per item: pallets × units/pallet. Total units auto-calculates on save.</div>
-          </div>
-          <button class="btn2" type="button" id="addLineBtn">+ Add line</button>
-        </div>
-        <table id="linesTable">
-          <thead>
-            <tr>
-              <th style="width:52%;">Item</th>
-              <th style="width:14%;">Pallets</th>
-              <th style="width:18%;">Units / pallet</th>
-              <th style="width:16%;">Delete</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for f in formset.forms %}
-              <tr class="lineRow">
-                <td>
-                  {{ f.item_description }}
-                  {{ f.item_description.errors }}
-                  {{ f.id }}
-                </td>
-                <td>
-                  {{ f.pallets }}
-                  {{ f.pallets.errors }}
-                </td>
-                <td>
-                  {{ f.units_per_pallet }}
-                  {{ f.units_per_pallet.errors }}
-                </td>
-                <td>
-                  <div style="display:flex; align-items:center; gap:8px;">
-                    {{ f.DELETE }} <span class="muted tiny">mark</span>
-                  </div>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-
-        <template id="emptyFormTemplate">
-          <tr class="lineRow">
-            <td>
-              __ITEM__
-              __ID__
-            </td>
-            <td>__PALLETS__</td>
-            <td>__UPP__</td>
-            <td>
-              <div style="display:flex; align-items:center; gap:8px;">
-                __DEL__ <span class="muted tiny">mark</span>
-              </div>
-            </td>
-          </tr>
-        </template>
-      </div>
-
-      <div class="muted" style="margin-top:16px;">
-        <a href="{% url 'order_tracker' %}">← Back to Order Tracker</a>
-      </div>
-
-      <!-- Redundant submit button INSIDE the form so submission works even if the header button's form="..." attribute is ignored -->
-      <div class="right" style="margin-top:14px;">
-        <button class="btn" type="submit">Save</button>
-      </div>
-    </form>
+    <div class="muted" style="margin-top:16px;">
+      <a href="{% url 'dashboard' %}">← Back to dashboard</a>
+    </div>
   </div>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     (function () {
-      // ASAP toggle: disable/clear requested_date when checked
-      const asapInput = document.getElementById('id_requested_asap');
-      const requestedDateInput = document.getElementById('id_requested_date');
-      function syncAsap() {
-        if (!asapInput || !requestedDateInput) return;
-        if (asapInput.checked) {
-          requestedDateInput.value = '';
-          requestedDateInput.disabled = true;
-          requestedDateInput.style.opacity = '0.65';
-        } else {
-          requestedDateInput.disabled = false;
-          requestedDateInput.style.opacity = '1';
+      const points = {{ vessel_points_json|default:"[]"|safe }};
+      const hint = document.getElementById('vesselMapHint');
+      const mapEl = document.getElementById('vesselMap');
+
+      if (!mapEl) return;
+
+      // If no vessels, still show a world map with a hint.
+      const hasPoints = Array.isArray(points) && points.length > 0;
+      if (!hasPoints && hint) hint.style.display = 'block';
+
+      // Compute a reasonable center
+      let center = [20, 0];
+      if (hasPoints) {
+        const lats = points.map(p => p.lat).filter(v => typeof v === 'number');
+        const lngs = points.map(p => p.lng).filter(v => typeof v === 'number');
+        if (lats.length && lngs.length) {
+          center = [lats.reduce((a,b)=>a+b,0)/lats.length, lngs.reduce((a,b)=>a+b,0)/lngs.length];
         }
       }
-      if (asapInput && requestedDateInput) {
-        asapInput.addEventListener('change', syncAsap);
-        syncAsap();
-      }
 
-      const topSaveBtn = document.getElementById('topSaveBtn');
-      const mainForm = document.getElementById('mainForm');
-      if (topSaveBtn && mainForm) {
-        topSaveBtn.addEventListener('click', () => {
-          if (typeof mainForm.requestSubmit === 'function') mainForm.requestSubmit();
-          else mainForm.submit();
+      const map = L.map('vesselMap', { scrollWheelZoom: false }).setView(center, hasPoints ? 3 : 2);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      if (hasPoints) {
+        const bounds = [];
+        points.forEach(p => {
+          if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
+          const marker = L.marker([p.lat, p.lng]).addTo(map);
+          const title = (p.vessel_name || 'Vessel') + (p.mmsi ? ` (MMSI ${p.mmsi})` : '');
+          const line2 = p.container_label ? `<div style="margin-top:4px;"><strong>Container:</strong> ${p.container_label}</div>` : '';
+          const line3 = p.received ? `<div class="muted" style="margin-top:4px; font-size:12px;">Received: ${p.received}</div>` : '';
+          const link = p.container_url ? `<div style="margin-top:8px;"><a href="${p.container_url}">Open container</a></div>` : '';
+          marker.bindPopup(`<div style="min-width:220px;"><div style="font-weight:800;">${title}</div>${line2}${line3}${link}</div>`);
+          bounds.push([p.lat, p.lng]);
         });
+        if (bounds.length) {
+          map.fitBounds(bounds, { padding: [24, 24] });
+        }
       }
-
-      // Docs formset
-      const addDocBtn = document.getElementById("addDocBtn");
-      // IMPORTANT: select the docs management form explicitly so we don't accidentally grab the lines formset
-      const docsTotalForms =
-        document.getElementById("id_docs-TOTAL_FORMS") ||
-        document.querySelector('input[name="docs-TOTAL_FORMS"]');
-      const docsTbody = document.querySelector("#docsTable tbody");
-      const docTpl = document.getElementById("emptyDocTemplate");
-
-      function newDocRowHtml(formIndex) {
-        const prefix = docsTotalForms.name.replace("-TOTAL_FORMS", "");
-        const file = `<input type="file" name="${prefix}-${formIndex}-file" accept="application/pdf" />`;
-        const label = `<input type="text" name="${prefix}-${formIndex}-label" class="input" placeholder="Optional label (e.g., BOL, Booking, Invoice)" />`;
-        const del = `<input type="checkbox" name="${prefix}-${formIndex}-DELETE" />`;
-        const id = `<input type="hidden" name="${prefix}-${formIndex}-id" />`;
-
-        let html = docTpl.innerHTML;
-        html = html.replace("__FILE__", file);
-        html = html.replace("__LABEL__", label);
-        html = html.replace("__DEL__", del);
-        html = html.replace("__ID__", id);
-        return html;
-      }
-
-      if (addDocBtn && docsTotalForms && docsTbody && docTpl) {
-        addDocBtn.addEventListener("click", function () {
-          const current = parseInt(docsTotalForms.value || "0", 10);
-          docsTbody.insertAdjacentHTML("beforeend", newDocRowHtml(current));
-          docsTotalForms.value = String(current + 1);
-        });
-      }
-
-      const addBtn = document.getElementById("addLineBtn");
-      // IMPORTANT: select the lines management form explicitly so we don't accidentally grab the docs formset
-      const totalFormsInput =
-        document.getElementById("id_lines-TOTAL_FORMS") ||
-        document.querySelector('input[name="lines-TOTAL_FORMS"]');
-      const tbody = document.querySelector("#linesTable tbody");
-      const tpl = document.getElementById("emptyFormTemplate");
-
-      if (!addBtn || !totalFormsInput || !tbody || !tpl) return;
-
-      function newRowHtml(formIndex) {
-        // Build a minimal form row matching the formset prefix (lines)
-        // NOTE: prefix is auto-generated by Django inlineformset_factory. In our view it will be "lines".
-        const prefix = totalFormsInput.name.replace("-TOTAL_FORMS", "");
-        const item = `<input type="text" name="${prefix}-${formIndex}-item_description" class="input" placeholder="e.g., 5 liter vase" />`;
-        const pallets = `<input type="number" min="0" name="${prefix}-${formIndex}-pallets" class="input" inputmode="numeric" value="0" />`;
-        const upp = `<input type="number" min="0" name="${prefix}-${formIndex}-units_per_pallet" class="input" inputmode="numeric" value="0" />`;
-        const del = `<input type="checkbox" name="${prefix}-${formIndex}-DELETE" />`;
-        const id = `<input type="hidden" name="${prefix}-${formIndex}-id" />`;
-
-        let html = tpl.innerHTML;
-        html = html.replace("__ITEM__", item);
-        html = html.replace("__PALLETS__", pallets);
-        html = html.replace("__UPP__", upp);
-        html = html.replace("__DEL__", del);
-        html = html.replace("__ID__", id);
-        return html;
-      }
-
-      addBtn.addEventListener("click", function () {
-        const current = parseInt(totalFormsInput.value || "0", 10);
-        tbody.insertAdjacentHTML("beforeend", newRowHtml(current));
-        totalFormsInput.value = String(current + 1);
-      });
     })();
   </script>
 </body>
 </html>
+
+
 
 
