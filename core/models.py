@@ -375,6 +375,8 @@ class OrderContainer(models.Model):
 
     po_number = models.CharField(max_length=64, blank=True)
     requested_date = models.DateField(null=True, blank=True)
+    # If checked, the customer wants this order ASAP (requested_date can be blank).
+    requested_asap = models.BooleanField(default=False)
 
     status = models.CharField(max_length=128, blank=True)
 
@@ -386,6 +388,8 @@ class OrderContainer(models.Model):
 
     etd = models.DateField(null=True, blank=True)
     eta = models.DateField(null=True, blank=True)
+    # Optional destination city text shown alongside ETA (e.g., "Chicago").
+    eta_city = models.CharField(max_length=128, blank=True)
     estimated_delivery_date = models.DateField(null=True, blank=True)
 
     booking_number = models.CharField(max_length=128, blank=True)
@@ -649,6 +653,9 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
+
 
 
 
