@@ -485,6 +485,7 @@ class OrderContainerForm(forms.ModelForm):
             "location_name",
             "po_number",
             "requested_date",
+            "requested_date_text",
             "requested_asap",
             "status",
             "assigned_to",
@@ -504,6 +505,7 @@ class OrderContainerForm(forms.ModelForm):
         widgets = {
             "status": forms.TextInput(attrs={"placeholder": "e.g., Booked, On water, Customs hold, Delivered..."}),
             "requested_date": forms.DateInput(attrs={"type": "date"}),
+            "requested_date_text": forms.TextInput(attrs={"placeholder": "e.g., first week of February"}),
             "loading_date": forms.DateInput(attrs={"type": "date"}),
             "etd": forms.DateInput(attrs={"type": "date"}),
             "eta": forms.DateInput(attrs={"type": "date"}),
@@ -517,9 +519,28 @@ class OrderContainerForm(forms.ModelForm):
         }
 
     def clean(self):
+        """Enforce mutual exclusivity for requested date fields.
+
+        Priority:
+        1) ASAP checkbox
+        2) Requested date text
+        3) Requested date
+        """
         cleaned = super().clean()
-        if cleaned.get("requested_asap"):
+        asap = bool(cleaned.get("requested_asap"))
+        text = (cleaned.get("requested_date_text") or "").strip()
+
+        if asap:
             cleaned["requested_date"] = None
+            cleaned["requested_date_text"] = ""
+            return cleaned
+
+        if text:
+            cleaned["requested_date"] = None
+            cleaned["requested_date_text"] = text
+            return cleaned
+
+        cleaned["requested_date_text"] = ""
         return cleaned
 
 
@@ -541,8 +562,6 @@ class OrderContainerLineForm(forms.ModelForm):
             "pallets": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
             "units_per_pallet": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
         }
-
-
 
 
 
