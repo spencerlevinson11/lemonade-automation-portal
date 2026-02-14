@@ -391,6 +391,8 @@
               <td>
                 {% if c.requested_asap %}
                   <span class="badge" style="border-color: rgba(249,115,115,0.55); color:#fecaca; background: rgba(249,115,115,0.12);">ASAP</span>
+                {% elif c.requested_date_text %}
+                  {{ c.requested_date_text }}
                 {% elif c.requested_date %}
                   {{ c.requested_date }}
                 {% else %}
@@ -474,6 +476,8 @@
                 <td>
                   {% if c.requested_asap %}
                     <span class="badge" style="border-color: rgba(249,115,115,0.55); color:#fecaca; background: rgba(249,115,115,0.12);">ASAP</span>
+                  {% elif c.requested_date_text %}
+                    {{ c.requested_date_text }}
                   {% elif c.requested_date %}
                     {{ c.requested_date }}
                   {% else %}
@@ -564,6 +568,8 @@
   </script>
 </body>
 </html>
+
+
 
 
 
