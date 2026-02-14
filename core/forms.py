@@ -485,12 +485,14 @@ class OrderContainerForm(forms.ModelForm):
             "location_name",
             "po_number",
             "requested_date",
+            "requested_asap",
             "status",
             "assigned_to",
             "rpc_number",
             "loading_date",
             "etd",
             "eta",
+            "eta_city",
             "estimated_delivery_date",
             "booking_number",
             "bill_of_lading_number",
@@ -507,11 +509,18 @@ class OrderContainerForm(forms.ModelForm):
             "eta": forms.DateInput(attrs={"type": "date"}),
             "estimated_delivery_date": forms.DateInput(attrs={"type": "date"}),
             "status": forms.TextInput(attrs={"placeholder": "e.g., booked, on water, customs hold, delivered"}),
+            "eta_city": forms.TextInput(attrs={"placeholder": "e.g., Chicago"}),
             "notes": forms.Textarea(attrs={"rows": 3, "placeholder": "Optional notes..."}),
             "vessel_name": forms.TextInput(attrs={"placeholder": "e.g., CMA CGM Marco Polo"}),
             "vessel_mmsi": forms.NumberInput(attrs={"placeholder": "9-digit MMSI (recommended)", "inputmode": "numeric"}),
             "vessel_imo": forms.NumberInput(attrs={"placeholder": "7-digit IMO (optional)", "inputmode": "numeric"}),
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("requested_asap"):
+            cleaned["requested_date"] = None
+        return cleaned
 
 
 class OrderContainerDocumentForm(forms.ModelForm):
@@ -532,8 +541,6 @@ class OrderContainerLineForm(forms.ModelForm):
             "pallets": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
             "units_per_pallet": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
         }
-
-
 
 
 
