@@ -375,6 +375,8 @@ class OrderContainer(models.Model):
 
     po_number = models.CharField(max_length=64, blank=True)
     requested_date = models.DateField(null=True, blank=True)
+    # Optional requested date text when customer provides a fuzzy window (e.g., "first week of February").
+    requested_date_text = models.CharField(max_length=255, blank=True)
     # If checked, the customer wants this order ASAP (requested_date can be blank).
     requested_asap = models.BooleanField(default=False)
 
