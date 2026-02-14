@@ -4793,32 +4793,60 @@ def order_container_edit_view(request, container_id: int | None = None):
         can_delete=True,
     )
 
-    if request.method == "POST":
-        form = OrderContainerForm(request.POST, instance=container)
-        formset = LineFormSet(request.POST, instance=container, prefix="lines")
-        doc_formset = DocumentFormSet(
-            request.POST,
-            request.FILES,
-            instance=container,
-            prefix="docs",
+    # If this endpoint is hit by the "Quick add" form on the dashboard, the POST
+    # will *not* include the formset management fields (lines-TOTAL_FORMS, etc.).
+    # In that case we should create the container using just OrderContainerForm
+    # and then redirect into the full editor.
+    def _is_quick_add_post(req):
+        if req.method != "POST":
+            return False
+        return (
+            "lines-TOTAL_FORMS" not in req.POST
+            and "docs-TOTAL_FORMS" not in req.POST
         )
-        if form.is_valid() and formset.is_valid() and doc_formset.is_valid():
-            obj: OrderContainer = form.save(commit=False)
-            obj.company = company
-            if obj.created_by_id is None:
-                obj.created_by = user
-            obj.save()
 
-            formset.instance = obj
-            formset.save()
-
-            doc_formset.instance = obj
-            doc_formset.save()
-
-            messages.success(request, "Container saved.")
-            return redirect("order_container_edit", container_id=obj.id)
-        else:
+    if request.method == "POST":
+        if _is_quick_add_post(request):
+            # Quick add: create container without formsets, then redirect to full editor.
+            form = OrderContainerForm(request.POST, instance=container)
+            if form.is_valid():
+                obj: OrderContainer = form.save(commit=False)
+                obj.company = company
+                if obj.created_by_id is None:
+                    obj.created_by = user
+                obj.save()
+                messages.success(request, "Container created. Add lines/documents below.")
+                return redirect("order_container_edit", container_id=obj.id)
+            # If the minimal form is invalid, fall through and render with errors.
+            formset = LineFormSet(instance=container, prefix="lines")
+            doc_formset = DocumentFormSet(instance=container, prefix="docs")
             messages.error(request, "Please fix the errors below and try again.")
+        else:
+            form = OrderContainerForm(request.POST, instance=container)
+            formset = LineFormSet(request.POST, instance=container, prefix="lines")
+            doc_formset = DocumentFormSet(
+                request.POST,
+                request.FILES,
+                instance=container,
+                prefix="docs",
+            )
+            if form.is_valid() and formset.is_valid() and doc_formset.is_valid():
+                obj: OrderContainer = form.save(commit=False)
+                obj.company = company
+                if obj.created_by_id is None:
+                    obj.created_by = user
+                obj.save()
+
+                formset.instance = obj
+                formset.save()
+
+                doc_formset.instance = obj
+                doc_formset.save()
+
+                messages.success(request, "Container saved.")
+                return redirect("order_container_edit", container_id=obj.id)
+            else:
+                messages.error(request, "Please fix the errors below and try again.")
     else:
         form = OrderContainerForm(instance=container)
         formset = LineFormSet(instance=container, prefix="lines")
