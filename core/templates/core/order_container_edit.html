@@ -121,11 +121,6 @@
                 onsubmit="return confirm('Delete this order? This cannot be undone.');"
                 style="display:inline;">
             {% csrf_token %}
-        <div style="display:none;">
-          {{ doc_formset.management_form }}
-          {{ formset.management_form }}
-        </div>
-
             <button class="btn danger" type="submit">Delete</button>
           </form>
         {% endif %}
@@ -145,6 +140,12 @@
           enctype="multipart/form-data"
           action="{% if container %}{% url 'order_container_edit' container.id %}{% else %}{% url 'order_container_new' %}{% endif %}">
       {% csrf_token %}
+
+      {# CRITICAL: formset management fields must be inside the main form on BOTH GET and POST #}
+      <div style="display:none;">
+        {{ doc_formset.management_form }}
+        {{ formset.management_form }}
+      </div>
 
       {# Flash messages (success / error) #}
       {% if messages %}
@@ -177,8 +178,16 @@
           </div>
           <div class="field">
             <label>Requested date</label>
-            {{ form.requested_date }}
-            {{ form.requested_date.errors }}
+            <div style="display:flex; gap:10px; align-items:center;">
+              <div style="flex:1;">
+                {{ form.requested_date }}
+                {{ form.requested_date.errors }}
+              </div>
+              <label style="display:flex; align-items:center; gap:8px; margin:0; color: var(--text-muted); white-space:nowrap;">
+                {{ form.requested_asap }} <span>ASAP</span>
+              </label>
+            </div>
+            {{ form.requested_asap.errors }}
           </div>
 
           <div class="field">
@@ -240,8 +249,16 @@
 
           <div class="field">
             <label>ETA</label>
-            {{ form.eta }}
-            {{ form.eta.errors }}
+            <div style="display:flex; gap:10px; align-items:center;">
+              <div style="flex:1;">
+                {{ form.eta }}
+                {{ form.eta.errors }}
+              </div>
+              <div style="flex:1; min-width:220px;">
+                {{ form.eta_city }}
+                {{ form.eta_city.errors }}
+              </div>
+            </div>
           </div>
           <div class="field">
             <label>Estimated delivery date</label>
@@ -387,6 +404,25 @@
 
   <script>
     (function () {
+      // ASAP toggle: disable/clear requested_date when checked
+      const asapInput = document.getElementById('id_requested_asap');
+      const requestedDateInput = document.getElementById('id_requested_date');
+      function syncAsap() {
+        if (!asapInput || !requestedDateInput) return;
+        if (asapInput.checked) {
+          requestedDateInput.value = '';
+          requestedDateInput.disabled = true;
+          requestedDateInput.style.opacity = '0.65';
+        } else {
+          requestedDateInput.disabled = false;
+          requestedDateInput.style.opacity = '1';
+        }
+      }
+      if (asapInput && requestedDateInput) {
+        asapInput.addEventListener('change', syncAsap);
+        syncAsap();
+      }
+
       const topSaveBtn = document.getElementById('topSaveBtn');
       const mainForm = document.getElementById('mainForm');
       if (topSaveBtn && mainForm) {
@@ -466,6 +502,5 @@
   </script>
 </body>
 </html>
-
 
 
