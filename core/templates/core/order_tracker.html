@@ -388,12 +388,26 @@
                 </div>
               </td>
               <td>{% if c.po_number %}{{ c.po_number }}{% else %}<span class="muted">—</span>{% endif %}</td>
-              <td>{% if c.requested_date %}{{ c.requested_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>
+                {% if c.requested_asap %}
+                  <span class="badge" style="border-color: rgba(249,115,115,0.55); color:#fecaca; background: rgba(249,115,115,0.12);">ASAP</span>
+                {% elif c.requested_date %}
+                  {{ c.requested_date }}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
               <td>{% if c.assigned_to %}<span class="badge">{{ c.assigned_to }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.status %}<span class="badge">{{ c.status }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.loading_date %}{{ c.loading_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.etd %}{{ c.etd }}{% else %}<span class="muted">—</span>{% endif %}</td>
-              <td>{% if c.eta %}{{ c.eta }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>
+                {% if c.eta %}
+                  {{ c.eta }}{% if c.eta_city %} {{ c.eta_city }}{% endif %}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
               <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
               <td>
@@ -457,12 +471,26 @@
                   </div>
                 </td>
                 <td>{% if c.po_number %}{{ c.po_number }}{% else %}<span class="muted">—</span>{% endif %}</td>
-                <td>{% if c.requested_date %}{{ c.requested_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>
+                  {% if c.requested_asap %}
+                    <span class="badge" style="border-color: rgba(249,115,115,0.55); color:#fecaca; background: rgba(249,115,115,0.12);">ASAP</span>
+                  {% elif c.requested_date %}
+                    {{ c.requested_date }}
+                  {% else %}
+                    <span class="muted">—</span>
+                  {% endif %}
+                </td>
                 <td>{% if c.assigned_to %}<span class="badge">{{ c.assigned_to }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
                 <td><span class="badge">{{ c.status }}</span></td>
                 <td>{% if c.loading_date %}{{ c.loading_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
                 <td>{% if c.etd %}{{ c.etd }}{% else %}<span class="muted">—</span>{% endif %}</td>
-                <td>{% if c.eta %}{{ c.eta }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>
+                  {% if c.eta %}
+                    {{ c.eta }}{% if c.eta_city %} {{ c.eta_city }}{% endif %}
+                  {% else %}
+                    <span class="muted">—</span>
+                  {% endif %}
+                </td>
                 <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
                 <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
                 <td>
@@ -536,6 +564,7 @@
   </script>
 </body>
 </html>
+
 
 
 
