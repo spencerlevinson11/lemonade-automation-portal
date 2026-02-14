@@ -84,6 +84,92 @@ class BOLForm(forms.Form):
         required=False,
     )
 
+    # Row 7# core/forms.py
+from django import forms
+from django.core.exceptions import ValidationError
+from django.utils import timezone
+
+from .models import (
+    ProjectPlanEntry,
+    ScheduleActivity,
+    ScheduleGlobalNote,
+    OrderContainer,
+    OrderContainerLine,
+    OrderContainerDocument,
+)
+
+
+class MultipleFileInput(forms.ClearableFileInput):
+    """A file input widget that supports selecting multiple files.
+
+    In Django 5.x, FileInput/ClearableFileInput will raise ValueError if
+    attrs contains {"multiple": True} unless allow_multiple_selected=True.
+    """
+
+    allow_multiple_selected = True
+
+
+class MultipleFileField(forms.FileField):
+    """A FileField that can validate and return multiple uploaded files."""
+
+    def clean(self, data, initial=None):
+        # When using a widget that allows selecting multiple files, Django
+        # gives us a list/tuple of UploadedFile objects.
+        if isinstance(data, (list, tuple)):
+            cleaned = []
+            errors = []
+            for item in data:
+                try:
+                    cleaned.append(super().clean(item, initial))
+                except ValidationError as e:
+                    errors.extend(e.error_list)
+            if errors:
+                raise ValidationError(errors)
+            return cleaned
+        return super().clean(data, initial)
+
+
+class BOLForm(forms.Form):
+    # These labels mirror your "BOL INFORMATION SHEET" rows
+
+    # Row 1
+    shipper_number = forms.CharField(
+        label="Shippers #",
+        required=False,
+        help_text="Internal shipper number (e.g., 48, 50)."
+    )
+
+    # Row 2
+    carrier = forms.CharField(
+        label="Carrier",
+        required=False,
+    )
+
+    # Row 3
+    quote_number = forms.CharField(
+        label="Quote #",
+        required=False,
+    )
+
+    # Row 4
+    pro_number = forms.CharField(
+        label="PRO #",
+        required=False,
+    )
+
+    # Row 5
+    ship_date = forms.DateField(
+        label="Date",
+        required=True,
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+
+    # Row 6
+    po_number = forms.CharField(
+        label="PO #",
+        required=False,
+    )
+
     # Row 7
     seal_number = forms.CharField(
         label="Seal #",
@@ -446,7 +532,6 @@ class OrderContainerLineForm(forms.ModelForm):
             "pallets": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
             "units_per_pallet": forms.NumberInput(attrs={"min": 0, "inputmode": "numeric"}),
         }
-
 
 
 
