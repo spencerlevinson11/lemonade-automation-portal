@@ -378,6 +378,11 @@
       <div class="muted" style="margin-top:16px;">
         <a href="{% url 'order_tracker' %}">← Back to Order Tracker</a>
       </div>
+
+      <!-- Redundant submit button INSIDE the form so submission works even if the header button's form="..." attribute is ignored -->
+      <div class="right" style="margin-top:14px;">
+        <button class="btn" type="submit">Save</button>
+      </div>
     </form>
   </div>
 
@@ -385,7 +390,10 @@
     (function () {
       // Docs formset
       const addDocBtn = document.getElementById("addDocBtn");
-      const docsTotalForms = document.getElementById("id_docs-TOTAL_FORMS") || document.querySelector('input[name="docs-TOTAL_FORMS"]') || document.querySelector('input[name$="docs-TOTAL_FORMS"]');
+      // IMPORTANT: select the docs management form explicitly so we don't accidentally grab the lines formset
+      const docsTotalForms =
+        document.getElementById("id_docs-TOTAL_FORMS") ||
+        document.querySelector('input[name="docs-TOTAL_FORMS"]');
       const docsTbody = document.querySelector("#docsTable tbody");
       const docTpl = document.getElementById("emptyDocTemplate");
 
@@ -413,7 +421,10 @@
       }
 
       const addBtn = document.getElementById("addLineBtn");
-      const totalFormsInput = document.getElementById("id_lines-TOTAL_FORMS") || document.querySelector('input[name$="-TOTAL_FORMS"]');
+      // IMPORTANT: select the lines management form explicitly so we don't accidentally grab the docs formset
+      const totalFormsInput =
+        document.getElementById("id_lines-TOTAL_FORMS") ||
+        document.querySelector('input[name="lines-TOTAL_FORMS"]');
       const tbody = document.querySelector("#linesTable tbody");
       const tpl = document.getElementById("emptyFormTemplate");
 
@@ -447,4 +458,5 @@
   </script>
 </body>
 </html>
+
 
