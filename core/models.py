@@ -473,6 +473,38 @@ class OrderContainerDocument(models.Model):
         return self.label or (self.file.name if self.file else "Document")
 
 
+class OrderContainerImportFile(models.Model):
+    """Uploaded spreadsheet used for one-time OrderContainer imports."""
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_container_import_files",
+    )
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_order_container_import_files",
+    )
+
+    label = models.CharField(max_length=255, blank=True)
+    file = models.FileField(upload_to="imports/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at", "-id"]
+
+    def __str__(self) -> str:
+        base = self.label or (self.file.name if self.file else "Import File")
+        if self.company_id:
+            base += f" ({self.company.name})"
+        return base
+
+
 class ScheduleActivity(models.Model):
     """Simple company scheduler activity (week-view).
 
@@ -655,6 +687,8 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
 
 
 
