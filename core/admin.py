@@ -11,6 +11,7 @@ from .models import (
     OrderContainer,
     OrderContainerLine,
     OrderContainerDocument,
+    OrderContainerImportFile,
     ScheduleActivity,
 )
 
@@ -125,6 +126,14 @@ class OrderContainerAdmin(admin.ModelAdmin):
     )
     ordering = ("-updated_at",)
     inlines = [OrderContainerLineInline, OrderContainerDocumentInline]
+
+
+@admin.register(OrderContainerImportFile)
+class OrderContainerImportFileAdmin(admin.ModelAdmin):
+    list_display = ("id", "company", "label", "file", "uploaded_by", "uploaded_at")
+    list_filter = ("company",)
+    search_fields = ("label", "file")
+    ordering = ("-uploaded_at",)
 
 
 @admin.register(ScheduleActivity)
