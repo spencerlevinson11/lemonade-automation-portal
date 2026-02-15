@@ -9,7 +9,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.dateparse import parse_date
 
-from core.models import Company, OrderContainer, OrderContainerLine
+from core.models import Company, OrderContainer, OrderContainerLine, OrderContainerImportFile
 
 
 def _clean_str(v: Any) -> str:
@@ -103,7 +103,12 @@ class Command(BaseCommand):
     )
 
     def add_arguments(self, parser):
-        parser.add_argument("--file", required=True, help="Path to .xlsx/.xlsm or .csv")
+        parser.add_argument("--file", help="Path to .xlsx/.xlsm or .csv (optional if using --import-file-id)")
+        parser.add_argument(
+            "--import-file-id",
+            type=int,
+            help="ID of an OrderContainerImportFile uploaded via Django Admin (recommended).",
+        )
         parser.add_argument("--company", required=True, help="Company name to import into")
         parser.add_argument(
             "--create-company",
@@ -178,7 +183,27 @@ class Command(BaseCommand):
         return None
 
     def handle(self, *args, **opts):
-        path = Path(opts["file"]).expanduser()
+        import_file_id = opts.get("import_file_id")
+        file_arg = opts.get("file")
+
+        # Resolve path either from admin-uploaded file id or a direct filesystem path
+        if import_file_id:
+            imp = OrderContainerImportFile.objects.filter(id=import_file_id).first()
+            if not imp or not imp.file:
+                raise CommandError(f"Import file not found for id={import_file_id}")
+
+            try:
+                path = Path(imp.file.path).expanduser()
+            except Exception:
+                raise CommandError(
+                    "Uploaded file storage does not provide a local file path. "
+                    "If you're using non-local storage, we can add a temp-file fallback."
+                )
+        else:
+            if not file_arg:
+                raise CommandError("You must pass either --file or --import-file-id")
+            path = Path(file_arg).expanduser()
+
         if not path.exists():
             raise CommandError(f"File not found: {path}")
 
