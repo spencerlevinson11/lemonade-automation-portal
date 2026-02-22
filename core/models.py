@@ -397,6 +397,9 @@ class OrderContainer(models.Model):
     booking_number = models.CharField(max_length=128, blank=True)
     bill_of_lading_number = models.CharField(max_length=128, blank=True)
 
+    # Container number used for API tracking (e.g., TCNU1825001)
+    container_number = models.CharField(max_length=32, blank=True)
+
     # Optional vessel metadata (for live AIS mapping)
     vessel_name = models.CharField(max_length=255, blank=True)
     vessel_mmsi = models.BigIntegerField(null=True, blank=True)
@@ -416,6 +419,58 @@ class OrderContainer(models.Model):
         if self.po_number:
             base += f" | PO {self.po_number}"
         return base
+
+
+class OrderContainerTrackingUpdate(models.Model):
+    """Proposed tracking updates pulled from JSONCargo.
+
+    We do NOT auto-apply these changes. A user must approve them first.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REJECTED, "Rejected"),
+    ]
+
+    container = models.ForeignKey(
+        OrderContainer,
+        on_delete=models.CASCADE,
+        related_name="tracking_updates",
+    )
+
+    proposed_eta = models.DateField(null=True, blank=True)
+    proposed_eta_city = models.CharField(max_length=128, blank=True)
+
+    # "last_updated" timestamp from JSONCargo, if provided.
+    source_last_updated = models.DateTimeField(null=True, blank=True)
+
+    # Store the raw payload for debugging.
+    source_payload = models.JSONField(default=dict, blank=True)
+
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+
+    decided_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_tracking_update_decisions",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self) -> str:
+        return f"Update for {self.container_id} ({self.status})"
 
 
 class OrderContainerLine(models.Model):
@@ -687,6 +742,10 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
+
+
 
 
 
