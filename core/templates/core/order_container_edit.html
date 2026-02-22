@@ -225,6 +225,12 @@
           </div>
 
           <div class="field">
+            <label>Container # (for API tracking)</label>
+            {{ form.container_number }}
+            {{ form.container_number.errors }}
+          </div>
+
+          <div class="field">
             <label>Bill of lading #</label>
             {{ form.bill_of_lading_number }}
             {{ form.bill_of_lading_number.errors }}
@@ -265,6 +271,40 @@
               </div>
             </div>
           </div>
+
+          {% if container and pending_tracking_update %}
+            <div class="field" style="grid-column: 1 / -1;">
+              <div style="border: 1px solid rgba(250,204,21,0.35); border-radius: 14px; padding: 12px; background: rgba(250,204,21,0.06);">
+                <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start;">
+                  <div>
+                    <div style="font-weight:900;">Pending tracking update (requires approval)</div>
+                    <div class="muted tiny" style="margin-top:4px;">
+                      Proposed from JSONCargo{% if pending_tracking_update.source_last_updated %} • last updated {{ pending_tracking_update.source_last_updated|date:"Y-m-d H:i" }}{% endif %}
+                    </div>
+                    <div style="margin-top:10px;">
+                      <div class="muted tiny">Proposed ETA</div>
+                      <div style="font-weight:900;">
+                        {% if pending_tracking_update.proposed_eta %}{{ pending_tracking_update.proposed_eta }}{% else %}<span class="muted">—</span>{% endif %}
+                        {% if pending_tracking_update.proposed_eta_city %} {{ pending_tracking_update.proposed_eta_city }}{% endif %}
+                      </div>
+                      <div class="muted tiny" style="margin-top:6px;">Current in tracker</div>
+                      <div class="tiny">{% if container.eta %}{{ container.eta }}{% else %}<span class="muted">—</span>{% endif %}{% if container.eta_city %} {{ container.eta_city }}{% endif %}</div>
+                    </div>
+                  </div>
+                  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <form method="post" action="{% url 'order_container_tracking_approve' container.id pending_tracking_update.id %}" style="display:inline;">
+                      {% csrf_token %}
+                      <button class="btn" type="submit" onclick="return confirm('Apply this ETA + city update to the tracker?');">Approve & apply</button>
+                    </form>
+                    <form method="post" action="{% url 'order_container_tracking_reject' container.id pending_tracking_update.id %}" style="display:inline;">
+                      {% csrf_token %}
+                      <button class="btn danger" type="submit" onclick="return confirm('Reject this proposed update?');">Reject</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {% endif %}
           <div class="field">
             <label>Estimated delivery date</label>
             {{ form.estimated_delivery_date }}
@@ -541,6 +581,9 @@
   </script>
 </body>
 </html>
+
+
+
 
 
 
