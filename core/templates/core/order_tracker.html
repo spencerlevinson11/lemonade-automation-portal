@@ -243,6 +243,10 @@
               <input name="booking_number" placeholder="Booking number" />
             </div>
             <div class="field">
+              <label>Container # (for API tracking)</label>
+              <input name="container_number" placeholder="e.g., TCNU1825001" />
+            </div>
+            <div class="field">
               <label>BOL #</label>
               <input name="bill_of_lading_number" placeholder="Bill of Lading number" />
             </div>
@@ -302,7 +306,7 @@
         <div class="row">
           <div class="field">
             <label>Search</label>
-            <input name="q" value="{{ q }}" placeholder="Customer, location, PO#, RPC#, booking, BOL..." />
+            <input name="q" value="{{ q }}" placeholder="Customer, location, PO#, RPC#, container, booking, BOL..." />
           </div>
           <div class="field" style="max-width:260px;">
             <label>Status (type anything)</label>
@@ -380,9 +384,13 @@
                   <a href="{% url 'order_container_edit' container_id=c.id %}">
                     {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
                   </a>
+                  {% if c.id in pending_container_ids %}
+                    <span class="badge" style="margin-left:8px; border-color: rgba(250,204,21,0.45); background: rgba(250,204,21,0.10);">Update pending</span>
+                  {% endif %}
                 </div>
                 <div class="muted" style="font-size:0.85rem; margin-top:2px;">
                   {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
+                  {% if c.container_number %}Container: {{ c.container_number }} • {% endif %}
                   {% if c.booking_number %}Booking: {{ c.booking_number }} • {% endif %}
                   {% if c.bill_of_lading_number %}BOL: {{ c.bill_of_lading_number }}{% endif %}
                 </div>
@@ -465,9 +473,13 @@
                     <a href="{% url 'order_container_edit' container_id=c.id %}">
                       {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
                     </a>
+                  {% if c.id in pending_container_ids %}
+                    <span class="badge" style="margin-left:8px; border-color: rgba(250,204,21,0.45); background: rgba(250,204,21,0.10);">Update pending</span>
+                  {% endif %}
                   </div>
                   <div class="muted" style="font-size:0.85rem; margin-top:2px;">
                     {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
+                    {% if c.container_number %}Container: {{ c.container_number }} • {% endif %}
                     {% if c.booking_number %}Booking: {{ c.booking_number }} • {% endif %}
                     {% if c.bill_of_lading_number %}BOL: {{ c.bill_of_lading_number }}{% endif %}
                   </div>
@@ -568,6 +580,8 @@
   </script>
 </body>
 </html>
+
+
 
 
 
