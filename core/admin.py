@@ -12,6 +12,7 @@ from .models import (
     OrderContainerLine,
     OrderContainerDocument,
     OrderContainerImportFile,
+    OrderContainerTrackingUpdate,
     ScheduleActivity,
 )
 
@@ -108,6 +109,7 @@ class OrderContainerAdmin(admin.ModelAdmin):
         "customer_name",
         "location_name",
         "po_number",
+        "container_number",
         "assigned_to",
         "status",
         "loading_date",
@@ -120,6 +122,7 @@ class OrderContainerAdmin(admin.ModelAdmin):
         "location_name",
         "po_number",
         "rpc_number",
+        "container_number",
         "booking_number",
         "bill_of_lading_number",
         "status",
@@ -134,6 +137,27 @@ class OrderContainerImportFileAdmin(admin.ModelAdmin):
     list_filter = ("company",)
     search_fields = ("label", "file")
     ordering = ("-uploaded_at",)
+
+
+@admin.register(OrderContainerTrackingUpdate)
+class OrderContainerTrackingUpdateAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "container",
+        "status",
+        "proposed_eta",
+        "proposed_eta_city",
+        "source_last_updated",
+        "created_at",
+    )
+    list_filter = ("status",)
+    search_fields = (
+        "container__customer_name",
+        "container__location_name",
+        "container__rpc_number",
+        "container__container_number",
+    )
+    ordering = ("-created_at",)
 
 
 @admin.register(ScheduleActivity)
@@ -158,4 +182,5 @@ class ScheduleActivityAdmin(admin.ModelAdmin):
 admin.site.site_header = "Automation Portal Admin"
 admin.site.site_title = "Automation Portal"
 admin.site.index_title = "Control center for your automations"
+
 
