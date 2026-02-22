@@ -104,6 +104,17 @@ urlpatterns = [
         name="order_container_toggle_delivered",
     ),
 
+    path(
+        "automations/orders/<int:container_id>/tracking/<int:update_id>/approve/",
+        core_views.order_container_tracking_approve_view,
+        name="order_container_tracking_approve",
+    ),
+    path(
+        "automations/orders/<int:container_id>/tracking/<int:update_id>/reject/",
+        core_views.order_container_tracking_reject_view,
+        name="order_container_tracking_reject",
+    ),
+
     # Bucket Metrics
     path("automations/bucket-metrics/", core_views.bucket_metrics_view, name="bucket_metrics"),
 
@@ -165,6 +176,8 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
+
+
 
 
 
