@@ -4443,6 +4443,7 @@ def order_tracker_view(request):
             | Q(location_name__icontains=q)
             | Q(po_number__icontains=q)
             | Q(rpc_number__icontains=q)
+            | Q(container_number__icontains=q)
             | Q(booking_number__icontains=q)
             | Q(bill_of_lading_number__icontains=q)
         )
@@ -4478,6 +4479,20 @@ def order_tracker_view(request):
     delivered_q = Q(status__iexact="delivered")
     delivered_containers = containers.filter(delivered_q)
     active_containers = containers.exclude(delivered_q)
+
+    # Track which containers have pending JSONCargo updates (so we can show a badge in the UI)
+    try:
+        from core.models import OrderContainerTrackingUpdate
+
+        active_ids = list(active_containers.values_list("id", flat=True))
+        pending_container_ids = set(
+            OrderContainerTrackingUpdate.objects.filter(
+                container_id__in=active_ids,
+                status=OrderContainerTrackingUpdate.STATUS_PENDING,
+            ).values_list("container_id", flat=True)
+        )
+    except Exception:
+        pending_container_ids = set()
 
     # --- Vessel map data (MyShipTracking) ---
     vessel_points = []
@@ -4540,6 +4555,7 @@ def order_tracker_view(request):
             "dir": direction,
             "vessel_points_json": json.dumps(vessel_points),
             "vessel_map_error": vessel_map_error,
+            "pending_container_ids": pending_container_ids,
         },
     )
 
@@ -4755,6 +4771,80 @@ def order_container_toggle_delivered_view(request, container_id: int):
 
 
 @login_required
+def order_container_tracking_approve_view(request, container_id: int, update_id: int):
+    """Approve a pending JSONCargo tracking update and apply it to the container."""
+    if request.method != "POST":
+        return HttpResponseForbidden("POST required")
+
+    user = request.user
+    from core.models import OrderContainerTrackingUpdate
+
+    if user.is_superuser:
+        container = get_object_or_404(OrderContainer, pk=container_id)
+    else:
+        company = get_object_or_404(Company, owner=user)
+        container = get_object_or_404(OrderContainer, pk=container_id, company=company)
+
+    upd = get_object_or_404(
+        OrderContainerTrackingUpdate,
+        pk=update_id,
+        container=container,
+        status=OrderContainerTrackingUpdate.STATUS_PENDING,
+    )
+
+    # Apply proposed values
+    changed = False
+    if upd.proposed_eta and upd.proposed_eta != container.eta:
+        container.eta = upd.proposed_eta
+        changed = True
+    if (upd.proposed_eta_city or "") != (container.eta_city or ""):
+        container.eta_city = upd.proposed_eta_city or ""
+        changed = True
+
+    if changed:
+        container.save(update_fields=["eta", "eta_city", "updated_at"])
+
+    upd.status = OrderContainerTrackingUpdate.STATUS_APPROVED
+    upd.decided_by = user
+    upd.decided_at = timezone.now()
+    upd.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
+
+    messages.success(request, "Tracking update approved and applied.")
+    return redirect("order_container_edit", container_id=container.id)
+
+
+@login_required
+def order_container_tracking_reject_view(request, container_id: int, update_id: int):
+    """Reject a pending JSONCargo tracking update."""
+    if request.method != "POST":
+        return HttpResponseForbidden("POST required")
+
+    user = request.user
+    from core.models import OrderContainerTrackingUpdate
+
+    if user.is_superuser:
+        container = get_object_or_404(OrderContainer, pk=container_id)
+    else:
+        company = get_object_or_404(Company, owner=user)
+        container = get_object_or_404(OrderContainer, pk=container_id, company=company)
+
+    upd = get_object_or_404(
+        OrderContainerTrackingUpdate,
+        pk=update_id,
+        container=container,
+        status=OrderContainerTrackingUpdate.STATUS_PENDING,
+    )
+
+    upd.status = OrderContainerTrackingUpdate.STATUS_REJECTED
+    upd.decided_by = user
+    upd.decided_at = timezone.now()
+    upd.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
+
+    messages.success(request, "Tracking update rejected.")
+    return redirect("order_container_edit", container_id=container.id)
+
+
+@login_required
 def order_container_edit_view(request, container_id: int | None = None):
     """
     Create or edit a container + its content lines (inline formset).
@@ -4852,6 +4942,23 @@ def order_container_edit_view(request, container_id: int | None = None):
         formset = LineFormSet(instance=container, prefix="lines")
         doc_formset = DocumentFormSet(instance=container, prefix="docs")
 
+    # Latest pending JSONCargo update (requires approval)
+    pending_tracking_update = None
+    if container is not None:
+        try:
+            from core.models import OrderContainerTrackingUpdate
+
+            pending_tracking_update = (
+                OrderContainerTrackingUpdate.objects.filter(
+                    container=container,
+                    status=OrderContainerTrackingUpdate.STATUS_PENDING,
+                )
+                .order_by("-created_at", "-id")
+                .first()
+            )
+        except Exception:
+            pending_tracking_update = None
+
     return render(
         request,
         "core/order_container_edit.html",
@@ -4862,6 +4969,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             "form": form,
             "formset": formset,
             "doc_formset": doc_formset,
+            "pending_tracking_update": pending_tracking_update,
         },
     )
 
@@ -5239,6 +5347,35 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
