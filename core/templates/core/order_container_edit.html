@@ -292,14 +292,31 @@
                     </div>
                   </div>
                   <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                    <form method="post" action="{% url 'order_container_tracking_approve' container.id pending_tracking_update.id %}" style="display:inline;">
-                      {% csrf_token %}
-                      <button class="btn" type="submit" onclick="return confirm('Apply this ETA + city update to the tracker?');">Approve & apply</button>
-                    </form>
-                    <form method="post" action="{% url 'order_container_tracking_reject' container.id pending_tracking_update.id %}" style="display:inline;">
-                      {% csrf_token %}
-                      <button class="btn danger" type="submit" onclick="return confirm('Reject this proposed update?');">Reject</button>
-                    </form>
+                    {#
+                      IMPORTANT: Do NOT nest forms inside the main form.
+                      Nested <form> tags cause browsers to auto-close the outer form,
+                      excluding the line-item formset fields from the Save POST (can wipe contents).
+
+                      Instead, use buttons that submit the *main* form to a different endpoint
+                      via formaction/formmethod. The main form already includes the CSRF token.
+                    #}
+                    <button
+                      class="btn"
+                      type="submit"
+                      formmethod="post"
+                      formaction="{% url 'order_container_tracking_approve' container.id pending_tracking_update.id %}"
+                      formnovalidate
+                      onclick="return confirm('Apply this ETA + city update to the tracker?');"
+                    >Approve &amp; apply</button>
+
+                    <button
+                      class="btn danger"
+                      type="submit"
+                      formmethod="post"
+                      formaction="{% url 'order_container_tracking_reject' container.id pending_tracking_update.id %}"
+                      formnovalidate
+                      onclick="return confirm('Reject this proposed update?');"
+                    >Reject</button>
                   </div>
                 </div>
               </div>
@@ -581,7 +598,6 @@
   </script>
 </body>
 </html>
-
 
 
 
