@@ -231,10 +231,10 @@
           </div>
 
           <div class="field">
-            <label>Carrier (optional)</label>
-            {{ form.carrier }}
-            {{ form.carrier.errors }}
-            <div class="muted tiny" style="margin-top:6px;">Use when JSONCargo can't find the container under the wrong carrier (e.g., MAERSK, MSC, CMA_CGM).</div>
+            <label>shipping line (optional)</label>
+            {{ form.shipping_line_id }}
+            {{ form.shipping_line_id.errors }}
+            <div class="muted tiny" style="margin-top:6px;">Use when JSONCargo can't find the container under the wrong shipping line (e.g., MAERSK, MSC, CMA_CGM).</div>
           </div>
 
           <div class="field">
