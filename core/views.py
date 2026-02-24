@@ -5099,7 +5099,7 @@ def order_container_edit_view(request, container_id: int | None = None):
                     {"when": when, "what": what, "where": where}
                 )
 
-return render(
+    return render(
         request,
         "core/order_container_edit.html",
         {
