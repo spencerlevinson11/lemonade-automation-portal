@@ -282,6 +282,19 @@
                       Proposed from JSONCargo{% if pending_tracking_update.source_last_updated %} • last updated {{ pending_tracking_update.source_last_updated|date:"Y-m-d H:i" }}{% endif %}
                     </div>
                     <div style="margin-top:10px;">
+                      {% if pending_tracking_update.kind == 'no_change' %}
+                      <div class="muted tiny">API check result</div>
+                      <div style="font-weight:900;">
+                        {{ pending_tracking_update.note|default:"Last API check was the same as current in tracker." }}
+                      </div>
+                      <div class="muted tiny" style="margin-top:6px;">Current in tracker</div>
+                      <div class="tiny">{% if container.eta %}{{ container.eta }}{% else %}<span class="muted">—</span>{% endif %}{% if container.eta_city %} {{ container.eta_city }}{% endif %}</div>
+
+                      <label class="tiny" style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+                        <input type="checkbox" name="acknowledge_no_change" value="1" />
+                        <span>I acknowledge this check (no change will be applied).</span>
+                      </label>
+                    {% else %}
                       <div class="muted tiny">Proposed ETA</div>
                       <div style="font-weight:900;">
                         {% if pending_tracking_update.proposed_eta %}{{ pending_tracking_update.proposed_eta }}{% else %}<span class="muted">—</span>{% endif %}
@@ -289,6 +302,7 @@
                       </div>
                       <div class="muted tiny" style="margin-top:6px;">Current in tracker</div>
                       <div class="tiny">{% if container.eta %}{{ container.eta }}{% else %}<span class="muted">—</span>{% endif %}{% if container.eta_city %} {{ container.eta_city }}{% endif %}</div>
+                    {% endif %}
                     </div>
                   </div>
                   <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -306,8 +320,8 @@
                       formmethod="post"
                       formaction="{% url 'order_container_tracking_approve' container.id pending_tracking_update.id %}"
                       formnovalidate
-                      onclick="return confirm('Apply this ETA + city update to the tracker?');"
-                    >Approve &amp; apply</button>
+                      onclick="{% if pending_tracking_update.kind == 'no_change' %}return confirm('Acknowledge this API check?');{% else %}return confirm('Apply this ETA + city update to the tracker?');{% endif %}"
+                    {% if pending_tracking_update.kind == 'no_change' %}>Acknowledge</button>{% else %}>Approve &amp; apply</button>{% endif %}
 
                     <button
                       class="btn danger"
@@ -598,6 +612,7 @@
   </script>
 </body>
 </html>
+
 
 
 
