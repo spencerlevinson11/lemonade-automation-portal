@@ -7,8 +7,8 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from core.models import OrderContainer, OrderContainerTrackingUpdate
-from core.services.jsoncargo import fetch_container_tracking
+from core.models import OrderContainer
+from core.services.jsoncargo_order_tracker import sync_one_container
 
 
 def _parse_date(val: str | None) -> dt.date | None:
@@ -108,65 +108,24 @@ class Command(BaseCommand):
 
         for c in qs:
             total += 1
-            tracking, err = fetch_container_tracking(
-                container_number=c.container_number,
-                api_key=api_key,
-            )
 
-            if err:
+            result, pending = sync_one_container(c, api_key=api_key)
+
+            if result == "error":
                 errors += 1
-                self.stderr.write(
-                    f"[{c.id}] {c.container_number}: error {err.status_code} - {err.message}"
-                )
+                self.stderr.write(f"[{c.id}] {c.container_number}: error while fetching tracking")
                 continue
-
-            data = (tracking or {}).get("data") or {}
-
-            # Your mapping:
-            # - eta_final_destination -> OrderContainer.eta
-            # - discharging_port -> OrderContainer.eta_city (city next to ETA)
-            proposed_eta = _parse_date(data.get("eta_final_destination"))
-            proposed_city = (data.get("discharging_port") or "").strip()
-            source_last_updated = _parse_dt(data.get("last_updated"))
-
-            # If nothing to propose, skip.
-            if proposed_eta is None and not proposed_city:
+            if result == "skipped_no_data":
                 skipped += 1
                 continue
-
-            # If proposed equals current, skip.
-            if proposed_eta == c.eta and (proposed_city or "") == (c.eta_city or ""):
-                skipped += 1
-                continue
-
-            # If there is already a pending update for this container, update it.
-            pending = (
-                OrderContainerTrackingUpdate.objects.filter(
-                    container=c,
-                    status=OrderContainerTrackingUpdate.STATUS_PENDING,
-                )
-                .order_by("-created_at", "-id")
-                .first()
-            )
-
-            if pending:
-                pending.proposed_eta = proposed_eta
-                pending.proposed_eta_city = proposed_city
-                pending.source_last_updated = source_last_updated
-                pending.source_payload = tracking or {}
-                pending.save()
-                updated += 1
-            else:
-                OrderContainerTrackingUpdate.objects.create(
-                    container=c,
-                    proposed_eta=proposed_eta,
-                    proposed_eta_city=proposed_city,
-                    source_last_updated=source_last_updated,
-                    source_payload=tracking or {},
-                    status=OrderContainerTrackingUpdate.STATUS_PENDING,
-                )
+            if result in ("change_created", "no_change_created"):
                 created += 1
+                continue
+            if result in ("change_updated", "no_change_updated"):
+                updated += 1
+                continue
 
-        self.stdout.write(
+            skipped += 1
+self.stdout.write(
             f"Done. scanned={total} created={created} updated={updated} skipped={skipped} errors={errors}"
         )
