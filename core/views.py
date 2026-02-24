@@ -5013,6 +5013,32 @@ def order_container_edit_view(request, container_id: int | None = None):
                 doc_formset.instance = obj
                 doc_formset.save()
 
+                # Optional: user acknowledged the latest pending JSONCargo update while saving.
+                ack_id = (request.POST.get("ack_tracking_update_id") or "").strip()
+                if ack_id and container is not None:
+                    try:
+                        from core.models import OrderContainerTrackingUpdate
+                        pending = OrderContainerTrackingUpdate.objects.filter(
+                            id=int(ack_id),
+                            container=obj,
+                            status=OrderContainerTrackingUpdate.STATUS_PENDING,
+                        ).first()
+                        if pending:
+                            pending.status = OrderContainerTrackingUpdate.STATUS_APPROVED
+                            pending.decided_by = user
+                            pending.decided_at = timezone.now()
+                            pending.note = (pending.note or "").strip()
+                            pending.save(update_fields=[
+                                "status",
+                                "decided_by",
+                                "decided_at",
+                                "note",
+                                "updated_at",
+                            ])
+                    except Exception:
+                        # Don't block saving the container if the ack fails for any reason.
+                        pass
+
                 messages.success(request, "Container saved.")
                 return redirect("order_container_edit", container_id=obj.id)
             else:
@@ -5039,7 +5065,41 @@ def order_container_edit_view(request, container_id: int | None = None):
         except Exception:
             pending_tracking_update = None
 
-    return render(
+    
+    # Parsed JSONCargo event chain (for manual review / debugging)
+    jsoncargo_events: list[dict[str, str]] = []
+    if pending_tracking_update is not None:
+        payload = getattr(pending_tracking_update, "source_payload", None) or {}
+        data = payload.get("data") if isinstance(payload, dict) else {}
+        raw_events = None
+        if isinstance(data, dict):
+            raw_events = (
+                data.get("events")
+                or data.get("tracking_events")
+                or data.get("container_events")
+            )
+        if raw_events is None and isinstance(payload, dict):
+            raw_events = payload.get("events")
+
+        if isinstance(raw_events, list):
+            def _pick(d: dict, *keys: str) -> str:
+                for k in keys:
+                    v = d.get(k)
+                    if v is not None and str(v).strip():
+                        return str(v).strip()
+                return ""
+
+            for ev in raw_events:
+                if not isinstance(ev, dict):
+                    continue
+                when = _pick(ev, "timestamp", "time", "date", "event_time", "datetime")
+                what = _pick(ev, "event", "name", "status", "title", "description")
+                where = _pick(ev, "location", "place", "port", "city", "terminal")
+                jsoncargo_events.append(
+                    {"when": when, "what": what, "where": where}
+                )
+
+return render(
         request,
         "core/order_container_edit.html",
         {
@@ -5050,6 +5110,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             "formset": formset,
             "doc_formset": doc_formset,
             "pending_tracking_update": pending_tracking_update,
+            "jsoncargo_events": jsoncargo_events,
         },
     )
 
@@ -5427,6 +5488,8 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
 
 
 
