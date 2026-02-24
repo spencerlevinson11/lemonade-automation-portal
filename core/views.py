@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import annotationsfrom __future__ import annotations
 
 import copy
 import json
@@ -5066,38 +5066,22 @@ def order_container_edit_view(request, container_id: int | None = None):
             pending_tracking_update = None
 
     
-    # Parsed JSONCargo event chain (for manual review / debugging)
-    jsoncargo_events: list[dict[str, str]] = []
+    # JSONCargo snapshot (the response body you pasted)
+    # NOTE: JSONCargo's response for this endpoint is typically a flat "data" object
+    # (not an event list). We expose the full payload for manual review.
+    jsoncargo_data: dict = {}
+    jsoncargo_payload_pretty: str = ""
     if pending_tracking_update is not None:
         payload = getattr(pending_tracking_update, "source_payload", None) or {}
-        data = payload.get("data") if isinstance(payload, dict) else {}
-        raw_events = None
-        if isinstance(data, dict):
-            raw_events = (
-                data.get("events")
-                or data.get("tracking_events")
-                or data.get("container_events")
-            )
-        if raw_events is None and isinstance(payload, dict):
-            raw_events = payload.get("events")
-
-        if isinstance(raw_events, list):
-            def _pick(d: dict, *keys: str) -> str:
-                for k in keys:
-                    v = d.get(k)
-                    if v is not None and str(v).strip():
-                        return str(v).strip()
-                return ""
-
-            for ev in raw_events:
-                if not isinstance(ev, dict):
-                    continue
-                when = _pick(ev, "timestamp", "time", "date", "event_time", "datetime")
-                what = _pick(ev, "event", "name", "status", "title", "description")
-                where = _pick(ev, "location", "place", "port", "city", "terminal")
-                jsoncargo_events.append(
-                    {"when": when, "what": what, "where": where}
-                )
+        if isinstance(payload, dict):
+            raw_data = payload.get("data")
+            if isinstance(raw_data, dict):
+                jsoncargo_data = raw_data
+            try:
+                import json
+                jsoncargo_payload_pretty = json.dumps(payload, indent=2, sort_keys=True, default=str)
+            except Exception:
+                jsoncargo_payload_pretty = str(payload)
 
     return render(
         request,
@@ -5110,7 +5094,8 @@ def order_container_edit_view(request, container_id: int | None = None):
             "formset": formset,
             "doc_formset": doc_formset,
             "pending_tracking_update": pending_tracking_update,
-            "jsoncargo_events": jsoncargo_events,
+            "jsoncargo_data": jsoncargo_data,
+            "jsoncargo_payload_pretty": jsoncargo_payload_pretty,
         },
     )
 
@@ -5488,6 +5473,10 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
 
 
 
