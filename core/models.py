@@ -400,6 +400,11 @@ class OrderContainer(models.Model):
     # Container number used for API tracking (e.g., TCNU1825001)
     container_number = models.CharField(max_length=32, blank=True)
 
+    # Optional carrier / shipping line for API tracking.
+    # JSONCargo uses this to disambiguate containers that share a third-party prefix.
+    # Examples: MAERSK, MSC, CMA_CGM, HAPAG_LLOYD, ONE
+    carrier = models.CharField(max_length=64, blank=True)
+
     # Optional vessel metadata (for live AIS mapping)
     vessel_name = models.CharField(max_length=255, blank=True)
     vessel_mmsi = models.BigIntegerField(null=True, blank=True)
@@ -449,9 +454,11 @@ class OrderContainerTrackingUpdate(models.Model):
 
     KIND_CHANGE = "change"
     KIND_NO_CHANGE = "no_change"
+    KIND_ERROR = "error"
     KIND_CHOICES = [
         (KIND_CHANGE, "Change"),
         (KIND_NO_CHANGE, "No change"),
+        (KIND_ERROR, "Error"),
     ]
 
     kind = models.CharField(max_length=16, choices=KIND_CHOICES, default=KIND_CHANGE)
@@ -753,6 +760,9 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
+
 
 
 
