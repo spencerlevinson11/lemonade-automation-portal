@@ -152,7 +152,12 @@
 
         <!-- Order recap export (DOCX) -->
         <a class="btn" href="{% url 'order_tracker_recap_docx' %}?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}">Download order recap</a>
-      </div>
+      
+        <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" style="display:inline;">
+          {% csrf_token %}
+          <button class="btn" type="submit">Sync JSONCargo updates</button>
+        </form>
+</div>
     </div>
 
     {% if messages %}
@@ -580,6 +585,8 @@
   </script>
 </body>
 </html>
+
+
 
 
 
