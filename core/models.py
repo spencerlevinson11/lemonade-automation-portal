@@ -445,28 +445,26 @@ class OrderContainer(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
     class Meta:
         ordering = ["-updated_at", "-created_at"]
 
+    def jsoncargo_shipping_line_param(self) -> str | None:
+        """Return the JSONCargo `shipping_line` query param value for this order.
 
-def jsoncargo_shipping_line_param(self) -> str | None:
-    """Return the JSONCargo `shipping_line` query param value for this order.
+        Priority:
+          1) shipping_line_id (dropdown) -> mapped enum (MAERSK, MSC, ...)
+          2) legacy free-text carrier field (already stored on some rows)
+        """
+        sid = (self.shipping_line_id or "").strip()
+        if sid and sid in JSONCARGO_SHIPPING_LINE_PARAM_BY_ID:
+            return JSONCARGO_SHIPPING_LINE_PARAM_BY_ID[sid]
 
-    Priority:
-      1) shipping_line_id (dropdown) -> mapped enum (MAERSK, MSC, ...)
-      2) legacy free-text carrier field (already stored on some rows)
-    """
-    sid = (self.shipping_line_id or "").strip()
-    if sid and sid in JSONCARGO_SHIPPING_LINE_PARAM_BY_ID:
-        return JSONCARGO_SHIPPING_LINE_PARAM_BY_ID[sid]
-
-    legacy = (getattr(self, "carrier", "") or "").strip()
-    if legacy:
-        # normalize common user inputs
-        legacy_norm = legacy.upper().replace(" ", "_").replace("-", "_")
-        return legacy_norm
-    return None
+        legacy = (getattr(self, "carrier", "") or "").strip()
+        if legacy:
+            # normalize common user inputs
+            legacy_norm = legacy.upper().replace(" ", "_").replace("-", "_")
+            return legacy_norm
+        return None
 
     def __str__(self) -> str:
         loc = f" - {self.location_name}" if self.location_name else ""
@@ -810,6 +808,10 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
+
+
 
 
 
