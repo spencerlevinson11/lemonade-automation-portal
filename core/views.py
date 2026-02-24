@@ -4444,6 +4444,7 @@ def order_tracker_view(request):
             | Q(po_number__icontains=q)
             | Q(rpc_number__icontains=q)
             | Q(container_number__icontains=q)
+            | Q(carrier__icontains=q)
             | Q(booking_number__icontains=q)
             | Q(bill_of_lading_number__icontains=q)
         )
@@ -4623,7 +4624,7 @@ def order_tracker_sync_jsoncargo_view(request):
     for c in qs.order_by("-updated_at", "-created_at")[:500]:
         total += 1
         result, _pending = sync_one_container(c, api_key=api_key)
-        if result == "error":
+        if result in ("error_note_created", "error_note_updated"):
             errors += 1
         elif result == "skipped_no_data":
             skipped += 1
@@ -4667,6 +4668,8 @@ def order_tracker_recap_docx_view(request):
             | Q(rpc_number__icontains=q)
             | Q(booking_number__icontains=q)
             | Q(bill_of_lading_number__icontains=q)
+            | Q(container_number__icontains=q)
+            | Q(carrier__icontains=q)
         )
     if status:
         containers = containers.filter(status__icontains=status)
@@ -4848,7 +4851,10 @@ def order_container_tracking_approve_view(request, container_id: int, update_id:
     )
 
     # Approve behavior depends on kind.
-    if getattr(upd, "kind", OrderContainerTrackingUpdate.KIND_CHANGE) == OrderContainerTrackingUpdate.KIND_NO_CHANGE:
+    if getattr(upd, "kind", OrderContainerTrackingUpdate.KIND_CHANGE) in (
+        OrderContainerTrackingUpdate.KIND_NO_CHANGE,
+        getattr(OrderContainerTrackingUpdate, "KIND_ERROR", "error"),
+    ):
         # Require explicit acknowledgement checkbox
         if request.POST.get("acknowledge_no_change") != "1":
             messages.error(request, "Please check the acknowledgement box before approving.")
@@ -4860,7 +4866,10 @@ def order_container_tracking_approve_view(request, container_id: int, update_id:
         upd.decided_at = timezone.now()
         upd.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
 
-        messages.success(request, "API check acknowledged (no change from current tracker).")
+        if getattr(upd, "kind", "") == getattr(OrderContainerTrackingUpdate, "KIND_ERROR", "error"):
+            messages.success(request, "Tracking error acknowledged.")
+        else:
+            messages.success(request, "API check acknowledged (no change from current tracker).")
         return redirect("order_container_edit", container_id=container.id)
 
     # KIND_CHANGE: Apply proposed values
@@ -5418,6 +5427,9 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
 
 
 
