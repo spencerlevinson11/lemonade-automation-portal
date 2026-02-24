@@ -4585,6 +4585,61 @@ def _fmt_short_date(d: dt.date | None) -> str:
 
 
 @login_required
+
+@login_required
+def order_tracker_sync_jsoncargo_view(request):
+    """Manually sync JSONCargo tracking for all non-delivered orders with a container number.
+
+    This does NOT auto-apply changes. It creates/updates pending tracking updates
+    (including 'no change' notes) that must be approved per-container.
+    """
+    if request.method != "POST":
+        return HttpResponseForbidden("POST required")
+
+    api_key = os.getenv("JSONCARGO_API_KEY", "").strip()
+    if not api_key:
+        messages.error(request, "JSONCARGO_API_KEY is not set on the server.")
+        return redirect("order_tracker")
+
+    from core.services.jsoncargo_order_tracker import sync_one_container
+
+    user = request.user
+
+    if user.is_superuser:
+        qs = OrderContainer.objects.all()
+    else:
+        company = get_object_or_404(Company, owner=user)
+        qs = OrderContainer.objects.filter(company=company)
+
+    qs = qs.exclude(status__iexact="Delivered")
+    qs = qs.exclude(container_number__isnull=True).exclude(container_number__exact="")
+
+    total = 0
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = 0
+
+    for c in qs.order_by("-updated_at", "-created_at")[:500]:
+        total += 1
+        result, _pending = sync_one_container(c, api_key=api_key)
+        if result == "error":
+            errors += 1
+        elif result == "skipped_no_data":
+            skipped += 1
+        elif result in ("change_created", "no_change_created"):
+            created += 1
+        elif result in ("change_updated", "no_change_updated"):
+            updated += 1
+        else:
+            skipped += 1
+
+    messages.success(
+        request,
+        f"JSONCargo sync complete: checked {total}, created {created}, updated {updated}, skipped {skipped}, errors {errors}.",
+    )
+    return redirect("order_tracker")
+
 def order_tracker_recap_docx_view(request):
     """Download an Order Recap DOCX for all (filtered) containers.
 
@@ -4792,7 +4847,23 @@ def order_container_tracking_approve_view(request, container_id: int, update_id:
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
 
-    # Apply proposed values
+    # Approve behavior depends on kind.
+    if getattr(upd, "kind", OrderContainerTrackingUpdate.KIND_CHANGE) == OrderContainerTrackingUpdate.KIND_NO_CHANGE:
+        # Require explicit acknowledgement checkbox
+        if request.POST.get("acknowledge_no_change") != "1":
+            messages.error(request, "Please check the acknowledgement box before approving.")
+            return redirect("order_container_edit", container_id=container.id)
+
+        # No fields are changed; we just mark the note as approved.
+        upd.status = OrderContainerTrackingUpdate.STATUS_APPROVED
+        upd.decided_by = user
+        upd.decided_at = timezone.now()
+        upd.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
+
+        messages.success(request, "API check acknowledged (no change from current tracker).")
+        return redirect("order_container_edit", container_id=container.id)
+
+    # KIND_CHANGE: Apply proposed values
     changed = False
     if upd.proposed_eta and upd.proposed_eta != container.eta:
         container.eta = upd.proposed_eta
@@ -5347,6 +5418,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
