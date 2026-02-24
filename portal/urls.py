@@ -80,6 +80,7 @@ urlpatterns = [
 
     # Order Tracker
     path("automations/orders/", core_views.order_tracker_view, name="order_tracker"),
+    path("automations/orders/sync-jsoncargo/", core_views.order_tracker_sync_jsoncargo_view, name="order_tracker_sync_jsoncargo"),
     path(
         "automations/orders/recap.docx",
         core_views.order_tracker_recap_docx_view,
@@ -176,6 +177,13 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
+
+
+
+
+
+
+
 
 
 
