@@ -285,32 +285,17 @@
               <div style="border: 1px solid rgba(250,204,21,0.35); border-radius: 14px; padding: 12px; background: rgba(250,204,21,0.06);">
                 <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start;">
                   <div>
-                    <div style="font-weight:900;">Pending tracking update (requires approval)</div>
+                    <div style="font-weight:900;">JSONCargo tracking snapshot (manual review)</div>
                     <div class="muted tiny" style="margin-top:4px;">
                       Proposed from JSONCargo{% if pending_tracking_update.source_last_updated %} • last updated {{ pending_tracking_update.source_last_updated|date:"Y-m-d H:i" }}{% endif %}
                     </div>
                     <div style="margin-top:10px;">
-                      {% if pending_tracking_update.kind == 'no_change' or pending_tracking_update.kind == 'error' %}
-                      <div class="muted tiny">API check result</div>
-                      <div style="font-weight:900;">
-                        {{ pending_tracking_update.note|default:"Last API check was the same as current in tracker." }}
-                      </div>
-                      <div class="muted tiny" style="margin-top:6px;">Current in tracker</div>
+                      {% if pending_tracking_update.note %}
+                        <div class="muted tiny">API note</div>
+                        <div style="font-weight:900;">{{ pending_tracking_update.note }}</div>
+                      {% endif %}
+                      <div class="muted tiny" style="margin-top:6px;">Current in tracker (what you've entered)</div>
                       <div class="tiny">{% if container.eta %}{{ container.eta }}{% else %}<span class="muted">—</span>{% endif %}{% if container.eta_city %} {{ container.eta_city }}{% endif %}</div>
-
-                      <label class="tiny" style="display:flex; align-items:center; gap:8px; margin-top:10px;">
-                        <input type="checkbox" name="acknowledge_no_change" value="1" />
-                        <span>{% if pending_tracking_update.kind == 'error' %}I acknowledge this tracking error.{% else %}I acknowledge this check (no change will be applied).{% endif %}</span>
-                      </label>
-                    {% else %}
-                      <div class="muted tiny">Proposed ETA</div>
-                      <div style="font-weight:900;">
-                        {% if pending_tracking_update.proposed_eta %}{{ pending_tracking_update.proposed_eta }}{% else %}<span class="muted">—</span>{% endif %}
-                        {% if pending_tracking_update.proposed_eta_city %} {{ pending_tracking_update.proposed_eta_city }}{% endif %}
-                      </div>
-                      <div class="muted tiny" style="margin-top:6px;">Current in tracker</div>
-                      <div class="tiny">{% if container.eta %}{{ container.eta }}{% else %}<span class="muted">—</span>{% endif %}{% if container.eta_city %} {{ container.eta_city }}{% endif %}</div>
-                    {% endif %}
                     </div>
                   </div>
                   <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -320,25 +305,11 @@
                       excluding the line-item formset fields from the Save POST (can wipe contents).
                     #}
 
-                    {% if pending_tracking_update.kind == 'no_change' or pending_tracking_update.kind == 'error' %}
-                      <button
-                        class="btn"
-                        type="button"
-                        onclick="ackAndSave('{{ pending_tracking_update.id }}', true);"
-                      >Acknowledge</button>
-                    {% else %}
-                      <button
-                        class="btn2"
-                        type="button"
-                        onclick="fillEtaFromPending('{% if pending_tracking_update.proposed_eta %}{{ pending_tracking_update.proposed_eta|date:"Y-m-d" }}{% endif %}', '{{ pending_tracking_update.proposed_eta_city|escapejs }}');"
-                      >Fill ETA fields</button>
-
-                      <button
-                        class="btn"
-                        type="button"
-                        onclick="ackAndSave('{{ pending_tracking_update.id }}', false);"
-                      >Acknowledge &amp; save</button>
-                    {% endif %}
+                    <button
+                      class="btn"
+                      type="button"
+                      onclick="ackAndSave('{{ pending_tracking_update.id }}', false);"
+                    >Acknowledge &amp; save</button>
 
                     <button
                       class="btn danger"
@@ -351,29 +322,32 @@
                   </div>
 
                   <details style="margin-top:12px;">
-                    <summary class="tiny" style="cursor:pointer; font-weight:900; color: var(--accent);">View JSONCargo event chain</summary>
+                    <summary class="tiny" style="cursor:pointer; font-weight:900; color: var(--accent);">View JSONCargo response</summary>
                     <div style="margin-top:10px;">
-                      {% if jsoncargo_events and jsoncargo_events|length %}
+                      {% if jsoncargo_data %}
                         <table>
                           <thead>
                             <tr>
-                              <th style="width:28%;">When</th>
-                              <th style="width:42%;">Event</th>
-                              <th>Location</th>
+                              <th style="width:34%;">Field</th>
+                              <th>Value</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {% for ev in jsoncargo_events %}
+                            {% for k, v in jsoncargo_data.items %}
                               <tr>
-                                <td class="tiny">{% if ev.when %}{{ ev.when }}{% else %}<span class="muted">—</span>{% endif %}</td>
-                                <td class="tiny">{% if ev.what %}{{ ev.what }}{% else %}<span class="muted">—</span>{% endif %}</td>
-                                <td class="tiny">{% if ev.where %}{{ ev.where }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                                <td class="tiny"><code>{{ k }}</code></td>
+                                <td class="tiny">{% if v is not None and v != '' %}{{ v }}{% else %}<span class="muted">—</span>{% endif %}</td>
                               </tr>
                             {% endfor %}
                           </tbody>
                         </table>
                       {% else %}
-                        <div class="muted tiny">No event list found in the JSONCargo payload for this update.</div>
+                        <div class="muted tiny">No <code>data</code> object found in the stored JSONCargo payload for this update.</div>
+                      {% endif %}
+
+                      {% if jsoncargo_payload_pretty %}
+                        <div class="muted tiny" style="margin-top:10px;">Raw payload</div>
+                        <pre class="tiny" style="white-space:pre-wrap; overflow:auto; max-height:320px; border:1px solid rgba(148,163,184,0.25); border-radius:12px; padding:10px; background: rgba(15,23,42,0.6);">{{ jsoncargo_payload_pretty }}</pre>
                       {% endif %}
                     </div>
                   </details>
@@ -689,7 +663,6 @@
 </script>
 </body>
 </html>
-
 
 
 
