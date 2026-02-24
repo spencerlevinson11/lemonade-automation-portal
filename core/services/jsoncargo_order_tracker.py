@@ -14,6 +14,22 @@ def _parse_date(val: str | None) -> dt.date | None:
     """Parse JSONCargo timestamps like '2026-02-22 07:00' into a date."""
     if not val:
         return None
+    s = str(val).strip()from __future__ import annotations
+
+import datetime as dt
+from typing import Any, Dict, Optional, Tuple
+
+from django.db import transaction
+from django.utils import timezone
+
+from core.models import OrderContainer, OrderContainerTrackingUpdate
+from core.services.jsoncargo import fetch_container_tracking
+
+
+def _parse_date(val: str | None) -> dt.date | None:
+    """Parse JSONCargo timestamps like '2026-02-22 07:00' into a date."""
+    if not val:
+        return None
     s = str(val).strip()
     if not s:
         return None
@@ -116,7 +132,7 @@ def sync_one_container(
         - 'skipped_no_data'
         - 'error'
     """
-    shipping_line = (getattr(container, "carrier", "") or "").strip() or None
+    shipping_line = container.jsoncargo_shipping_line_param()
     tracking, err = fetch_container_tracking(
         container_number=container.container_number,
         api_key=api_key,
@@ -128,7 +144,7 @@ def sync_one_container(
         msg = f"JSONCargo error ({err.status_code}): {err.message}"
         if err.status_code == 404:
             if shipping_line:
-                msg += f". Not found under carrier '{shipping_line}'."
+                msg += f". Not found under shipping line '{shipping_line}'."
             else:
                 msg += ". Try setting a Carrier (shipping line) for this container and re-sync."
 
@@ -171,6 +187,12 @@ def sync_one_container(
         return ("error_note_created", new_obj)
 
     data: Dict[str, Any] = (tracking or {}).get("data") or {}
+
+# Auto-learn shipping line id from JSONCargo when available.
+resp_line_id = str(data.get("shipping_line_id") or "").strip()
+if resp_line_id and not (container.shipping_line_id or "").strip():
+    container.shipping_line_id = resp_line_id
+    container.save(update_fields=["shipping_line_id", "updated_at"])
 
     proposed_eta = _parse_date(data.get("eta_final_destination"))
     # Prefer discharging_port (usually clean). Fall back to shipped_to if needed.
@@ -256,3 +278,4 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
