@@ -446,6 +446,17 @@ class OrderContainerTrackingUpdate(models.Model):
     proposed_eta = models.DateField(null=True, blank=True)
     proposed_eta_city = models.CharField(max_length=128, blank=True)
 
+
+    KIND_CHANGE = "change"
+    KIND_NO_CHANGE = "no_change"
+    KIND_CHOICES = [
+        (KIND_CHANGE, "Change"),
+        (KIND_NO_CHANGE, "No change"),
+    ]
+
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default=KIND_CHANGE)
+    note = models.TextField(blank=True)
+
     # "last_updated" timestamp from JSONCargo, if provided.
     source_last_updated = models.DateTimeField(null=True, blank=True)
 
@@ -742,6 +753,11 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
+
+
+
 
 
 
