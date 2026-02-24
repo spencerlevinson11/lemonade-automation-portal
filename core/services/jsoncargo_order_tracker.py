@@ -176,9 +176,32 @@ def sync_one_container(
         container.shipping_line_id = resp_line_id
         container.save(update_fields=["shipping_line_id", "updated_at"])
 
-    proposed_eta = _parse_date(data.get("eta_final_destination"))
+    # Prefer ETA to final destination when present; fall back to other common ETA fields.
+    proposed_eta = _parse_date(
+        data.get("eta_final_destination")
+        or data.get("eta_destination")
+        or data.get("eta")
+        or data.get("eta_delivery")
+        or data.get("eta_discharge")
+    )
     # Prefer discharging_port (usually clean). Fall back to shipped_to if needed.
-    raw_city = (data.get("discharging_port") or data.get("shipped_to") or "").strip()
+    # Choose a *destination* label for display.
+    # JSONCargo sometimes returns a discharge/transshipment port (e.g., Antwerpen) even when the
+    # final delivery city/terminal is elsewhere. We try several destination-like fields first,
+    # and only fall back to discharge/shipped_to if nothing better exists.
+    raw_city = (
+        data.get("final_destination")
+        or data.get("final_destination_port")
+        or data.get("final_destination_city")
+        or data.get("destination")
+        or data.get("delivery_to")
+        or data.get("delivered_to")
+        or data.get("consignee_city")
+        or data.get("shipped_to")
+        or data.get("discharging_port")
+        or ""
+    )
+    raw_city = str(raw_city).strip()
     proposed_city = normalize_city(raw_city)
     source_last_updated = _parse_dt(data.get("last_updated"))
 
@@ -264,5 +287,6 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
 
 
