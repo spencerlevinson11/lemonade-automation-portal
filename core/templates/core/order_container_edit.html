@@ -140,6 +140,7 @@
           enctype="multipart/form-data"
           action="{% if container %}{% url 'order_container_edit' container.id %}{% else %}{% url 'order_container_new' %}{% endif %}">
       {% csrf_token %}
+      <input type="hidden" name="ack_tracking_update_id" id="ackTrackingUpdateId" value="" />
 
       {# CRITICAL: formset management fields must be inside the main form on BOTH GET and POST #}
       <div style="display:none;">
@@ -317,18 +318,27 @@
                       IMPORTANT: Do NOT nest forms inside the main form.
                       Nested <form> tags cause browsers to auto-close the outer form,
                       excluding the line-item formset fields from the Save POST (can wipe contents).
-
-                      Instead, use buttons that submit the *main* form to a different endpoint
-                      via formaction/formmethod. The main form already includes the CSRF token.
                     #}
-                    <button
-                      class="btn"
-                      type="submit"
-                      formmethod="post"
-                      formaction="{% url 'order_container_tracking_approve' container.id pending_tracking_update.id %}"
-                      formnovalidate
-                      onclick="{% if pending_tracking_update.kind == 'no_change' or pending_tracking_update.kind == 'error' %}return confirm('Acknowledge this update?');{% else %}return confirm('Apply this ETA + city update to the tracker?');{% endif %}"
-                    {% if pending_tracking_update.kind == 'no_change' or pending_tracking_update.kind == 'error' %}>Acknowledge</button>{% else %}>Approve &amp; apply</button>{% endif %}
+
+                    {% if pending_tracking_update.kind == 'no_change' or pending_tracking_update.kind == 'error' %}
+                      <button
+                        class="btn"
+                        type="button"
+                        onclick="ackAndSave('{{ pending_tracking_update.id }}', true);"
+                      >Acknowledge</button>
+                    {% else %}
+                      <button
+                        class="btn2"
+                        type="button"
+                        onclick="fillEtaFromPending('{% if pending_tracking_update.proposed_eta %}{{ pending_tracking_update.proposed_eta|date:"Y-m-d" }}{% endif %}', '{{ pending_tracking_update.proposed_eta_city|escapejs }}');"
+                      >Fill ETA fields</button>
+
+                      <button
+                        class="btn"
+                        type="button"
+                        onclick="ackAndSave('{{ pending_tracking_update.id }}', false);"
+                      >Acknowledge &amp; save</button>
+                    {% endif %}
 
                     <button
                       class="btn danger"
@@ -338,6 +348,35 @@
                       formnovalidate
                       onclick="return confirm('Reject this proposed update?');"
                     >Reject</button>
+                  </div>
+
+                  <details style="margin-top:12px;">
+                    <summary class="tiny" style="cursor:pointer; font-weight:900; color: var(--accent);">View JSONCargo event chain</summary>
+                    <div style="margin-top:10px;">
+                      {% if jsoncargo_events and jsoncargo_events|length %}
+                        <table>
+                          <thead>
+                            <tr>
+                              <th style="width:28%;">When</th>
+                              <th style="width:42%;">Event</th>
+                              <th>Location</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {% for ev in jsoncargo_events %}
+                              <tr>
+                                <td class="tiny">{% if ev.when %}{{ ev.when }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                                <td class="tiny">{% if ev.what %}{{ ev.what }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                                <td class="tiny">{% if ev.where %}{{ ev.where }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                              </tr>
+                            {% endfor %}
+                          </tbody>
+                        </table>
+                      {% else %}
+                        <div class="muted tiny">No event list found in the JSONCargo payload for this update.</div>
+                      {% endif %}
+                    </div>
+                  </details>
                   </div>
                 </div>
               </div>
@@ -616,10 +655,40 @@
         totalFormsInput.value = String(current + 1);
       });
     })();
-  </script>
+  
+
+    // ---- JSONCargo pending update helpers ----
+    window.fillEtaFromPending = function (dateStr, cityStr) {
+      // Fill the ETA + city fields on the form, but DO NOT auto-save.
+      const etaInput = document.getElementById('id_eta');
+      const cityInput = document.getElementById('id_eta_city');
+      if (etaInput && dateStr) etaInput.value = dateStr;
+      if (cityInput && cityStr) cityInput.value = cityStr;
+
+      // Scroll the user to the ETA field so they can sanity-check it.
+      if (etaInput) {
+        etaInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        etaInput.focus({ preventScroll: true });
+      }
+    };
+
+    window.ackAndSave = function (updateId, confirmOnly) {
+      const hidden = document.getElementById('ackTrackingUpdateId');
+      const form = document.getElementById('mainForm');
+      if (!hidden || !form) return;
+
+      const msg = confirmOnly
+        ? 'Mark this JSONCargo update as reviewed? (No automatic changes will be applied.)'
+        : 'Mark this JSONCargo update as reviewed and save your current edits?';
+      if (!window.confirm(msg)) return;
+
+      hidden.value = String(updateId || '');
+      form.submit();
+    };
+
+</script>
 </body>
 </html>
-
 
 
 
