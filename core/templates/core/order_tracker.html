@@ -252,6 +252,10 @@
               <input name="container_number" placeholder="e.g., TCNU1825001" />
             </div>
             <div class="field">
+              <label>Carrier (optional)</label>
+              <input name="carrier" placeholder="e.g., MAERSK, MSC, CMA_CGM" />
+            </div>
+            <div class="field">
               <label>BOL #</label>
               <input name="bill_of_lading_number" placeholder="Bill of Lading number" />
             </div>
@@ -395,7 +399,7 @@
                 </div>
                 <div class="muted" style="font-size:0.85rem; margin-top:2px;">
                   {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
-                  {% if c.container_number %}Container: {{ c.container_number }} • {% endif %}
+                  {% if c.container_number %}Container: {{ c.container_number }}{% if c.carrier %} ({{ c.carrier }}){% endif %} • {% endif %}
                   {% if c.booking_number %}Booking: {{ c.booking_number }} • {% endif %}
                   {% if c.bill_of_lading_number %}BOL: {{ c.bill_of_lading_number }}{% endif %}
                 </div>
@@ -484,7 +488,7 @@
                   </div>
                   <div class="muted" style="font-size:0.85rem; margin-top:2px;">
                     {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
-                    {% if c.container_number %}Container: {{ c.container_number }} • {% endif %}
+                    {% if c.container_number %}Container: {{ c.container_number }}{% if c.carrier %} ({{ c.carrier }}){% endif %} • {% endif %}
                     {% if c.booking_number %}Booking: {{ c.booking_number }} • {% endif %}
                     {% if c.bill_of_lading_number %}BOL: {{ c.bill_of_lading_number }}{% endif %}
                   </div>
@@ -585,6 +589,11 @@
   </script>
 </body>
 </html>
+
+
+
+
+
 
 
 
