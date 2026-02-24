@@ -175,90 +175,94 @@ def sync_one_container(
     if resp_line_id and not (container.shipping_line_id or "").strip():
         container.shipping_line_id = resp_line_id
         container.save(update_fields=["shipping_line_id", "updated_at"])
-    
-        proposed_eta = _parse_date(data.get("eta_final_destination"))
-        # Prefer discharging_port (usually clean). Fall back to shipped_to if needed.
-        raw_city = (data.get("discharging_port") or data.get("shipped_to") or "").strip()
-        proposed_city = normalize_city(raw_city)
-        source_last_updated = _parse_dt(data.get("last_updated"))
-    
-        if proposed_eta is None and not proposed_city:
-            return ("skipped_no_data", None)
-    
-        same_eta = proposed_eta == container.eta
-        same_city = (proposed_city or "") == (container.eta_city or "")
-    
-        pending = (
-            OrderContainerTrackingUpdate.objects.filter(
-                container=container,
-                status=OrderContainerTrackingUpdate.STATUS_PENDING,
-            )
-            .order_by("-created_at", "-id")
-            .first()
+
+    proposed_eta = _parse_date(data.get("eta_final_destination"))
+    # Prefer discharging_port (usually clean). Fall back to shipped_to if needed.
+    raw_city = (data.get("discharging_port") or data.get("shipped_to") or "").strip()
+    proposed_city = normalize_city(raw_city)
+    source_last_updated = _parse_dt(data.get("last_updated"))
+
+    if proposed_eta is None and not proposed_city:
+        return ("skipped_no_data", None)
+
+    same_eta = proposed_eta == container.eta
+    same_city = (proposed_city or "") == (container.eta_city or "")
+
+    pending = (
+        OrderContainerTrackingUpdate.objects.filter(
+            container=container,
+            status=OrderContainerTrackingUpdate.STATUS_PENDING,
         )
-    
-        if same_eta and same_city:
-            note_text = "Last API check was the same as current in tracker."
-            if pending and pending.kind == OrderContainerTrackingUpdate.KIND_NO_CHANGE:
-                pending.note = note_text
-                pending.source_last_updated = source_last_updated
-                pending.source_payload = tracking or {}
-                pending.proposed_eta = proposed_eta
-                pending.proposed_eta_city = proposed_city
-                pending.save(update_fields=[
+        .order_by("-created_at", "-id")
+        .first()
+    )
+
+    if same_eta and same_city:
+        note_text = "Last API check was the same as current in tracker."
+        if pending and pending.kind == OrderContainerTrackingUpdate.KIND_NO_CHANGE:
+            pending.note = note_text
+            pending.source_last_updated = source_last_updated
+            pending.source_payload = tracking or {}
+            pending.proposed_eta = proposed_eta
+            pending.proposed_eta_city = proposed_city
+            pending.save(
+                update_fields=[
                     "note",
                     "source_last_updated",
                     "source_payload",
                     "proposed_eta",
                     "proposed_eta_city",
                     "updated_at",
-                ])
-                return ("no_change_updated", pending)
-    
-            # If there is a change-pending record but the API now matches current,
-            # we still show a note (and leave the old change pending record alone).
-            if pending and pending.kind == OrderContainerTrackingUpdate.KIND_CHANGE:
-                # create a new no-change note instead of overwriting a real pending change
-                pending = None
-    
-            new_obj = OrderContainerTrackingUpdate.objects.create(
-                container=container,
-                kind=OrderContainerTrackingUpdate.KIND_NO_CHANGE,
-                note=note_text,
-                proposed_eta=proposed_eta,
-                proposed_eta_city=proposed_city,
-                source_last_updated=source_last_updated,
-                source_payload=tracking or {},
-                status=OrderContainerTrackingUpdate.STATUS_PENDING,
+                ]
             )
-            return ("no_change_created", new_obj)
-    
-        # There is a proposed change.
+            return ("no_change_updated", pending)
+
+        # If there is a change-pending record but the API now matches current,
+        # we still show a note (and leave the old change pending record alone).
         if pending and pending.kind == OrderContainerTrackingUpdate.KIND_CHANGE:
-            pending.proposed_eta = proposed_eta
-            pending.proposed_eta_city = proposed_city
-            pending.source_last_updated = source_last_updated
-            pending.source_payload = tracking or {}
-            pending.note = ""  # clear
-            pending.save(update_fields=[
-                "proposed_eta",
-                "proposed_eta_city",
-                "source_last_updated",
-                "source_payload",
-                "note",
-                "updated_at",
-            ])
-            return ("change_updated", pending)
-    
+            # create a new no-change note instead of overwriting a real pending change
+            pending = None
+
         new_obj = OrderContainerTrackingUpdate.objects.create(
             container=container,
-            kind=OrderContainerTrackingUpdate.KIND_CHANGE,
+            kind=OrderContainerTrackingUpdate.KIND_NO_CHANGE,
+            note=note_text,
             proposed_eta=proposed_eta,
             proposed_eta_city=proposed_city,
             source_last_updated=source_last_updated,
             source_payload=tracking or {},
             status=OrderContainerTrackingUpdate.STATUS_PENDING,
         )
-        return ("change_created", new_obj)
-    
+        return ("no_change_created", new_obj)
+
+    # There is a proposed change.
+    if pending and pending.kind == OrderContainerTrackingUpdate.KIND_CHANGE:
+        pending.proposed_eta = proposed_eta
+        pending.proposed_eta_city = proposed_city
+        pending.source_last_updated = source_last_updated
+        pending.source_payload = tracking or {}
+        pending.note = ""  # clear
+        pending.save(
+            update_fields=[
+                "proposed_eta",
+                "proposed_eta_city",
+                "source_last_updated",
+                "source_payload",
+                "note",
+                "updated_at",
+            ]
+        )
+        return ("change_updated", pending)
+
+    new_obj = OrderContainerTrackingUpdate.objects.create(
+        container=container,
+        kind=OrderContainerTrackingUpdate.KIND_CHANGE,
+        proposed_eta=proposed_eta,
+        proposed_eta_city=proposed_city,
+        source_last_updated=source_last_updated,
+        source_payload=tracking or {},
+        status=OrderContainerTrackingUpdate.STATUS_PENDING,
+    )
+    return ("change_created", new_obj)
+
 
