@@ -285,26 +285,21 @@
               <div style="border: 1px solid rgba(250,204,21,0.35); border-radius: 14px; padding: 12px; background: rgba(250,204,21,0.06);">
                 <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start;">
                   <div>
-                    <div style="font-weight:900;">JSONCargo tracking snapshot (manual review)</div>
-                    <div class="muted tiny" style="margin-top:4px;">
-                      Proposed from JSONCargo{% if pending_tracking_update.source_last_updated %} • last updated {{ pending_tracking_update.source_last_updated|date:"Y-m-d H:i" }}{% endif %}
+                    {# Replace the old "snapshot" notes with the two most important JSONCargo fields. #}
+                    <div style="font-weight:1000; font-size:18px; line-height:1.15;">
+                      {% if jsoncargo_data and jsoncargo_data.container_status %}{{ jsoncargo_data.container_status }}{% else %}<span class="muted">Container status unavailable</span>{% endif %}
                     </div>
-                    <div style="margin-top:10px;">
-                      {% if pending_tracking_update.note %}
-                        <div class="muted tiny">API note</div>
-                        <div style="font-weight:900;">{{ pending_tracking_update.note }}</div>
-                      {% endif %}
-                      <div class="muted tiny" style="margin-top:6px;">Current in tracker (what you've entered)</div>
-                      <div class="tiny">{% if container.eta %}{{ container.eta }}{% else %}<span class="muted">—</span>{% endif %}{% if container.eta_city %} {{ container.eta_city }}{% endif %}</div>
+                    <div style="margin-top:10px; padding:10px 12px; border-radius:12px; border:1px solid rgba(34,197,94,0.35); background: rgba(34,197,94,0.08);">
+                      <div class="muted tiny" style="margin-bottom:4px;">ETA (final destination)</div>
+                      <div style="font-weight:1000; font-size:20px;">
+                        {% if jsoncargo_data and jsoncargo_data.eta_final_destination %}{{ jsoncargo_data.eta_final_destination }}{% else %}<span class="muted">—</span>{% endif %}
+                      </div>
                     </div>
+                    {% if pending_tracking_update.source_last_updated %}
+                      <div class="muted tiny" style="margin-top:8px;">JSONCargo last updated {{ pending_tracking_update.source_last_updated|date:"Y-m-d H:i" }}</div>
+                    {% endif %}
                   </div>
                   <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                    {#
-                      IMPORTANT: Do NOT nest forms inside the main form.
-                      Nested <form> tags cause browsers to auto-close the outer form,
-                      excluding the line-item formset fields from the Save POST (can wipe contents).
-                    #}
-
                     <button
                       class="btn"
                       type="button"
@@ -322,7 +317,7 @@
                   </div>
 
                   <details style="margin-top:12px;">
-                    <summary class="tiny" style="cursor:pointer; font-weight:900; color: var(--accent);">View JSONCargo response</summary>
+                    <summary class="tiny" style="cursor:pointer; font-weight:900; color: var(--accent);">View JSONCargo fields</summary>
                     <div style="margin-top:10px;">
                       {% if jsoncargo_data %}
                         <table>
@@ -333,21 +328,34 @@
                             </tr>
                           </thead>
                           <tbody>
-                            {% for k, v in jsoncargo_data.items %}
                               <tr>
-                                <td class="tiny"><code>{{ k }}</code></td>
-                                <td class="tiny">{% if v is not None and v != '' %}{{ v }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                                <td class="tiny"><code>atd_origin</code></td>
+                                <td class="tiny">{% if jsoncargo_data.atd_origin %}{{ jsoncargo_data.atd_origin }}{% else %}<span class="muted">—</span>{% endif %}</td>
                               </tr>
-                            {% endfor %}
+                              <tr>
+                                <td class="tiny"><code>shipped_from</code></td>
+                                <td class="tiny">{% if jsoncargo_data.shipped_from %}{{ jsoncargo_data.shipped_from }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                              </tr>
+                              <tr>
+                                <td class="tiny"><code>last_location</code></td>
+                                <td class="tiny">{% if jsoncargo_data.last_location %}{{ jsoncargo_data.last_location }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                              </tr>
+                              <tr>
+                                <td class="tiny"><code>container_status</code></td>
+                                <td class="tiny" style="font-weight:900;">{% if jsoncargo_data.container_status %}{{ jsoncargo_data.container_status }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                              </tr>
+                              <tr>
+                                <td class="tiny"><code>discharging_port</code></td>
+                                <td class="tiny">{% if jsoncargo_data.discharging_port %}{{ jsoncargo_data.discharging_port }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                              </tr>
+                              <tr>
+                                <td class="tiny"><code>eta_final_destination</code></td>
+                                <td class="tiny" style="font-weight:1000;">{% if jsoncargo_data.eta_final_destination %}{{ jsoncargo_data.eta_final_destination }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                              </tr>
                           </tbody>
                         </table>
                       {% else %}
                         <div class="muted tiny">No <code>data</code> object found in the stored JSONCargo payload for this update.</div>
-                      {% endif %}
-
-                      {% if jsoncargo_payload_pretty %}
-                        <div class="muted tiny" style="margin-top:10px;">Raw payload</div>
-                        <pre class="tiny" style="white-space:pre-wrap; overflow:auto; max-height:320px; border:1px solid rgba(148,163,184,0.25); border-radius:12px; padding:10px; background: rgba(15,23,42,0.6);">{{ jsoncargo_payload_pretty }}</pre>
                       {% endif %}
                     </div>
                   </details>
@@ -663,6 +671,7 @@
 </script>
 </body>
 </html>
+
 
 
 
