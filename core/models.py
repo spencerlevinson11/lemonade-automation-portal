@@ -349,6 +349,34 @@ class ProjectPlanEntry(models.Model):
 # Sea Container Order Tracking
 # =========================
 
+# JSONCargo shipping line mapping (id -> display label + query param)
+JSONCARGO_SHIPPING_LINE_CHOICES = [
+    ("", "—"),
+    ("0010", "Maersk (0010)"),
+    ("0011", "Hapag-Lloyd (0011)"),
+    ("0012", "HMM (0012)"),
+    ("0013", "ONE (0013)"),
+    ("0014", "Evergreen (0014)"),
+    ("0015", "MSC (0015)"),
+    ("0016", "CMA CGM (0016)"),
+    ("0017", "COSCO (0017)"),
+    ("0018", "ZIM (0018)"),
+    ("0019", "Yang Ming (0019)"),
+]
+
+JSONCARGO_SHIPPING_LINE_PARAM_BY_ID = {
+    "0010": "MAERSK",
+    "0011": "HAPAG_LLOYD",
+    "0012": "HMM",
+    "0013": "ONE",
+    "0014": "EVERGREEN",
+    "0015": "MSC",
+    "0016": "CMA_CGM",
+    "0017": "COSCO",
+    "0018": "ZIM",
+    "0019": "YANG_MING",
+}
+
 class OrderContainer(models.Model):
     """
     Tracks an in-transit sea container order, scoped to a Company.
@@ -400,6 +428,9 @@ class OrderContainer(models.Model):
     # Container number used for API tracking (e.g., TCNU1825001)
     container_number = models.CharField(max_length=32, blank=True)
 
+    # Optional shipping line hint for JSONCargo (use when a prefix is third-party/shared)
+    shipping_line_id = models.CharField(max_length=4, choices=JSONCARGO_SHIPPING_LINE_CHOICES, blank=True)
+
     # Optional carrier / shipping line for API tracking.
     # JSONCargo uses this to disambiguate containers that share a third-party prefix.
     # Examples: MAERSK, MSC, CMA_CGM, HAPAG_LLOYD, ONE
@@ -417,6 +448,25 @@ class OrderContainer(models.Model):
 
     class Meta:
         ordering = ["-updated_at", "-created_at"]
+
+
+def jsoncargo_shipping_line_param(self) -> str | None:
+    """Return the JSONCargo `shipping_line` query param value for this order.
+
+    Priority:
+      1) shipping_line_id (dropdown) -> mapped enum (MAERSK, MSC, ...)
+      2) legacy free-text carrier field (already stored on some rows)
+    """
+    sid = (self.shipping_line_id or "").strip()
+    if sid and sid in JSONCARGO_SHIPPING_LINE_PARAM_BY_ID:
+        return JSONCARGO_SHIPPING_LINE_PARAM_BY_ID[sid]
+
+    legacy = (getattr(self, "carrier", "") or "").strip()
+    if legacy:
+        # normalize common user inputs
+        legacy_norm = legacy.upper().replace(" ", "_").replace("-", "_")
+        return legacy_norm
+    return None
 
     def __str__(self) -> str:
         loc = f" - {self.location_name}" if self.location_name else ""
@@ -760,6 +810,14 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
+
+
+
+
+
+
 
 
 
