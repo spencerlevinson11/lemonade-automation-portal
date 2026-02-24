@@ -116,12 +116,59 @@ def sync_one_container(
         - 'skipped_no_data'
         - 'error'
     """
+    shipping_line = (getattr(container, "carrier", "") or "").strip() or None
     tracking, err = fetch_container_tracking(
         container_number=container.container_number,
         api_key=api_key,
+        shipping_line=shipping_line,
     )
     if err:
-        return ("error", None)
+        # Create a pending "error" note so the user sees that tracking did not run.
+        # Common cause: container prefix requires shipping_line but it was missing/wrong.
+        msg = f"JSONCargo error ({err.status_code}): {err.message}"
+        if err.status_code == 404:
+            if shipping_line:
+                msg += f". Not found under carrier '{shipping_line}'."
+            else:
+                msg += ". Try setting a Carrier (shipping line) for this container and re-sync."
+
+        pending = (
+            OrderContainerTrackingUpdate.objects.filter(
+                container=container,
+                status=OrderContainerTrackingUpdate.STATUS_PENDING,
+                kind=OrderContainerTrackingUpdate.KIND_ERROR,
+            )
+            .order_by("-created_at", "-id")
+            .first()
+        )
+
+        if pending:
+            pending.note = msg
+            pending.source_payload = (err.payload or {})
+            pending.source_last_updated = timezone.now()
+            pending.proposed_eta = None
+            pending.proposed_eta_city = ""
+            pending.save(update_fields=[
+                "note",
+                "source_payload",
+                "source_last_updated",
+                "proposed_eta",
+                "proposed_eta_city",
+                "updated_at",
+            ])
+            return ("error_note_updated", pending)
+
+        new_obj = OrderContainerTrackingUpdate.objects.create(
+            container=container,
+            kind=OrderContainerTrackingUpdate.KIND_ERROR,
+            note=msg,
+            proposed_eta=None,
+            proposed_eta_city="",
+            source_last_updated=timezone.now(),
+            source_payload=(err.payload or {}),
+            status=OrderContainerTrackingUpdate.STATUS_PENDING,
+        )
+        return ("error_note_created", new_obj)
 
     data: Dict[str, Any] = (tracking or {}).get("data") or {}
 
