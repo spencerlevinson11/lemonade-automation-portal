@@ -5070,22 +5070,36 @@ def order_container_edit_view(request, container_id: int | None = None):
             pending_tracking_update = None
 
     
-    # JSONCargo snapshot (the response body you pasted)
-    # NOTE: JSONCargo's response for this endpoint is typically a flat "data" object
-    # (not an event list). We expose the full payload for manual review.
+    # JSONCargo snapshot (flat "data" object)
+    # We only expose a small, human-friendly subset in the template for manual review.
     jsoncargo_data: dict = {}
-    jsoncargo_payload_pretty: str = ""
+    jsoncargo_next_destination: str = ""
     if pending_tracking_update is not None:
         payload = getattr(pending_tracking_update, "source_payload", None) or {}
         if isinstance(payload, dict):
             raw_data = payload.get("data")
             if isinstance(raw_data, dict):
                 jsoncargo_data = raw_data
-            try:
-                import json
-                jsoncargo_payload_pretty = json.dumps(payload, indent=2, sort_keys=True, default=str)
-            except Exception:
-                jsoncargo_payload_pretty = str(payload)
+
+    # Best-effort "next destination" label (city/port). JSONCargo may leave next_location null;
+    # fall back to other routing fields so the UI always shows something useful.
+    def _clean_str(val) -> str:
+        if val is None:
+            return ""
+        return str(val).strip()
+
+    if isinstance(jsoncargo_data, dict):
+        for key in (
+            "next_location",
+            "next_location_terminal",
+            "discharging_port",
+            "shipped_to",
+            "shipped_to_terminal",
+        ):
+            candidate = _clean_str(jsoncargo_data.get(key))
+            if candidate:
+                jsoncargo_next_destination = candidate
+                break
 
     return render(
         request,
@@ -5099,7 +5113,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             "doc_formset": doc_formset,
             "pending_tracking_update": pending_tracking_update,
             "jsoncargo_data": jsoncargo_data,
-            "jsoncargo_payload_pretty": jsoncargo_payload_pretty,
+            "jsoncargo_next_destination": jsoncargo_next_destination,
         },
     )
 
@@ -5477,6 +5491,16 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
 
 
 
