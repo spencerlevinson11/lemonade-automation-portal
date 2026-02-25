@@ -290,9 +290,12 @@
                       {% if jsoncargo_data and jsoncargo_data.container_status %}{{ jsoncargo_data.container_status }}{% else %}<span class="muted">Container status unavailable</span>{% endif %}
                     </div>
                     <div style="margin-top:10px; padding:10px 12px; border-radius:12px; border:1px solid rgba(34,197,94,0.35); background: rgba(34,197,94,0.08);">
-                      <div class="muted tiny" style="margin-bottom:4px;">ETA (final destination)</div>
-                      <div style="font-weight:1000; font-size:20px;">
-                        {% if jsoncargo_data and jsoncargo_data.eta_final_destination %}{{ jsoncargo_data.eta_final_destination }}{% else %}<span class="muted">—</span>{% endif %}
+                      <div class="muted tiny" style="margin-bottom:4px;">ETA (next destination)</div>
+                      <div style="font-weight:1000; font-size:22px;">
+                        {% if jsoncargo_data and jsoncargo_data.eta_next_destination %}{{ jsoncargo_data.eta_next_destination }}{% else %}<span class="muted">—</span>{% endif %}
+                      </div>
+                      <div class="tiny" style="margin-top:6px; font-weight:900;">
+                        Next destination: {% if jsoncargo_next_destination %}{{ jsoncargo_next_destination }}{% else %}<span class="muted">—</span>{% endif %}
                       </div>
                     </div>
                     {% if pending_tracking_update.source_last_updated %}
@@ -345,12 +348,12 @@
                                 <td class="tiny" style="font-weight:900;">{% if jsoncargo_data.container_status %}{{ jsoncargo_data.container_status }}{% else %}<span class="muted">—</span>{% endif %}</td>
                               </tr>
                               <tr>
-                                <td class="tiny"><code>discharging_port</code></td>
-                                <td class="tiny">{% if jsoncargo_data.discharging_port %}{{ jsoncargo_data.discharging_port }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                                <td class="tiny"><code>next_destination</code></td>
+                                <td class="tiny">{% if jsoncargo_next_destination %}{{ jsoncargo_next_destination }}{% else %}<span class="muted">—</span>{% endif %}</td>
                               </tr>
                               <tr>
-                                <td class="tiny"><code>eta_final_destination</code></td>
-                                <td class="tiny" style="font-weight:1000;">{% if jsoncargo_data.eta_final_destination %}{{ jsoncargo_data.eta_final_destination }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                                <td class="tiny"><code>eta_next_destination</code></td>
+                                <td class="tiny" style="font-weight:1000;">{% if jsoncargo_data.eta_next_destination %}{{ jsoncargo_data.eta_next_destination }}{% else %}<span class="muted">—</span>{% endif %}</td>
                               </tr>
                           </tbody>
                         </table>
@@ -671,6 +674,9 @@
 </script>
 </body>
 </html>
+
+
+
 
 
 
