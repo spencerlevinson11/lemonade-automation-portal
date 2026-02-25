@@ -4612,8 +4612,12 @@ def order_tracker_sync_jsoncargo_view(request):
         company = get_object_or_404(Company, owner=user)
         qs = OrderContainer.objects.filter(company=company)
 
+    # Only sync containers that actually have a container number entered.
+    # (Prevents unnecessary API calls + avoids timeouts on blank/placeholder rows.)
     qs = qs.exclude(status__iexact="Delivered")
     qs = qs.exclude(container_number__isnull=True).exclude(container_number__exact="")
+    # Extra safety: exclude strings that are only whitespace.
+    qs = qs.exclude(container_number__regex=r"^\s*$")
 
     total = 0
     created = 0
@@ -5473,6 +5477,9 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
 
 
 
