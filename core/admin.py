@@ -113,11 +113,12 @@ class OrderContainerAdmin(admin.ModelAdmin):
         "shipping_line_id",
         "assigned_to",
         "status",
+        "is_archived",
         "loading_date",
         "estimated_delivery_date",
         "updated_at",
     )
-    list_filter = ("company", "assigned_to")
+    list_filter = ("company", "assigned_to", "is_archived")
     search_fields = (
         "customer_name",
         "location_name",
@@ -185,5 +186,4 @@ class ScheduleActivityAdmin(admin.ModelAdmin):
 admin.site.site_header = "Automation Portal Admin"
 admin.site.site_title = "Automation Portal"
 admin.site.index_title = "Control center for your automations"
-
 
