@@ -157,6 +157,8 @@
           {% csrf_token %}
           <button class="btn" type="submit">Sync JSONCargo updates</button>
         </form>
+
+        <a class="btn" href="{% url 'order_tracker_archived' %}">Archived orders</a>
 </div>
     </div>
 
@@ -375,7 +377,11 @@
               </a>
             </th>
             <th>ETD</th>
-            <th>ETA</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=eta&dir={% if sort == 'eta' and dir == 'asc' %}desc{% else %}asc{% endif %}">
+                ETA
+              </a>
+            </th>
             <th>
               <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=est_delivery&dir={% if sort == 'est_delivery' and dir == 'asc' %}desc{% else %}asc{% endif %}">
                 Est. Delivery
@@ -523,6 +529,10 @@
                     {% csrf_token %}
                     <button class="btn" type="submit" onclick="return confirm('Move this order back to Active?');">Reopen</button>
                   </form>
+                  <form method="post" action="{% url 'order_container_archive' c.id %}" style="display:inline; margin-left:8px;">
+                    {% csrf_token %}
+                    <button class="btn btn-danger" type="submit" onclick="return confirm('Archive this delivered order? It will stop syncing and move to Archived.');">Archive</button>
+                  </form>
                 </td>
               </tr>
             {% empty %}
@@ -589,6 +599,21 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
