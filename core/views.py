@@ -4430,6 +4430,9 @@ def order_tracker_view(request):
         company = get_object_or_404(Company, owner=user)
         containers = OrderContainer.objects.filter(company=company)
 
+    # Archived containers should not appear on the main tracker.
+    containers = containers.filter(is_archived=False)
+
     q = (request.GET.get("q") or "").strip()
     status = (request.GET.get("status") or "").strip()
     assigned_to = (request.GET.get("assigned_to") or "").strip()
@@ -4461,6 +4464,7 @@ def order_tracker_view(request):
         "customer": "customer_name",
         "location": "location_name",
         "requested": "requested_date",
+        "eta": "eta",
         "est_delivery": "estimated_delivery_date",
         "loading": "loading_date",
         "assigned_to": "assigned_to",
@@ -4561,6 +4565,119 @@ def order_tracker_view(request):
     )
 
 
+@require_POST
+@login_required
+def order_container_archive_view(request, container_id: int):
+    """Archive an order so it no longer appears in the tracker or JSONCargo syncing."""
+    user = request.user
+
+    if user.is_superuser:
+        container = get_object_or_404(OrderContainer, id=container_id)
+    else:
+        company = get_object_or_404(Company, owner=user)
+        container = get_object_or_404(OrderContainer, id=container_id, company=company)
+
+    container.is_archived = True
+    container.archived_at = timezone.now()
+    # Safe default: delivered orders are the usual archive target.
+    if (container.status or "").strip() == "":
+        container.status = "Delivered"
+    container.save(update_fields=["is_archived", "archived_at", "status", "updated_at"])
+
+    messages.success(request, "Order archived. It will no longer sync or show tracking updates.")
+    return redirect(request.META.get("HTTP_REFERER") or "order_tracker")
+
+
+@require_POST
+@login_required
+def order_container_unarchive_view(request, container_id: int):
+    """Un-archive an order (puts it back into the delivered/active lists depending on status)."""
+    user = request.user
+
+    if user.is_superuser:
+        container = get_object_or_404(OrderContainer, id=container_id)
+    else:
+        company = get_object_or_404(Company, owner=user)
+        container = get_object_or_404(OrderContainer, id=container_id, company=company)
+
+    container.is_archived = False
+    container.archived_at = None
+    container.save(update_fields=["is_archived", "archived_at", "updated_at"])
+
+    messages.success(request, "Order unarchived.")
+    return redirect(request.META.get("HTTP_REFERER") or "order_tracker")
+
+
+@login_required
+def order_tracker_archived_view(request):
+    """Archived orders list (read-only tracking view)."""
+    user = request.user
+
+    if user.is_superuser:
+        company = None
+        containers = OrderContainer.objects.filter(is_archived=True)
+    else:
+        company = get_object_or_404(Company, owner=user)
+        containers = OrderContainer.objects.filter(company=company, is_archived=True)
+
+    q = (request.GET.get("q") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+    assigned_to = (request.GET.get("assigned_to") or "").strip()
+    sort = (request.GET.get("sort") or "").strip()
+    direction = (request.GET.get("dir") or "desc").strip().lower()
+
+    if q:
+        containers = containers.filter(
+            Q(customer_name__icontains=q)
+            | Q(location_name__icontains=q)
+            | Q(po_number__icontains=q)
+            | Q(rpc_number__icontains=q)
+            | Q(container_number__icontains=q)
+            | Q(carrier__icontains=q)
+            | Q(booking_number__icontains=q)
+            | Q(bill_of_lading_number__icontains=q)
+        )
+    if status:
+        containers = containers.filter(status__icontains=status)
+    if assigned_to:
+        containers = containers.filter(assigned_to__iexact=assigned_to)
+
+    sort_map = {
+        "customer": "customer_name",
+        "location": "location_name",
+        "requested": "requested_date",
+        "eta": "eta",
+        "est_delivery": "estimated_delivery_date",
+        "loading": "loading_date",
+        "assigned_to": "assigned_to",
+    }
+    sort_field = sort_map.get(sort)
+    if direction not in {"asc", "desc"}:
+        direction = "desc"
+
+    if sort_field:
+        prefix = "" if direction == "asc" else "-"
+        containers = containers.order_by(f"{prefix}{sort_field}", "-updated_at", "-created_at")
+    else:
+        containers = containers.order_by("-updated_at", "-created_at")
+
+    return render(
+        request,
+        "core/order_tracker_archived.html",
+        {
+            "automation_name": "Order Tracker",
+            "company": company,
+            "company_display": (company.name if company else "All Companies"),
+            "containers": containers,
+            "q": q,
+            "status": status,
+            "assigned_to": assigned_to,
+            "sort": sort,
+            "dir": direction,
+        },
+    )
+
+
 def _ordinal(n: int) -> str:
     """Return an ordinal suffix for a positive day number (1 -> '1st')."""
     if 10 <= (n % 100) <= 20:
@@ -4614,6 +4731,7 @@ def order_tracker_sync_jsoncargo_view(request):
 
     # Only sync containers that actually have a container number entered.
     # (Prevents unnecessary API calls + avoids timeouts on blank/placeholder rows.)
+    qs = qs.filter(is_archived=False)
     qs = qs.exclude(status__iexact="Delivered")
     qs = qs.exclude(container_number__isnull=True).exclude(container_number__exact="")
     # Extra safety: exclude strings that are only whitespace.
@@ -4654,10 +4772,10 @@ def order_tracker_recap_docx_view(request):
 
     # Superusers see ALL containers across companies.
     if user.is_superuser:
-        containers = OrderContainer.objects.all()
+        containers = OrderContainer.objects.filter(is_archived=False)
     else:
         company = get_object_or_404(Company, owner=user)
-        containers = OrderContainer.objects.filter(company=company)
+        containers = OrderContainer.objects.filter(company=company, is_archived=False)
 
     # Respect the same filters as the dashboard (if present in the URL).
     q = (request.GET.get("q") or "").strip()
@@ -4854,6 +4972,10 @@ def order_container_tracking_approve_view(request, container_id: int, update_id:
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
 
+    if getattr(container, "is_archived", False):
+        messages.error(request, "This order is archived. Unarchive it to apply tracking updates.")
+        return redirect("order_container_edit", container_id=container.id)
+
     # Approve behavior depends on kind.
     if getattr(upd, "kind", OrderContainerTrackingUpdate.KIND_CHANGE) in (
         OrderContainerTrackingUpdate.KIND_NO_CHANGE,
@@ -4918,6 +5040,10 @@ def order_container_tracking_reject_view(request, container_id: int, update_id: 
         container=container,
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
+
+    if getattr(container, "is_archived", False):
+        messages.error(request, "This order is archived. Unarchive it to manage tracking updates.")
+        return redirect("order_container_edit", container_id=container.id)
 
     upd.status = OrderContainerTrackingUpdate.STATUS_REJECTED
     upd.decided_by = user
@@ -5054,7 +5180,7 @@ def order_container_edit_view(request, container_id: int | None = None):
 
     # Latest pending JSONCargo update (requires approval)
     pending_tracking_update = None
-    if container is not None:
+    if container is not None and not getattr(container, "is_archived", False):
         try:
             from core.models import OrderContainerTrackingUpdate
 
@@ -5491,6 +5617,11 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
 
 
 
