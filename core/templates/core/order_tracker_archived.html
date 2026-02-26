@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ automation_name }} • Archived</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg-main: #020617;
+      --bg-card: #0b1120;
+      --accent: #facc15;
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+      --border-subtle: #1f2937;
+      --input: rgba(2, 6, 23, 0.6);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
+      color: var(--text-main);
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; }
+    .top { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin-bottom: 14px; flex-wrap:wrap; }
+    .title h1 { margin:0; font-size: 1.25rem; }
+    .title p { margin:4px 0 0; color: var(--text-muted); font-size: 0.9rem; }
+    a { color: var(--accent); text-decoration:none; }
+    a:hover { text-decoration: underline; }
+
+    .card {
+      background: rgba(11,17,32,0.9);
+      border: 1px solid rgba(31,41,55,0.9);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 22px 60px rgba(0,0,0,0.55);
+    }
+
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+    .field { flex: 1; min-width: 220px; }
+    label { display:block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; }
+    input, select {
+      width: 100%;
+      padding: 10px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(148,163,184,0.25);
+      background: var(--input);
+      color: var(--text-main);
+      outline: none;
+    }
+
+    .btn {
+      display:inline-flex; align-items:center; justify-content:center;
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(250,204,21,0.45);
+      background: rgba(250,204,21,0.12);
+      color: var(--accent);
+      cursor:pointer;
+      font-weight: 700;
+      text-decoration:none;
+    }
+    .btn:hover { background: rgba(250,204,21,0.18); text-decoration:none; }
+
+    .btn-danger {
+      border: 1px solid rgba(249,115,115,0.55);
+      background: rgba(249,115,115,0.10);
+      color: #fecaca;
+    }
+    .btn-danger:hover { background: rgba(249,115,115,0.16); }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 8px; border-bottom: 1px solid rgba(148,163,184,0.16); vertical-align: top; }
+    th { text-align:left; font-size: 0.85rem; color: var(--text-muted); font-weight: 700; }
+    td { font-size: 0.95rem; }
+    .muted { color: var(--text-muted); }
+    .badge {
+      display:inline-flex; align-items:center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.25);
+      background: rgba(15,23,42,0.55);
+      font-size: 0.8rem;
+      color: var(--text-main);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="title">
+        <h1>Archived Orders</h1>
+        <p class="muted">{{ company_display }} • Archived orders do not sync with JSONCargo and do not appear on the main tracker.</p>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a class="btn" href="{% url 'order_tracker' %}">← Back to tracker</a>
+      </div>
+    </div>
+
+    {% if messages %}
+      <div class="card">
+        {% for message in messages %}
+          <div class="{% if message.tags %}{{ message.tags }}{% endif %}" style="margin-bottom:6px;">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="card">
+      <form method="get" action="" style="margin:0;">
+        <div class="row">
+          <div class="field">
+            <label>Search</label>
+            <input name="q" value="{{ q }}" placeholder="Customer, location, PO, RPC, container..." />
+          </div>
+          <div class="field" style="max-width:220px;">
+            <label>Status</label>
+            <input name="status" value="{{ status }}" placeholder="e.g., Delivered" />
+          </div>
+          <div class="field" style="max-width:220px;">
+            <label>Owner</label>
+            <select name="assigned_to">
+              <option value="" {% if not assigned_to %}selected{% endif %}>—</option>
+              <option value="Spencer" {% if assigned_to == 'Spencer' %}selected{% endif %}>Spencer</option>
+              <option value="Jaime" {% if assigned_to == 'Jaime' %}selected{% endif %}>Jaime</option>
+            </select>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn" type="submit">Filter</button>
+            <a class="btn" href="{% url 'order_tracker_archived' %}">Reset</a>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=customer&dir={% if sort == 'customer' and dir == 'asc' %}desc{% else %}asc{% endif %}">Customer</a>
+              /
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=location&dir={% if sort == 'location' and dir == 'asc' %}desc{% else %}asc{% endif %}">Location</a>
+            </th>
+            <th>PO#</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=requested&dir={% if sort == 'requested' and dir == 'asc' %}desc{% else %}asc{% endif %}">Requested</a>
+            </th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=assigned_to&dir={% if sort == 'assigned_to' and dir == 'asc' %}desc{% else %}asc{% endif %}">Owner</a>
+            </th>
+            <th>Status</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=loading&dir={% if sort == 'loading' and dir == 'asc' %}desc{% else %}asc{% endif %}">Loading Date</a>
+            </th>
+            <th>ETD</th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=eta&dir={% if sort == 'eta' and dir == 'asc' %}desc{% else %}asc{% endif %}">ETA</a>
+            </th>
+            <th>
+              <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=est_delivery&dir={% if sort == 'est_delivery' and dir == 'asc' %}desc{% else %}asc{% endif %}">Est. Delivery</a>
+            </th>
+            <th>Archived</th>
+            <th style="width:180px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in containers %}
+            <tr>
+              <td>
+                <div style="font-weight:800;">
+                  <a href="{% url 'order_container_edit' container_id=c.id %}">
+                    {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
+                  </a>
+                </div>
+                <div class="muted" style="font-size:0.85rem; margin-top:2px;">
+                  {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
+                  {% if c.container_number %}Container: {{ c.container_number }}{% if c.carrier %} ({{ c.carrier }}){% endif %} • {% endif %}
+                  {% if c.booking_number %}Booking: {{ c.booking_number }} • {% endif %}
+                  {% if c.bill_of_lading_number %}BOL: {{ c.bill_of_lading_number }}{% endif %}
+                </div>
+              </td>
+              <td>{% if c.po_number %}{{ c.po_number }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>
+                {% if c.requested_asap %}
+                  <span class="badge" style="border-color: rgba(249,115,115,0.55); color:#fecaca; background: rgba(249,115,115,0.12);">ASAP</span>
+                {% elif c.requested_date_text %}
+                  {{ c.requested_date_text }}
+                {% elif c.requested_date %}
+                  {{ c.requested_date }}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td>{% if c.assigned_to %}<span class="badge">{{ c.assigned_to }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{% if c.status %}<span class="badge">{{ c.status }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{% if c.loading_date %}{{ c.loading_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{% if c.etd %}{{ c.etd }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>
+                {% if c.eta %}
+                  {{ c.eta }}{% if c.eta_city %} {{ c.eta_city }}{% endif %}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td class="muted" style="font-size:0.85rem;">{% if c.archived_at %}{{ c.archived_at|date:"Y-m-d" }}{% else %}—{% endif %}</td>
+              <td>
+                <form method="post" action="{% url 'order_container_unarchive' c.id %}" style="display:inline;">
+                  {% csrf_token %}
+                  <button class="btn" type="submit" onclick="return confirm('Unarchive this order and return it to the tracker?');">Unarchive</button>
+                </form>
+                <form method="post" action="{% url 'order_container_delete' c.id %}" style="display:inline; margin-left:8px;">
+                  {% csrf_token %}
+                  <button class="btn btn-danger" type="submit" onclick="return confirm('Permanently delete this archived order? This cannot be undone.');">Delete</button>
+                </form>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="11" class="muted">No archived orders.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="muted" style="margin-top:16px;">
+      <a href="{% url 'dashboard' %}">← Back to dashboard</a>
+    </div>
+  </div>
+</body>
+</html>
