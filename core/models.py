@@ -410,6 +410,11 @@ class OrderContainer(models.Model):
 
     status = models.CharField(max_length=128, blank=True)
 
+    # Archived orders are excluded from JSONCargo syncing + dashboard tracking.
+    # Use this to keep historical delivered orders without cluttering the tracker.
+    is_archived = models.BooleanField(default=False)
+    archived_at = models.DateTimeField(null=True, blank=True)
+
     # Who owns this order?
     assigned_to = models.CharField(max_length=32, blank=True)
 
@@ -808,6 +813,39 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
