@@ -126,6 +126,7 @@ class Command(BaseCommand):
                 continue
 
             skipped += 1
-self.stdout.write(
+
+        self.stdout.write(
             f"Done. scanned={total} created={created} updated={updated} skipped={skipped} errors={errors}"
         )
