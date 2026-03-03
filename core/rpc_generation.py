@@ -29,6 +29,7 @@ PER_PALLET = {
     "10 ltr conical black":     3960,
     "10 ltr wide NG eco":       2842,
     "13 ltr conical black":     2660,
+    "13 ltr conical pink":      2660,
     "13 ltr conical Next Gen":  2730,
     "5 liter vase":             6210,
     "7 liter vase #":           3240,
@@ -57,6 +58,7 @@ ARTICLE_MAP = {
     "10 ltr conical Next Gen":   500107,
     "13 ltr conical Next Gen":   500131,
     "13 ltr conical black":      500130,
+    "13 ltr conical pink":       500132,
     "10 Wide Standard Classic x 2800": 500100,
     "10 Wide Standard Classic x 2660": 500100,
     "10 Wide Standard Classic x 2520": 500100,
@@ -105,6 +107,7 @@ BUCKET_FIELD_MAP = {
     "b_10_ltr_conical_black": "10 ltr conical black",
     "b_10_ltr_wide_ng_eco": "10 ltr wide NG eco",
     "b_13_ltr_conical_black": "13 ltr conical black",
+    "b_13_ltr_conical_pink": "13 ltr conical pink",
     "b_13_ltr_conical_next_gen": "13 ltr conical Next Gen",
     "b_5_liter_vase": "5 liter vase",
     "b_7_liter_vase": "7 liter vase #",
@@ -235,7 +238,13 @@ def write_rpc(containers, cap, po, rpc_info, nld_val, delivery_val, address_line
             ws[f"B{row}"].value = "100 x 120"
             ws[f"C{row}"].value = PER_PALLET.get(name, "")
             ws[f"D{row}"].value = name
-            ws[f"E{row}"].value = "White" if "White" in name else "Zwart"
+            name_l = (name or "").lower()
+            if "white" in name_l:
+                ws[f"E{row}"].value = "White"
+            elif "pink" in name_l:
+                ws[f"E{row}"].value = "Pink"
+            else:
+                ws[f"E{row}"].value = "Zwart"
             ws[f"F{row}"].value = ARTICLE_MAP.get(name, "")
             ws[f"G{row}"].value = qty * PER_PALLET.get(name, 0)
 
@@ -416,5 +425,7 @@ Bensenville, IL, 60106<br>
     email_status = " ".join(status_parts) if status_parts else "No email was sent."
 
     return files, email_status
+
+
 
 
