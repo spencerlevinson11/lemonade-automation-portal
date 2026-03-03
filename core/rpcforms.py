@@ -144,6 +144,15 @@ class RpcOrderForm(forms.Form):
             attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
         ),
     )
+
+    b_13_ltr_conical_pink = forms.IntegerField(
+        label="13 ltr conical pink",
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
+        ),
+    )
     b_13_ltr_conical_next_gen = forms.IntegerField(
         label="13 ltr conical Next Gen",
         required=False,
@@ -309,4 +318,5 @@ class RpcOrderForm(forms.Form):
             attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
         ),
     )
+
 
