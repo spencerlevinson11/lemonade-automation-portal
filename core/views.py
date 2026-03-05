@@ -4719,7 +4719,7 @@ def order_tracker_sync_jsoncargo_view(request):
         messages.error(request, "JSONCARGO_API_KEY is not set on the server.")
         return redirect("order_tracker")
 
-    from core.services.jsoncargo_order_tracker import sync_one_container
+    from core.services.jsoncargo_order_tracker import sync_all_containers
 
     user = request.user
 
@@ -4737,29 +4737,13 @@ def order_tracker_sync_jsoncargo_view(request):
     # Extra safety: exclude strings that are only whitespace.
     qs = qs.exclude(container_number__regex=r"^\s*$")
 
-    total = 0
-    created = 0
-    updated = 0
-    skipped = 0
-    errors = 0
-
-    for c in qs.order_by("-updated_at", "-created_at")[:500]:
-        total += 1
-        result, _pending = sync_one_container(c, api_key=api_key)
-        if result in ("error_note_created", "error_note_updated"):
-            errors += 1
-        elif result == "skipped_no_data":
-            skipped += 1
-        elif result in ("change_created", "no_change_created"):
-            created += 1
-        elif result in ("change_updated", "no_change_updated"):
-            updated += 1
-        else:
-            skipped += 1
+    stats = sync_all_containers(api_key=api_key, queryset=qs, limit=500)
 
     messages.success(
         request,
-        f"JSONCargo sync complete: checked {total}, created {created}, updated {updated}, skipped {skipped}, errors {errors}.",
+        "JSONCargo sync complete: "
+        f"checked {stats['checked']}, created {stats['created']}, updated {stats['updated']}, "
+        f"skipped {stats['skipped']}, errors {stats['errors']}.",
     )
     return redirect("order_tracker")
 
@@ -5617,6 +5601,12 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
 
 
 
