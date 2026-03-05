@@ -97,7 +97,16 @@ def normalize_city(raw: str | None) -> str:
             s = s.title()
 
     return s
-
+    
+def sync_all_containers():
+    """Sync tracking data for all containers that have a container_number."""
+    qs = OrderContainer.objects.exclude(container_number__isnull=True).exclude(container_number="")
+    for c in qs:
+        try:
+            sync_one_container(c)
+        except Exception:
+            # continue syncing others even if one fails
+            continue
 
 @transaction.atomic
 def sync_one_container(
