@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 from typing import Any, Dict, Optional, Tuple
 
 from django.db import transaction
@@ -97,16 +98,72 @@ def normalize_city(raw: str | None) -> str:
             s = s.title()
 
     return s
-    
-def sync_all_containers():
-    """Sync tracking data for all containers that have a container_number."""
-    qs = OrderContainer.objects.exclude(container_number__isnull=True).exclude(container_number="")
+
+
+def sync_all_containers(
+    *,
+    api_key: str | None = None,
+    queryset=None,
+    limit: int | None = 500,
+    include_delivered: bool = False,
+    include_archived: bool = False,
+) -> Dict[str, int]:
+    """Sync JSONCargo tracking for many containers in one call.
+
+    This mirrors the Order Tracker "Sync JSON updates" button behavior:
+    - Skips blank container numbers
+    - Skips archived by default
+    - Skips Delivered by default
+
+    Returns a small stats dict you can print/log.
+
+    Notes
+    -----
+    * If api_key is not provided, this reads JSONCARGO_API_KEY from the
+      environment (Render env vars).
+    * This function does NOT auto-apply pending updates; it only creates/updates
+      OrderContainerTrackingUpdate pending records (same as sync_one_container).
+    """
+    if api_key is None:
+        api_key = os.getenv("JSONCARGO_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("JSONCARGO_API_KEY is not set")
+
+    qs = queryset if queryset is not None else OrderContainer.objects.all()
+
+    # Only sync containers that actually have a container number entered.
+    qs = qs.exclude(container_number__isnull=True).exclude(container_number__exact="")
+    qs = qs.exclude(container_number__regex=r"^\s*$")
+
+    if not include_archived:
+        qs = qs.filter(is_archived=False)
+    if not include_delivered:
+        qs = qs.exclude(status__iexact="Delivered")
+
+    if limit is not None:
+        qs = qs.order_by("-updated_at", "-created_at")[:limit]
+
+    stats = {"checked": 0, "created": 0, "updated": 0, "skipped": 0, "errors": 0}
     for c in qs:
+        stats["checked"] += 1
         try:
-            sync_one_container(c)
+            result, _pending = sync_one_container(c, api_key=api_key)
         except Exception:
-            # continue syncing others even if one fails
+            stats["errors"] += 1
             continue
+
+        if result in ("error_note_created", "error_note_updated"):
+            stats["errors"] += 1
+        elif result == "skipped_no_data":
+            stats["skipped"] += 1
+        elif result in ("change_created", "no_change_created"):
+            stats["created"] += 1
+        elif result in ("change_updated", "no_change_updated"):
+            stats["updated"] += 1
+        else:
+            stats["skipped"] += 1
+
+    return stats
 
 @transaction.atomic
 def sync_one_container(
@@ -296,6 +353,8 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
 
 
 
