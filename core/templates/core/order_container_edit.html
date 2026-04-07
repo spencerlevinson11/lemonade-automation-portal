@@ -146,6 +146,7 @@
       <div style="display:none;">
         {{ doc_formset.management_form }}
         {{ formset.management_form }}
+        {{ tag_formset.management_form }}
       </div>
 
       {# Flash messages (success / error) #}
@@ -381,6 +382,60 @@
         </div>
       </div>
 
+
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+          <div>
+            <div style="font-weight:900;">Tags</div>
+            <div class="muted tiny">Add one or more custom tags with any text and choose a color for each one.</div>
+          </div>
+          <button class="btn2" type="button" id="addTagBtn">+ Add tag</button>
+        </div>
+        <table id="tagsTable">
+          <thead>
+            <tr>
+              <th style="width:60%;">Tag text</th>
+              <th style="width:20%;">Color</th>
+              <th style="width:20%;">Delete</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in tag_formset.forms %}
+              <tr class="tagRow">
+                <td>
+                  {{ t.name }}
+                  {{ t.name.errors }}
+                  {{ t.id }}
+                </td>
+                <td>
+                  {{ t.color }}
+                  {{ t.color.errors }}
+                </td>
+                <td>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    {{ t.DELETE }} <span class="muted tiny">mark</span>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div id="tagPreview" style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px;"></div>
+
+        <template id="emptyTagTemplate">
+          <tr class="tagRow">
+            <td>__NAME____ID__</td>
+            <td>__COLOR__</td>
+            <td>
+              <div style="display:flex; align-items:center; gap:8px;">
+                __DEL__ <span class="muted tiny">mark</span>
+              </div>
+            </td>
+          </tr>
+        </template>
+      </div>
+
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
           <div>
@@ -573,6 +628,61 @@
         });
       }
 
+
+      const addTagBtn = document.getElementById("addTagBtn");
+      const tagsTotalForms =
+        document.getElementById("id_tags-TOTAL_FORMS") ||
+        document.querySelector('input[name="tags-TOTAL_FORMS"]');
+      const tagsTbody = document.querySelector("#tagsTable tbody");
+      const tagTpl = document.getElementById("emptyTagTemplate");
+      const tagPreview = document.getElementById("tagPreview");
+
+      function tagBadgeHtml(name, color) {
+        const safeName = (name || '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch] || ch));
+        const safeColor = (color || '#2563eb');
+        return `<span style="display:inline-flex; align-items:center; padding:6px 10px; border-radius:999px; font-weight:800; font-size:12px; background:${safeColor}; color:#fff;">${safeName || 'Preview'}</span>`;
+      }
+
+      function refreshTagPreview() {
+        if (!tagPreview || !tagsTbody) return;
+        const chips = [];
+        tagsTbody.querySelectorAll('tr.tagRow').forEach((row) => {
+          const nameInput = row.querySelector('input[name$="-name"]');
+          const colorInput = row.querySelector('input[name$="-color"]');
+          const deleteInput = row.querySelector('input[name$="-DELETE"]');
+          const name = (nameInput && nameInput.value || '').trim();
+          const color = (colorInput && colorInput.value || '#2563eb').trim();
+          if (name && !(deleteInput && deleteInput.checked)) chips.push(tagBadgeHtml(name, color));
+        });
+        tagPreview.innerHTML = chips.length ? chips.join('') : '<span class="muted tiny">Live preview of your tags will appear here.</span>';
+      }
+
+      function newTagRowHtml(formIndex) {
+        const prefix = tagsTotalForms.name.replace("-TOTAL_FORMS", "");
+        const name = `<input type="text" name="${prefix}-${formIndex}-name" class="input" placeholder="e.g., rush, tariff paid, needs review" />`;
+        const color = `<input type="color" name="${prefix}-${formIndex}-color" value="#2563eb" />`;
+        const del = `<input type="checkbox" name="${prefix}-${formIndex}-DELETE" />`;
+        const id = `<input type="hidden" name="${prefix}-${formIndex}-id" />`;
+        let html = tagTpl.innerHTML;
+        html = html.replace("__NAME__", name);
+        html = html.replace("__COLOR__", color);
+        html = html.replace("__DEL__", del);
+        html = html.replace("__ID__", id);
+        return html;
+      }
+
+      if (addTagBtn && tagsTotalForms && tagsTbody && tagTpl) {
+        addTagBtn.addEventListener("click", function () {
+          const current = parseInt(tagsTotalForms.value || "0", 10);
+          tagsTbody.insertAdjacentHTML("beforeend", newTagRowHtml(current));
+          tagsTotalForms.value = String(current + 1);
+          refreshTagPreview();
+        });
+        tagsTbody.addEventListener('input', refreshTagPreview);
+        tagsTbody.addEventListener('change', refreshTagPreview);
+        refreshTagPreview();
+      }
+
       // Docs formset
       const addDocBtn = document.getElementById("addDocBtn");
       // IMPORTANT: select the docs management form explicitly so we don't accidentally grab the lines formset
@@ -674,6 +784,15 @@
 </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
 
 
 
