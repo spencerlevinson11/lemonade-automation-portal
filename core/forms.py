@@ -10,6 +10,7 @@ from .models import (
     OrderContainer,
     OrderContainerLine,
     OrderContainerDocument,
+    OrderContainerTag,
 )
 
 
@@ -96,6 +97,7 @@ from .models import (
     OrderContainer,
     OrderContainerLine,
     OrderContainerDocument,
+    OrderContainerTag,
 )
 
 
@@ -547,6 +549,17 @@ class OrderContainerForm(forms.ModelForm):
         cleaned["requested_date_text"] = ""
         return cleaned
 
+
+
+
+class OrderContainerTagForm(forms.ModelForm):
+    class Meta:
+        model = OrderContainerTag
+        fields = ["name", "color"]
+        widgets = {
+            "name": forms.TextInput(attrs={"placeholder": "e.g., rush, tariff paid, needs review"}),
+            "color": forms.TextInput(attrs={"type": "color"}),
+        }
 
 class OrderContainerDocumentForm(forms.ModelForm):
     class Meta:
