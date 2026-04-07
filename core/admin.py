@@ -11,6 +11,7 @@ from .models import (
     OrderContainer,
     OrderContainerLine,
     OrderContainerDocument,
+    OrderContainerTag,
     OrderContainerImportFile,
     OrderContainerTrackingUpdate,
     ScheduleActivity,
@@ -102,6 +103,11 @@ class OrderContainerDocumentInline(admin.TabularInline):
     extra = 0
 
 
+class OrderContainerTagInline(admin.TabularInline):
+    model = OrderContainerTag
+    extra = 0
+
+
 @admin.register(OrderContainer)
 class OrderContainerAdmin(admin.ModelAdmin):
     list_display = (
@@ -132,7 +138,7 @@ class OrderContainerAdmin(admin.ModelAdmin):
         "status",
     )
     ordering = ("-updated_at",)
-    inlines = [OrderContainerLineInline, OrderContainerDocumentInline]
+    inlines = [OrderContainerLineInline, OrderContainerDocumentInline, OrderContainerTagInline]
 
 
 @admin.register(OrderContainerImportFile)
@@ -186,4 +192,6 @@ class ScheduleActivityAdmin(admin.ModelAdmin):
 admin.site.site_header = "Automation Portal Admin"
 admin.site.site_title = "Automation Portal"
 admin.site.index_title = "Control center for your automations"
+
+
 
