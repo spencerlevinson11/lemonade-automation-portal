@@ -54,6 +54,7 @@ from .forms import (
     OrderContainerForm,
     OrderContainerLineForm,
     OrderContainerDocumentForm,
+    OrderContainerTagForm,
 )
 from .models import (
     Automation,
@@ -68,6 +69,7 @@ from .models import (
     OrderContainer,
     OrderContainerLine,
     OrderContainerDocument,
+    OrderContainerTag,
     GardenMap,
     PlantProfile,
 )
@@ -4425,10 +4427,10 @@ def order_tracker_view(request):
     # Superusers see ALL containers across companies.
     if user.is_superuser:
         company = None
-        containers = OrderContainer.objects.all()
+        containers = OrderContainer.objects.all().prefetch_related("tags")
     else:
         company = get_object_or_404(Company, owner=user)
-        containers = OrderContainer.objects.filter(company=company)
+        containers = OrderContainer.objects.filter(company=company).prefetch_related("tags")
 
     # Archived containers should not appear on the main tracker.
     containers = containers.filter(is_archived=False)
@@ -4615,10 +4617,10 @@ def order_tracker_archived_view(request):
 
     if user.is_superuser:
         company = None
-        containers = OrderContainer.objects.filter(is_archived=True)
+        containers = OrderContainer.objects.filter(is_archived=True).prefetch_related("tags")
     else:
         company = get_object_or_404(Company, owner=user)
-        containers = OrderContainer.objects.filter(company=company, is_archived=True)
+        containers = OrderContainer.objects.filter(company=company, is_archived=True).prefetch_related("tags")
 
     q = (request.GET.get("q") or "").strip()
     status = (request.GET.get("status") or "").strip()
@@ -5077,6 +5079,14 @@ def order_container_edit_view(request, container_id: int | None = None):
         can_delete=True,
     )
 
+    TagFormSet = inlineformset_factory(
+        parent_model=OrderContainer,
+        model=OrderContainerTag,
+        form=OrderContainerTagForm,
+        extra=2,
+        can_delete=True,
+    )
+
     # If this endpoint is hit by the "Quick add" form on the dashboard, the POST
     # will *not* include the formset management fields (lines-TOTAL_FORMS, etc.).
     # In that case we should create the container using just OrderContainerForm
@@ -5087,6 +5097,7 @@ def order_container_edit_view(request, container_id: int | None = None):
         return (
             "lines-TOTAL_FORMS" not in req.POST
             and "docs-TOTAL_FORMS" not in req.POST
+            and "tags-TOTAL_FORMS" not in req.POST
         )
 
     if request.method == "POST":
@@ -5104,6 +5115,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             # If the minimal form is invalid, fall through and render with errors.
             formset = LineFormSet(instance=container, prefix="lines")
             doc_formset = DocumentFormSet(instance=container, prefix="docs")
+            tag_formset = TagFormSet(instance=container, prefix="tags")
             messages.error(request, "Please fix the errors below and try again.")
         else:
             form = OrderContainerForm(request.POST, instance=container)
@@ -5114,7 +5126,8 @@ def order_container_edit_view(request, container_id: int | None = None):
                 instance=container,
                 prefix="docs",
             )
-            if form.is_valid() and formset.is_valid() and doc_formset.is_valid():
+            tag_formset = TagFormSet(request.POST, instance=container, prefix="tags")
+            if form.is_valid() and formset.is_valid() and doc_formset.is_valid() and tag_formset.is_valid():
                 obj: OrderContainer = form.save(commit=False)
                 obj.company = company
                 if obj.created_by_id is None:
@@ -5126,6 +5139,9 @@ def order_container_edit_view(request, container_id: int | None = None):
 
                 doc_formset.instance = obj
                 doc_formset.save()
+
+                tag_formset.instance = obj
+                tag_formset.save()
 
                 # Optional: user acknowledged the latest pending JSONCargo update while saving.
                 ack_id = (request.POST.get("ack_tracking_update_id") or "").strip()
@@ -5161,6 +5177,7 @@ def order_container_edit_view(request, container_id: int | None = None):
         form = OrderContainerForm(instance=container)
         formset = LineFormSet(instance=container, prefix="lines")
         doc_formset = DocumentFormSet(instance=container, prefix="docs")
+        tag_formset = TagFormSet(instance=container, prefix="tags")
 
     # Latest pending JSONCargo update (requires approval)
     pending_tracking_update = None
@@ -5221,6 +5238,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             "form": form,
             "formset": formset,
             "doc_formset": doc_formset,
+            "tag_formset": tag_formset,
             "pending_tracking_update": pending_tracking_update,
             "jsoncargo_data": jsoncargo_data,
             "jsoncargo_next_destination": jsoncargo_next_destination,
@@ -5601,6 +5619,95 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
