@@ -479,6 +479,38 @@ class OrderContainer(models.Model):
         return base
 
 
+
+
+class OrderContainerTag(models.Model):
+    """Custom color-coded tag attached to an order container."""
+
+    container = models.ForeignKey(
+        OrderContainer,
+        on_delete=models.CASCADE,
+        related_name="tags",
+    )
+    name = models.CharField(max_length=64)
+    color = models.CharField(max_length=7, default="#2563eb")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["id"]
+
+    def save(self, *args, **kwargs):
+        color = (self.color or "").strip()
+        if not color:
+            color = "#2563eb"
+        if not color.startswith("#"):
+            color = f"#{color}"
+        self.color = color[:7]
+        self.name = (self.name or "").strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.container_id})"
+
+
 class OrderContainerTrackingUpdate(models.Model):
     """Proposed tracking updates pulled from JSONCargo.
 
@@ -813,6 +845,66 @@ class PlantProfile(models.Model):
 
     def __str__(self) -> str:
         return self.scientific_name
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
