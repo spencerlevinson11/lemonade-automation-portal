@@ -403,6 +403,13 @@
                     <span class="badge" style="margin-left:8px; border-color: rgba(250,204,21,0.45); background: rgba(250,204,21,0.10);">Update pending</span>
                   {% endif %}
                 </div>
+                {% if c.tags.all %}
+                  <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
+                    {% for tag in c.tags.all %}
+                      <span class="badge" style="background: {{ tag.color }}; border-color: {{ tag.color }}; color: #fff;">{{ tag.name }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
                 <div class="muted" style="font-size:0.85rem; margin-top:2px;">
                   {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
                   {% if c.container_number %}Container: {{ c.container_number }}{% if c.carrier %} ({{ c.carrier }}){% endif %} • {% endif %}
@@ -492,7 +499,14 @@
                     <span class="badge" style="margin-left:8px; border-color: rgba(250,204,21,0.45); background: rgba(250,204,21,0.10);">Update pending</span>
                   {% endif %}
                   </div>
-                  <div class="muted" style="font-size:0.85rem; margin-top:2px;">
+                  {% if c.tags.all %}
+                  <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
+                    {% for tag in c.tags.all %}
+                      <span class="badge" style="background: {{ tag.color }}; border-color: {{ tag.color }}; color: #fff;">{{ tag.name }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+                <div class="muted" style="font-size:0.85rem; margin-top:2px;">
                     {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
                     {% if c.container_number %}Container: {{ c.container_number }}{% if c.carrier %} ({{ c.carrier }}){% endif %} • {% endif %}
                     {% if c.booking_number %}Booking: {{ c.booking_number }} • {% endif %}
@@ -599,6 +613,13 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
+
 
 
 
