@@ -49,6 +49,16 @@
       font-weight:700;
       cursor:pointer;
     }
+    .btn-inline{
+      background:transparent;
+      color:var(--accent);
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(250,204,21,.35);
+      font-weight:700;
+      cursor:pointer;
+      white-space:nowrap;
+    }
   </style>
 </head>
 <body>
@@ -60,6 +70,7 @@
           <p style="color:var(--muted);margin:6px 0 0 0;">
             Edit pallet quantities (pieces). These persist across imports.
             Uncheck “Include” to hide an item from the generated quote.
+            You can also deselect a bucket type for all locations for this customer in one click.
           </p>
           <p style="color:var(--muted);margin:6px 0 0 0;">
             <strong>Quote-only description edits:</strong> You can temporarily rename an item for the next quote.
@@ -80,6 +91,7 @@
             <tr>
               <th>Destination</th>
               <th>Product Description</th>
+              <th>All Locations</th>
               <th>Quote-only Description (temporary)</th>
               <th class="num">Price (Delivered)</th>
               <th class="num">Pallet Quantity</th>
@@ -91,6 +103,19 @@
               <tr>
                 <td>{{ line.destination }}</td>
                 <td>{{ line.product_description }}</td>
+                <td>
+                  {% ifchanged line.product_description %}
+                    <button
+                      class="btn-inline"
+                      type="submit"
+                      name="bulk_exclude_product"
+                      value="{{ line.product_description }}"
+                      title="Turn this bucket type off for every location for this customer"
+                    >
+                      Deselect for all locations
+                    </button>
+                  {% endifchanged %}
+                </td>
 
                 <!-- NEW: quote-only override input (session-based) -->
                 <td>
