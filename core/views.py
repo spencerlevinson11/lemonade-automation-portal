@@ -123,19 +123,61 @@ RPC_PER_PALLET_BY_CANON_NAME = {
     _canon_product_name(name): qty for name, qty in PER_PALLET.items()
 }
 
+# Exact pricing-generator labels mapped to the default pieces-per-pallet
+# values the user wants to share with the RPC generator workflow.
+PRICING_PER_PALLET_OVERRIDES = {
+    _canon_product_name("10 Wide Classic HQ#"): 2800,
+    _canon_product_name("10 liter classic N6#"): 2800,
+    _canon_product_name("10 Wide Classic"): 2800,
+    _canon_product_name("10 liter wide Grey"): 2800,
+    _canon_product_name("10 liter wide NIR Grey"): 2800,
+    _canon_product_name("10 liter wide NextGen"): 2842,
+    _canon_product_name("10 liter wide NextGen 2% PrePay discount"): 2842,
+    _canon_product_name("5 liter vase"): 6210,
+    _canon_product_name("5 liter round"): 3900,
+    _canon_product_name("4 liter vase"): 5370,
+    _canon_product_name("3 liter round"): 5600,
+    _canon_product_name("7 liter vase"): 3240,
+    _canon_product_name("8 wide NG"): 4140,
+    _canon_product_name("8 wide NG 2% PrePay discount"): 4140,
+    _canon_product_name("8 wide Standard"): 3780,
+    _canon_product_name("8 liter wide NIR grey"): 3780,
+    _canon_product_name("10 Conical"): 3960,
+    _canon_product_name("10 Conical 2% PrePay Discount"): 3960,
+    _canon_product_name("10 Conical Grey"): 3960,
+    _canon_product_name("10 Conical Grey 2% PrePay Discount"): 3960,
+    _canon_product_name("10 conical NG"): 4050,
+    _canon_product_name("10 Conical NG 2% PrePay discount"): 4050,
+    _canon_product_name("10 Conical NG Grey"): 4050,
+    _canon_product_name("10 Conical NG Grey 2% PrePay Discount"): 4050,
+    _canon_product_name("13 conical"): 2660,
+    _canon_product_name("13 Conical Grey"): 2660,
+    _canon_product_name("13 Conical NG Grey"): 2730,
+    _canon_product_name("13 conical NG"): 2730,
+}
+
 
 def get_rpc_default_pallet_quantity_pieces(product_description: str) -> int:
     """
     Return the default pieces-per-pallet value for a pricing line using the
-    same bucket quantity table as the RPC generator.
+    same bucket quantity table as the RPC generator, plus explicit pricing
+    aliases that should resolve to those same defaults.
     """
     canon = _canon_product_name(product_description)
     if not canon:
         return 0
 
+    override = PRICING_PER_PALLET_OVERRIDES.get(canon)
+    if override:
+        return int(override)
+
     exact = RPC_PER_PALLET_BY_CANON_NAME.get(canon)
     if exact:
         return int(exact)
+
+    for known_name, qty in PRICING_PER_PALLET_OVERRIDES.items():
+        if known_name and (canon in known_name or known_name in canon):
+            return int(qty)
 
     for known_name, qty in RPC_PER_PALLET_BY_CANON_NAME.items():
         if known_name and (canon in known_name or known_name in canon):
@@ -4180,11 +4222,9 @@ def pricing_upload_view(request):
                     created_customers += 1
 
                 meta = existing_meta.get((canon_customer, norm_dest, prod), None)
-                pallet_qty = (
-                    meta["pallet_quantity_pieces"]
-                    if meta
-                    else get_rpc_default_pallet_quantity_pieces(prod)
-                )
+                saved_pallet_qty = (meta or {}).get("pallet_quantity_pieces", 0)
+                default_pallet_qty = get_rpc_default_pallet_quantity_pieces(prod)
+                pallet_qty = int(saved_pallet_qty or default_pallet_qty or 0)
                 include = meta["include_in_quote"] if meta else True
 
                 PricingQuoteLine.objects.create(
@@ -5660,6 +5700,140 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
