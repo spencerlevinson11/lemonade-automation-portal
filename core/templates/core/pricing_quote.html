@@ -26,6 +26,7 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
+      table-layout: auto;
     }
 
     .table-wrap{
@@ -49,8 +50,17 @@
 
     th, td{
       border: 1px solid #111;
-      padding: 8px;
+      padding: 6px 8px;
       vertical-align: top;
+    }
+
+    .product-col{
+      width: 1%;
+      white-space: nowrap;
+    }
+
+    .product-cell{
+      white-space: nowrap;
     }
 
     th{
@@ -108,7 +118,7 @@
     <table>
       <thead>
         <tr>
-          <th style="width: 34%;">Product</th>
+          <th class="product-col">Product</th>
           {% for dest in destinations %}
             <th>{{ dest }}</th>
           {% endfor %}
@@ -117,7 +127,7 @@
       <tbody>
         {% for row in quote_rows %}
           <tr>
-            <td><strong>{{ row.product }}</strong></td>
+            <td class="product-cell"><strong>{{ row.product }}</strong></td>
 
             {% for line in row.cells %}
               <td>
@@ -144,7 +154,7 @@
       <table>
         <thead>
           <tr>
-            <th style="width: 34%;">Product</th>
+            <th class="product-col">Product</th>
             {% for dest in destinations %}
               <th>{{ dest }}</th>
             {% endfor %}
@@ -153,7 +163,7 @@
         <tbody>
           {% for row in grey_quote_rows %}
             <tr>
-              <td><strong>{{ row.product }}</strong></td>
+              <td class="product-cell"><strong>{{ row.product }}</strong></td>
 
               {% for line in row.cells %}
                 <td>
@@ -174,3 +184,4 @@
 
 </body>
 </html>
+
