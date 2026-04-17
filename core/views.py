@@ -4322,12 +4322,24 @@ def pricing_customer_edit_view(request, customer_id):
             else:
                 new_overrides.pop(str(line.id), None)
 
-        set_quote_desc_overrides(request, company.id, customer.id, new_overrides)
+        bulk_exclude_product = (request.POST.get("bulk_exclude_product") or "").strip()
+        if bulk_exclude_product:
+            PricingQuoteLine.objects.filter(
+                company=company,
+                customer=customer,
+                product_description=bulk_exclude_product,
+            ).update(include_in_quote=False)
+            messages.success(
+                request,
+                f'Deselected "{bulk_exclude_product}" for all locations for this customer.',
+            )
+        else:
+            messages.success(
+                request,
+                "Saved pallet quantities / inclusions. Quote-only descriptions updated for the next quote.",
+            )
 
-        messages.success(
-            request,
-            "Saved pallet quantities / inclusions. Quote-only descriptions updated for the next quote.",
-        )
+        set_quote_desc_overrides(request, company.id, customer.id, new_overrides)
         return redirect("pricing_customer_edit", customer_id=customer.id)
 
     for line in lines_qs:
@@ -5700,6 +5712,15 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
 
 
 
