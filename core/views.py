@@ -74,7 +74,7 @@ from .models import (
     PlantProfile,
 )
 
-from .rpc_generation import generate_rpc_from_form
+from .rpc_generation import PER_PALLET, generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
 from .services.order_tracker import upsert_container_from_rpc_order
@@ -106,6 +106,43 @@ from dateutil.relativedelta import relativedelta
 # -----------------------------
 # Pricing helpers
 # -----------------------------
+
+def _canon_product_name(raw: str) -> str:
+    s = (raw or "").strip().lower()
+    if not s:
+        return ""
+    s = s.replace("+", " plus ")
+    s = s.replace("#", " hq ")
+    s = s.replace("ltr", "liter")
+    s = s.replace("next gen", "nextgen")
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+RPC_PER_PALLET_BY_CANON_NAME = {
+    _canon_product_name(name): qty for name, qty in PER_PALLET.items()
+}
+
+
+def get_rpc_default_pallet_quantity_pieces(product_description: str) -> int:
+    """
+    Return the default pieces-per-pallet value for a pricing line using the
+    same bucket quantity table as the RPC generator.
+    """
+    canon = _canon_product_name(product_description)
+    if not canon:
+        return 0
+
+    exact = RPC_PER_PALLET_BY_CANON_NAME.get(canon)
+    if exact:
+        return int(exact)
+
+    for known_name, qty in RPC_PER_PALLET_BY_CANON_NAME.items():
+        if known_name and (canon in known_name or known_name in canon):
+            return int(qty)
+
+    return 0
+
 
 def normalize_customer_name(raw: str) -> str | None:
     if raw is None:
@@ -4143,7 +4180,11 @@ def pricing_upload_view(request):
                     created_customers += 1
 
                 meta = existing_meta.get((canon_customer, norm_dest, prod), None)
-                pallet_qty = meta["pallet_quantity_pieces"] if meta else 0
+                pallet_qty = (
+                    meta["pallet_quantity_pieces"]
+                    if meta
+                    else get_rpc_default_pallet_quantity_pieces(prod)
+                )
                 include = meta["include_in_quote"] if meta else True
 
                 PricingQuoteLine.objects.create(
@@ -5619,6 +5660,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
