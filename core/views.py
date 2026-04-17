@@ -4393,54 +4393,69 @@ def pricing_customer_quote_view(request, customer_id):
     # X axis: destinations (locations)
     destinations: list[str] = []
     seen_dests: set[str] = set()
-    # Y axis: products (descriptions)
-    products: list[str] = []
-    seen_products: set[str] = set()
+
+    # Y axis: products are keyed by (description, pallet_quantity_pieces)
+    # so the generated sheet keeps separate rows when the same description
+    # appears with different pallet quantities.
+    row_keys: list[tuple[str, int]] = []
+    seen_row_keys: set[tuple[str, int]] = set()
+    qtys_by_product: dict[str, set[int]] = {}
 
     for line in lines:
         d = (line.destination or "").strip() or "(Unspecified)"
         p = (line.display_product_description or "").strip() or "(Unspecified)"
+        qty = int(line.pallet_quantity_pieces or 0)
+        row_key = (p, qty)
 
         if d not in seen_dests:
             destinations.append(d)
             seen_dests.add(d)
 
-        if p not in seen_products:
-            products.append(p)
-            seen_products.add(p)
+        if row_key not in seen_row_keys:
+            row_keys.append(row_key)
+            seen_row_keys.add(row_key)
 
-    # grid[product][destination] = PricingQuoteLine | None
-    grid: dict[str, dict[str, PricingQuoteLine | None]] = {
-        p: {d: None for d in destinations} for p in products
+        qtys_by_product.setdefault(p, set()).add(qty)
+
+    # grid[(product, qty)][destination] = PricingQuoteLine | None
+    grid: dict[tuple[str, int], dict[str, PricingQuoteLine | None]] = {
+        row_key: {d: None for d in destinations} for row_key in row_keys
     }
     for line in lines:
         d = (line.destination or "").strip() or "(Unspecified)"
         p = (line.display_product_description or "").strip() or "(Unspecified)"
+        qty = int(line.pallet_quantity_pieces or 0)
+        row_key = (p, qty)
         # If duplicates exist, keep the first one (stable with queryset ordering)
-        if p in grid and d in grid[p] and grid[p][d] is None:
-            grid[p][d] = line
+        if row_key in grid and d in grid[row_key] and grid[row_key][d] is None:
+            grid[row_key][d] = line
 
-    # Precompute a template-friendly structure: one row per product
+    def _display_product_label(product_name: str, qty: int) -> str:
+        if len(qtys_by_product.get(product_name, set())) > 1:
+            return f"{product_name} ({qty} pcs / pallet)"
+        return product_name
+
+    # Precompute a template-friendly structure: one row per product/qty combination
     def _is_grey_product(product_name: str) -> bool:
         return "grey" in (product_name or "").strip().lower()
 
-    products_non_grey = [p for p in products if not _is_grey_product(p)]
-    products_grey = [p for p in products if _is_grey_product(p)]
+    row_keys_non_grey = [rk for rk in row_keys if not _is_grey_product(rk[0])]
+    row_keys_grey = [rk for rk in row_keys if _is_grey_product(rk[0])]
 
     quote_rows = [
         {
-            "product": p,
-            "cells": [grid[p].get(d) for d in destinations],
+            "product": _display_product_label(product_name, qty),
+            "cells": [grid[(product_name, qty)].get(d) for d in destinations],
         }
-        for p in products_non_grey
+        for (product_name, qty) in row_keys_non_grey
     ]
 
     grey_quote_rows = [
         {
-            "product": p,
-            "cells": [grid[p].get(d) for d in destinations],
+            "product": _display_product_label(product_name, qty),
+            "cells": [grid[(product_name, qty)].get(d) for d in destinations],
         }
-        for p in products_grey
+        for (product_name, qty) in row_keys_grey
     ]
 
     if overrides:
@@ -5712,6 +5727,16 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
 
 
 
