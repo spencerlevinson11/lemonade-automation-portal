@@ -29,23 +29,24 @@ def _is_naber_user(request) -> bool:
 NABER_THEME_INJECTION = r'''
 <style id="naber-plastics-global-theme">
     :root {
-        --bg-main: #07130f !important;
-        --bg-surface: #0b1d17 !important;
-        --bg-card: #10251d !important;
-        --accent: #7cc242 !important;
-        --accent-strong: #a3d65c !important;
-        --accent-soft: rgba(124, 194, 66, 0.18) !important;
-        --text-main: #eef7ef !important;
-        --text-muted: #b8c8bd !important;
-        --border-subtle: rgba(124, 194, 66, 0.30) !important;
-        --border-strong: rgba(124, 194, 66, 0.58) !important;
+        --bg-main: #f3f7fa !important;
+        --bg-surface: #ffffff !important;
+        --bg-card: #ffffff !important;
+        --accent: #6cc8d6 !important;
+        --accent-strong: #1f8ea8 !important;
+        --accent-deep: #246b82 !important;
+        --accent-soft: rgba(108, 200, 214, 0.18) !important;
+        --text-main: #21343d !important;
+        --text-muted: #667b86 !important;
+        --border-subtle: rgba(108, 200, 214, 0.28) !important;
+        --border-strong: rgba(31, 142, 168, 0.44) !important;
     }
 
     html, body {
         background:
-            radial-gradient(circle at 16% 0%, rgba(124, 194, 66, 0.24), transparent 36%),
-            radial-gradient(circle at 100% 100%, rgba(20, 105, 64, 0.36), transparent 45%),
-            #07130f !important;
+            radial-gradient(circle at 0% 0%, rgba(108, 200, 214, 0.18), transparent 24%),
+            radial-gradient(circle at 100% 100%, rgba(154, 219, 228, 0.20), transparent 28%),
+            linear-gradient(180deg, #f8fbfd 0%, #eef5f8 100%) !important;
         color: var(--text-main) !important;
     }
 
@@ -55,32 +56,32 @@ NABER_THEME_INJECTION = r'''
         inset: 0;
         pointer-events: none;
         background-image:
-            linear-gradient(rgba(124, 194, 66, 0.045) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(124, 194, 66, 0.045) 1px, transparent 1px);
-        background-size: 36px 36px;
-        opacity: 0.55;
+            linear-gradient(rgba(108, 200, 214, 0.035) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(108, 200, 214, 0.035) 1px, transparent 1px);
+        background-size: 38px 38px;
+        opacity: 0.4;
         z-index: 0;
     }
 
     .page, .portal-shell, .dashboard-shell, main {
-        background:
-            linear-gradient(145deg, rgba(11, 29, 23, 0.98), rgba(2, 12, 8, 0.98)) !important;
+        background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(245,250,252,0.98)) !important;
         border-color: var(--border-subtle) !important;
-        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(124, 194, 66, 0.10) !important;
+        box-shadow: 0 20px 60px rgba(28, 53, 64, 0.10), 0 0 0 1px rgba(108, 200, 214, 0.10) !important;
     }
 
     .card, .panel, .section, .content-card, .auth-wrapper .card, .tracker-card,
     .metric-card, .project-card, .schedule-card, .quote-card, .form-card,
     .table-card, .map-card, .automation-card, .status-company {
         background:
-            radial-gradient(circle at top left, rgba(124, 194, 66, 0.15), transparent 50%),
-            #10251d !important;
+            radial-gradient(circle at top left, rgba(108, 200, 214, 0.10), transparent 42%),
+            #ffffff !important;
         border-color: var(--border-subtle) !important;
+        box-shadow: 0 10px 28px rgba(28, 53, 64, 0.06) !important;
     }
 
     .brand-logo, .logo-mark, .glow-dot {
-        background: radial-gradient(circle at 30% 20%, #e0ffc0, #7cc242 52%, #315f22) !important;
-        box-shadow: 0 0 18px rgba(124, 194, 66, 0.95), 0 0 42px rgba(124, 194, 66, 0.45) !important;
+        background: radial-gradient(circle at 30% 20%, #ffffff, #9adbe4 42%, #53b8c9 70%, #2a7f96 100%) !important;
+        box-shadow: 0 0 18px rgba(108, 200, 214, 0.45), 0 0 34px rgba(108, 200, 214, 0.18) !important;
     }
 
     .brand-logo::after, .logo-mark::after {
@@ -91,34 +92,61 @@ NABER_THEME_INJECTION = r'''
         position: absolute !important;
         inset: 0 !important;
         border: 0 !important;
-        color: #082015 !important;
+        color: #1f5f73 !important;
         font-size: 0.62rem !important;
         font-weight: 900 !important;
         letter-spacing: -0.04em !important;
     }
 
-    a, .user-pill a, .nav-link, .link, strong, .accent, .brand-text-main {
+    h1, h2, h3, h4, h5, h6, .brand-text-main, .card-title, .section-title, .page-title {
+        color: #1f3540 !important;
+    }
+
+    p, span, small, li, label, .brand-text-sub, .muted, .helptext, .subtitle {
+        color: var(--text-muted) !important;
+    }
+
+    a, .user-pill a, .nav-link, .link, strong, .accent {
         color: var(--accent-strong) !important;
     }
 
+    .user-pill, .status-company, .message-item, .badge, .pill, .tag {
+        background: rgba(255,255,255,0.88) !important;
+        border-color: var(--border-strong) !important;
+        color: var(--text-main) !important;
+    }
+
     button, .btn, .run-btn, .primary-btn, input[type="submit"], .action-btn {
-        background: linear-gradient(135deg, rgba(124, 194, 66, 0.25), rgba(20, 105, 64, 0.24)) !important;
-        border-color: rgba(124, 194, 66, 0.58) !important;
-        color: #f4fff1 !important;
+        background: linear-gradient(135deg, #6cc8d6, #3aa8ba) !important;
+        border-color: rgba(31, 142, 168, 0.55) !important;
+        color: #ffffff !important;
+        box-shadow: 0 10px 24px rgba(58, 168, 186, 0.18) !important;
     }
 
     button:hover, .btn:hover, .run-btn:hover, .primary-btn:hover, input[type="submit"]:hover, .action-btn:hover {
-        box-shadow: 0 0 0 1px rgba(124, 194, 66, 0.45), 0 12px 32px rgba(124, 194, 66, 0.20) !important;
+        box-shadow: 0 0 0 1px rgba(31, 142, 168, 0.24), 0 14px 30px rgba(58, 168, 186, 0.24) !important;
+        filter: brightness(1.03);
+    }
+
+    input, select, textarea {
+        background: #ffffff !important;
+        color: var(--text-main) !important;
+        border-color: rgba(102, 151, 166, 0.24) !important;
     }
 
     input:focus, select:focus, textarea:focus {
-        border-color: var(--accent) !important;
-        box-shadow: 0 0 0 1px rgba(124, 194, 66, 0.42), 0 0 0 4px rgba(124, 194, 66, 0.14) !important;
+        border-color: var(--accent-strong) !important;
+        box-shadow: 0 0 0 1px rgba(31, 142, 168, 0.30), 0 0 0 4px rgba(108, 200, 214, 0.16) !important;
         outline: none !important;
     }
 
+    table, thead, tbody, tr, td, th {
+        color: var(--text-main) !important;
+        border-color: rgba(102, 151, 166, 0.18) !important;
+    }
+
     table tr:hover, .automation-row:hover, .order-row:hover, .list-row:hover {
-        background: rgba(124, 194, 66, 0.09) !important;
+        background: rgba(108, 200, 214, 0.08) !important;
     }
 </style>
 <script id="naber-plastics-branding-script">
