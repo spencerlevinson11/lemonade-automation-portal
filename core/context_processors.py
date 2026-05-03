@@ -7,34 +7,40 @@ NABER_USERNAME = "maudnaber"
 NABER_COMPANY_NAME = "naber plastics"
 
 
-def portal_theme(request):
-    """Expose a small, safe theme object to every template.
+def _norm(value):
+    return (str(value or "")).strip().lower()
 
-    The Naber Plastics styling is intentionally scoped to one user/company so the
-    existing Lemonade/Retriever portal theme remains unchanged for everyone else.
+
+def get_portal_theme(user=None, company=None):
+    """Return the active portal theme for a user/company.
+
+    Naber styling is intentionally scoped to MaudNaber / Naber Plastics so the
+    normal Lemonade theme remains unchanged for other users.
     """
-    user = getattr(request, "user", None)
     theme = {
         "key": "default",
         "name": "Lemonade Stand",
     }
 
-    if not user or not getattr(user, "is_authenticated", False):
-        return {"portal_theme": theme}
-
-    username = (getattr(user, "username", "") or "").strip().lower()
+    username = _norm(getattr(user, "username", ""))
     if username == NABER_USERNAME:
-        theme.update({"key": "naber", "name": "Naber Plastics"})
-        return {"portal_theme": theme}
+        return {"key": "naber", "name": "Naber Plastics"}
 
-    company = None
-    try:
-        company = Company.objects.filter(owner=user).only("name").first()
-    except Exception:
-        company = None
-
-    company_name = (getattr(company, "name", "") or "").strip().lower()
+    company_name = _norm(getattr(company, "name", ""))
     if company_name == NABER_COMPANY_NAME:
-        theme.update({"key": "naber", "name": "Naber Plastics"})
+        return {"key": "naber", "name": "Naber Plastics"}
 
-    return {"portal_theme": theme}
+    if user is not None and getattr(user, "is_authenticated", False):
+        try:
+            owned_company = Company.objects.filter(owner=user).only("name").first()
+        except Exception:
+            owned_company = None
+        if _norm(getattr(owned_company, "name", "")) == NABER_COMPANY_NAME:
+            return {"key": "naber", "name": "Naber Plastics"}
+
+    return theme
+
+
+def portal_theme(request):
+    user = getattr(request, "user", None)
+    return {"portal_theme": get_portal_theme(user=user)}
