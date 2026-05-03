@@ -78,6 +78,7 @@ from .rpc_generation import PER_PALLET, generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
 from .services.order_tracker import upsert_container_from_rpc_order
+from .context_processors import get_portal_theme
 from .services.myshiptracking import bulk_vessel_status
 from .services.rpc_master_formatter import parse_rpc_order_xlsx, build_master_format_workbook
 from .services.ms_graph_excel import (
@@ -1383,6 +1384,7 @@ def dashboard(request):
         "automations": automations,
         "company": company,
         "is_admin": user.is_superuser,
+        "portal_theme": get_portal_theme(user=user, company=company),
     }
     return render(request, "core/dashboard.html", context)
 
@@ -5727,6 +5729,17 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
 
 
 
