@@ -1,40 +1,101 @@
-from __future__ import annotations
-
-from .models import Company
-
-
-NABER_USERNAME = "maudnaber"
-NABER_COMPANY_NAME = "naber plastics"
-
-
-def portal_theme(request):
-    """Expose a small, safe theme object to every template.
-
-    The Naber Plastics styling is intentionally scoped to one user/company so the
-    existing Lemonade/Retriever portal theme remains unchanged for everyone else.
-    """
-    user = getattr(request, "user", None)
-    theme = {
-        "key": "default",
-        "name": "Lemonade Stand",
+{% with username=request.user.username|lower company_name=company.name|lower selected_company_name=selected_company.name|lower %}
+{% if portal_theme.key == "naber" or username == "maudnaber" or company_name == "naber plastics" or selected_company_name == "naber plastics" %}
+<style id="naber-plastics-theme">
+    :root {
+        --bg-main: #07130f;
+        --bg-surface: #0b1d17;
+        --bg-card: #10251d;
+        --accent: #7cc242;
+        --accent-strong: #a3d65c;
+        --accent-soft: rgba(124, 194, 66, 0.18);
+        --text-main: #eef7ef;
+        --text-muted: #b8c8bd;
+        --border-subtle: rgba(124, 194, 66, 0.30);
+        --border-strong: rgba(124, 194, 66, 0.58);
     }
 
-    if not user or not getattr(user, "is_authenticated", False):
-        return {"portal_theme": theme}
+    html, body {
+        background:
+            radial-gradient(circle at 18% 0%, rgba(124, 194, 66, 0.24), transparent 34%),
+            radial-gradient(circle at 100% 100%, rgba(20, 105, 64, 0.34), transparent 42%),
+            #07130f !important;
+        color: var(--text-main) !important;
+    }
 
-    username = (getattr(user, "username", "") or "").strip().lower()
-    if username == NABER_USERNAME:
-        theme.update({"key": "naber", "name": "Naber Plastics"})
-        return {"portal_theme": theme}
+    body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image: linear-gradient(rgba(124, 194, 66, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(124, 194, 66, 0.04) 1px, transparent 1px);
+        background-size: 36px 36px;
+        opacity: 0.55;
+        z-index: 0;
+    }
 
-    company = None
-    try:
-        company = Company.objects.filter(owner=user).only("name").first()
-    except Exception:
-        company = None
+    .portal-shell,
+    .page,
+    main,
+    .dashboard-shell {
+        background:
+            linear-gradient(145deg, rgba(11, 29, 23, 0.96), rgba(2, 12, 8, 0.98)) !important;
+        border-color: var(--border-subtle) !important;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(124, 194, 66, 0.10) !important;
+    }
 
-    company_name = (getattr(company, "name", "") or "").strip().lower()
-    if company_name == NABER_COMPANY_NAME:
-        theme.update({"key": "naber", "name": "Naber Plastics"})
+    .card, .panel, .section, .content-card, .auth-wrapper .card, .tracker-card, .metric-card, .project-card, .schedule-card, .quote-card, .form-card, .table-card, .map-card, .automation-card {
+        background:
+            radial-gradient(circle at top left, rgba(124, 194, 66, 0.14), transparent 48%),
+            #10251d !important;
+        border-color: var(--border-subtle) !important;
+    }
 
-    return {"portal_theme": theme}
+    .brand-logo, .logo-mark, .glow-dot {
+        background: radial-gradient(circle at 30% 20%, #e0ffc0, #7cc242 52%, #315f22) !important;
+        box-shadow: 0 0 18px rgba(124, 194, 66, 0.95), 0 0 42px rgba(124, 194, 66, 0.45) !important;
+    }
+
+    .brand-logo::after, .logo-mark::after {
+        content: "NP" !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        position: absolute !important;
+        inset: 0 !important;
+        border: 0 !important;
+        color: #082015 !important;
+        font-size: 0.62rem !important;
+        font-weight: 900 !important;
+        letter-spacing: -0.04em !important;
+    }
+
+    a, .user-pill a, .nav-link, .link, .card-subtitle span, strong, .accent, .brand-text-main {
+        color: var(--accent-strong) !important;
+    }
+
+    button, .btn, .run-btn, .primary-btn, input[type="submit"], .action-btn {
+        background: linear-gradient(135deg, rgba(124, 194, 66, 0.24), rgba(20, 105, 64, 0.22)) !important;
+        border-color: rgba(124, 194, 66, 0.58) !important;
+        color: #f4fff1 !important;
+    }
+
+    button:hover, .btn:hover, .run-btn:hover, .primary-btn:hover, input[type="submit"]:hover, .action-btn:hover {
+        box-shadow: 0 0 0 1px rgba(124, 194, 66, 0.45), 0 12px 32px rgba(124, 194, 66, 0.20) !important;
+    }
+
+    input:focus, select:focus, textarea:focus {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 1px rgba(124, 194, 66, 0.42), 0 0 0 4px rgba(124, 194, 66, 0.14) !important;
+        outline: none !important;
+    }
+
+    table tr:hover, .automation-row:hover, .order-row:hover, .list-row:hover {
+        background: rgba(124, 194, 66, 0.09) !important;
+    }
+
+    .status-company, .message-item, .success, .badge, .pill, .tag {
+        border-color: rgba(124, 194, 66, 0.48) !important;
+    }
+</style>
+{% endif %}
+{% endwith %}
