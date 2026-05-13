@@ -117,6 +117,8 @@
         <a class="btn2" href="{% url 'order_tracker' %}">← Back</a>
 
         {% if container %}
+          <a class="btn" href="{% url 'order_container_commercial_invoice' container.id %}">Commercial invoice</a>
+
           <form method="post" action="{% url 'order_container_delete' container.id %}"
                 onsubmit="return confirm('Delete this order? This cannot be undone.');"
                 style="display:inline;">
@@ -784,6 +786,11 @@
 </script>
 </body>
 </html>
+
+
+
+
+
 
 
 
