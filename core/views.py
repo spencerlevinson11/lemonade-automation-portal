@@ -5556,6 +5556,7 @@ def order_container_edit_view(request, container_id: int | None = None):
     # We only expose a small, human-friendly subset in the template for manual review.
     jsoncargo_data: dict = {}
     jsoncargo_next_destination: str = ""
+    jsoncargo_display_eta: str = ""
     if pending_tracking_update is not None:
         payload = getattr(pending_tracking_update, "source_payload", None) or {}
         if isinstance(payload, dict):
@@ -5572,11 +5573,31 @@ def order_container_edit_view(request, container_id: int | None = None):
 
     if isinstance(jsoncargo_data, dict):
         for key in (
+            "eta_next_destination",
+            "eta_final_destination",
+            "eta_destination",
+            "eta",
+            "eta_delivery",
+            "eta_discharge",
+        ):
+            candidate = _clean_str(jsoncargo_data.get(key))
+            if candidate:
+                jsoncargo_display_eta = candidate
+                break
+
+        for key in (
             "next_location",
             "next_location_terminal",
-            "discharging_port",
+            "final_destination",
+            "final_destination_port",
+            "final_destination_city",
+            "destination",
+            "delivery_to",
+            "delivered_to",
+            "consignee_city",
             "shipped_to",
             "shipped_to_terminal",
+            "discharging_port",
         ):
             candidate = _clean_str(jsoncargo_data.get(key))
             if candidate:
@@ -5596,6 +5617,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             "tag_formset": tag_formset,
             "pending_tracking_update": pending_tracking_update,
             "jsoncargo_data": jsoncargo_data,
+            "jsoncargo_display_eta": jsoncargo_display_eta,
             "jsoncargo_next_destination": jsoncargo_next_destination,
         },
     )
@@ -5974,6 +5996,11 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
 
 
 
