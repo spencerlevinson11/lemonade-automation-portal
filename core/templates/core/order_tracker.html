@@ -128,6 +128,9 @@
     }
 
     .actions { display:flex; gap:10px; flex-wrap:wrap; }
+    .compact-input { min-width: 130px; padding: 7px 8px; font-size: 0.85rem; }
+    .eta-cell { min-width: 180px; }
+    .jsoncargo-cell { min-width: 170px; font-size: 0.88rem; }
 
     #vesselMap {
       height: 380px;
@@ -155,7 +158,12 @@
       
         <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" style="display:inline;">
           {% csrf_token %}
-          <button class="btn" type="submit">Sync JSONCargo updates</button>
+          <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for all active containers?');">Sync JSONCargo updates</button>
+        </form>
+
+        <form method="post" action="{% url 'order_tracker_clear_jsoncargo_updates' %}" style="display:inline;">
+          {% csrf_token %}
+          <button class="btn btn-danger" type="submit" onclick="return confirm('Clear all pending JSONCargo updates/errors from the tracker?');">Clear JSONCargo updates</button>
         </form>
 
         <a class="btn" href="{% url 'order_tracker_archived' %}">Archived orders</a>
@@ -171,6 +179,25 @@
         {% endfor %}
       </div>
     {% endif %}
+
+    <div class="card" style="border-color: rgba(250,204,21,0.34);">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:900;">JSONCargo Controls</div>
+          <div class="muted tiny">Sync all active containers, or clear all saved JSONCargo update records from this tracker view.</div>
+        </div>
+        <div class="actions">
+          <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" style="display:inline;">
+            {% csrf_token %}
+            <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for all active containers?');">Sync JSONCargo updates</button>
+          </form>
+          <form method="post" action="{% url 'order_tracker_clear_jsoncargo_updates' %}" style="display:inline;">
+            {% csrf_token %}
+            <button class="btn btn-danger" type="submit" onclick="return confirm('Clear all saved JSONCargo update records from this tracker view?');">Clear JSONCargo updates</button>
+          </form>
+        </div>
+      </div>
+    </div>
 
     <!-- Vessel map (shows vessels for containers that have MMSI/IMO saved) -->
     <div class="card">
@@ -343,10 +370,16 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
         <div>
           <div style="font-weight:900;">Active Orders</div>
-          <div class="muted tiny">Use “Mark delivered” once an order has arrived — it will move to the Delivered section below.</div>
+          <div class="muted tiny">Use “Mark delivered” once an order has arrived — it will move to the Delivered section below. Edit manual ETAs directly here, then save all at once. The Latest JSONCargo ETA column shows the most recent API result, even after you acknowledge an update.</div>
         </div>
+        <button class="btn" type="submit" form="bulkEtaForm">Save all ETA edits</button>
       </div>
 
+      <form id="bulkEtaForm" method="post" action="{% url 'order_tracker_bulk_update' %}">
+        {% csrf_token %}
+      </form>
+
+      <div style="overflow-x:auto; margin-top:12px;">
       <table>
         <thead>
           <tr>
@@ -379,9 +412,10 @@
             <th>ETD</th>
             <th>
               <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=eta&dir={% if sort == 'eta' and dir == 'asc' %}desc{% else %}asc{% endif %}">
-                ETA
+                Manual ETA
               </a>
             </th>
+            <th>Latest JSONCargo ETA</th>
             <th>
               <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=est_delivery&dir={% if sort == 'est_delivery' and dir == 'asc' %}desc{% else %}asc{% endif %}">
                 Est. Delivery
@@ -433,17 +467,42 @@
               <td>{% if c.status %}<span class="badge">{{ c.status }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.loading_date %}{{ c.loading_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td>{% if c.etd %}{{ c.etd }}{% else %}<span class="muted">—</span>{% endif %}</td>
-              <td>
-                {% if c.eta %}
-                  {{ c.eta }}{% if c.eta_city %} {{ c.eta_city }}{% endif %}
-                {% else %}
-                  <span class="muted">—</span>
-                {% endif %}
+              <td class="eta-cell">
+                <input type="hidden" name="container_ids" value="{{ c.id }}" form="bulkEtaForm" />
+                <input class="compact-input" type="date" name="eta_{{ c.id }}" value="{{ c.eta|date:'Y-m-d' }}" form="bulkEtaForm" />
+                <input class="compact-input" style="margin-top:6px;" type="text" name="eta_city_{{ c.id }}" value="{{ c.eta_city }}" placeholder="ETA city" form="bulkEtaForm" />
+              </td>
+              <td class="jsoncargo-cell">
+                {% with upd=c.latest_pending_tracking_update|default:c.latest_tracking_update %}
+                  {% if upd %}
+                    {% if upd.kind == 'error' %}
+                      <span class="badge" style="border-color: rgba(249,115,115,0.55); color:#fecaca; background: rgba(249,115,115,0.12);">Error</span>
+                      <div class="muted tiny" style="margin-top:6px;">{{ upd.note|truncatechars:120 }}</div>
+                    {% else %}
+                      {% if upd.proposed_eta %}
+                        <strong>{{ upd.proposed_eta }}</strong>{% if upd.proposed_eta_city %} {{ upd.proposed_eta_city }}{% endif %}
+                      {% elif upd.proposed_eta_city %}
+                        <strong>{{ upd.proposed_eta_city }}</strong>
+                      {% else %}
+                        <span class="muted">No ETA returned</span>
+                      {% endif %}
+                      <div class="muted tiny" style="margin-top:4px;">
+                        {{ upd.get_kind_display }}{% if upd.status != 'pending' %} • {{ upd.get_status_display }}{% endif %}
+                      </div>
+                    {% endif %}
+                  {% else %}
+                    <span class="muted">—</span>
+                  {% endif %}
+                {% endwith %}
               </td>
               <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
               <td>
                 <a class="btn" href="{% url 'order_container_commercial_invoice' c.id %}" style="margin-bottom:8px;">Invoice</a>
+                <form method="post" action="{% url 'order_container_sync_jsoncargo' c.id %}" style="display:inline;">
+                  {% csrf_token %}
+                  <button class="btn" type="submit" onclick="return confirm('Track only this container with JSONCargo?');">Track</button>
+                </form>
                 <form method="post" action="{% url 'order_container_toggle_delivered' c.id %}" style="display:inline;">
                   {% csrf_token %}
                   <button class="btn" type="submit" onclick="return confirm('Mark this order as Delivered?');">Mark delivered</button>
@@ -452,11 +511,12 @@
             </tr>
           {% empty %}
             <tr>
-              <td colspan="11" class="muted">No active orders. (Delivered orders show below.)</td>
+              <td colspan="12" class="muted">No active orders. (Delivered orders show below.)</td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </div>
 
     <div class="card">
@@ -615,6 +675,62 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
