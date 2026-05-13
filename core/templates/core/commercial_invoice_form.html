@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ automation_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg-main: #020617;
+      --bg-card: #0b1120;
+      --accent: #facc15;
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+      --border-subtle: #1f2937;
+      --danger: #f97373;
+      --input: rgba(2, 6, 23, 0.6);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
+      color: var(--text-main);
+    }
+    .wrap { max-width: 1050px; margin: 0 auto; }
+    .top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:14px; }
+    .title h1 { margin:0; font-size:1.25rem; }
+    .title p { margin:4px 0 0; color:var(--text-muted); font-size:0.9rem; }
+    a { color: var(--accent); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .card {
+      background: rgba(11,17,32,0.9);
+      border: 1px solid rgba(31,41,55,0.9);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 22px 60px rgba(0,0,0,0.55);
+    }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+    @media (max-width: 800px) { .grid { grid-template-columns:1fr; } }
+    .field { margin-bottom:14px; }
+    label { display:block; font-size:0.85rem; color:var(--text-muted); margin-bottom:6px; }
+    input, textarea, select {
+      width:100%; padding:10px;
+      border-radius:10px;
+      border:1px solid rgba(148,163,184,0.25);
+      background:var(--input);
+      color:var(--text-main);
+      outline:none;
+    }
+    textarea { min-height:130px; resize:vertical; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:10px 8px; border-bottom:1px solid rgba(148,163,184,0.16); vertical-align:top; }
+    th { text-align:left; color:var(--text-muted); font-size:0.85rem; }
+    .muted { color:var(--text-muted); }
+    .tiny { font-size:0.85rem; }
+    .btn, .btn2 {
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:10px 14px;
+      border-radius:12px;
+      cursor:pointer;
+      font-weight:800;
+      text-decoration:none;
+    }
+    .btn { border:1px solid rgba(250,204,21,0.45); background:rgba(250,204,21,0.12); color:var(--accent); }
+    .btn:hover { background:rgba(250,204,21,0.18); text-decoration:none; }
+    .btn2 { border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.55); color:var(--text-main); }
+    .message { margin:6px 0; font-weight:800; }
+    .error { color:#fecaca; }
+    .summary-box { display:flex; gap:16px; flex-wrap:wrap; }
+    .summary-item { min-width:180px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="title">
+        <h1>Commercial Invoice</h1>
+        <p>{{ company.name }} • {{ container.customer_name }}{% if container.location_name %} • {{ container.location_name }}{% endif %}</p>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+        <a class="btn2" href="{% url 'order_container_edit' container.id %}">← Back to order</a>
+        <a class="btn2" href="{% url 'order_tracker' %}">Order tracker</a>
+      </div>
+    </div>
+
+    {% if messages %}
+      <div class="card">
+        {% for message in messages %}
+          <div class="message {% if message.tags %}{{ message.tags }}{% endif %}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="summary-box">
+        <div class="summary-item"><div class="muted tiny">PO#</div><strong>{{ container.po_number|default:"TBD" }}</strong></div>
+        <div class="summary-item"><div class="muted tiny">RPC#</div><strong>{{ container.rpc_number|default:"TBD" }}</strong></div>
+        <div class="summary-item"><div class="muted tiny">Invoice date</div><strong>{% if container.loading_date %}{{ container.loading_date }}{% else %}Today{% endif %}</strong></div>
+        <div class="summary-item"><div class="muted tiny">Ship via</div><strong>sea container</strong></div>
+      </div>
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="card">
+        <div class="grid">
+          <div>
+            <div class="field">
+              <label>Shipper</label>
+              <textarea readonly>Naber Plastics BV
+Van Hilststraat 12
+5145 RL Waalwijk
+The Netherlands</textarea>
+            </div>
+          </div>
+          <div>
+            <div class="field">
+              <label>Bill to address</label>
+              <textarea name="bill_to" required placeholder="Enter the complete bill-to name and address">{{ bill_to }}</textarea>
+            </div>
+            <div class="field">
+              <label>Optional invoice #</label>
+              <input name="invoice_number" value="{{ invoice_number }}" placeholder="Optional" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
+          <div>
+            <div style="font-weight:900;">Line item prices</div>
+            <div class="muted tiny">Enter the Euro unit price for each bucket type. Packing details are pulled from the order.</div>
+          </div>
+          <div class="muted tiny">Currency: EUR</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Bucket type</th>
+              <th>Packing</th>
+              <th>Total units</th>
+              <th style="width:180px;">Unit price (€)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in lines %}
+              <tr>
+                <td>{{ line.item_description }}</td>
+                <td>{{ line.pallets }} x {{ line.units_per_pallet }} pieces/pallet</td>
+                <td>{{ line.total_units }}</td>
+                <td>
+                  <input
+                    name="price_{{ line.id }}"
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    inputmode="decimal"
+                    required
+                    value="{{ line.invoice_price }}"
+                    placeholder="0.0000"
+                  />
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="field">
+          <label>Bottom blurb / sales terms</label>
+          <select name="terms_blurb">
+            {% for value, label in blurb_choices %}
+              <option value="{{ value }}" {% if selected_blurb == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="btn" type="submit">Download commercial invoice</button>
+      </div>
+    </form>
+  </div>
+</body>
+</html>
