@@ -102,23 +102,15 @@ def normalize_city(raw: str | None) -> str:
 
 
 
-# Some carriers return better JSONCargo results when looked up by booking/BOL instead of
-# container number. Keep this small and explicit so it does not affect other carriers.
-JSONCARGO_BOOKING_REFERENCE_SHIPPING_LINES = {"0014"}  # Evergreen
-
-
 def tracking_reference_for_jsoncargo(container: OrderContainer) -> str:
-    """Return the best tracking reference to send to JSONCargo for this order.
+    """Return the tracking reference to send to JSONCargo's container endpoint.
 
-    Evergreen tracking is more complete when queried by booking number, so for
-    Evergreen rows we prefer booking_number when present. All other carriers use
-    the container number exactly as before.
+    JSONCargo's /api/v1/containers/{tracking_number} endpoint expects a true
+    container number such as TXGU7347900. Booking/BOL references can be useful
+    for lookup/validation through JSONCargo's separate BOL endpoint, but they
+    should not replace the container number in the normal container-tracking
+    request.
     """
-    sid = (getattr(container, "shipping_line_id", "") or "").strip()
-    if sid in JSONCARGO_BOOKING_REFERENCE_SHIPPING_LINES:
-        booking = (getattr(container, "booking_number", "") or "").strip()
-        if booking:
-            return booking
     return (getattr(container, "container_number", "") or "").strip()
 
 
@@ -249,9 +241,6 @@ def sync_one_container(
                 msg += f". Not found under shipping line '{shipping_line}'."
             else:
                 msg += ". Try setting a Carrier (shipping line) for this container and re-sync."
-        if (container.shipping_line_id or "").strip() == "0014" and not (container.booking_number or "").strip():
-            msg += " Evergreen rows should have a booking number entered for best JSONCargo results."
-
         pending = (
             OrderContainerTrackingUpdate.objects.filter(
                 container=container,
@@ -391,6 +380,8 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
 
 
 
