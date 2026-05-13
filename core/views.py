@@ -5063,13 +5063,19 @@ def order_container_commercial_invoice_view(request, container_id: int):
     blurb_choices = [
         ("delivered", BLURB_DELIVERED),
         ("exw", BLURB_EXW),
+        ("none", "No bottom blurb"),
     ]
 
     if request.method == "POST":
         bill_to = (request.POST.get("bill_to") or "").strip()
         invoice_number = (request.POST.get("invoice_number") or "").strip()
         selected_blurb_key = (request.POST.get("terms_blurb") or "delivered").strip()
-        terms_blurb = BLURB_EXW if selected_blurb_key == "exw" else BLURB_DELIVERED
+        if selected_blurb_key == "none":
+            terms_blurb = ""
+        elif selected_blurb_key == "exw":
+            terms_blurb = BLURB_EXW
+        else:
+            terms_blurb = BLURB_DELIVERED
 
         if not bill_to:
             _attach_invoice_price_values(request.POST)
@@ -5222,9 +5228,10 @@ def order_container_commercial_invoice_view(request, container_id: int):
                 for run in paragraph.runs:
                     run.bold = True
 
-        doc.add_paragraph("")
-        p = doc.add_paragraph(terms_blurb)
-        p.runs[0].bold = True
+        if terms_blurb:
+            doc.add_paragraph("")
+            p = doc.add_paragraph(terms_blurb)
+            p.runs[0].bold = True
 
         doc.add_paragraph("Country of origin: The Netherlands")
         doc.add_paragraph("Currency: EUR")
@@ -5967,6 +5974,348 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
