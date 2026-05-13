@@ -82,6 +82,8 @@ urlpatterns = [
     path("automations/orders/", core_views.order_tracker_view, name="order_tracker"),
     path("automations/orders/archived/", core_views.order_tracker_archived_view, name="order_tracker_archived"),
     path("automations/orders/sync-jsoncargo/", core_views.order_tracker_sync_jsoncargo_view, name="order_tracker_sync_jsoncargo"),
+    path("automations/orders/clear-jsoncargo-updates/", core_views.order_tracker_clear_jsoncargo_updates_view, name="order_tracker_clear_jsoncargo_updates"),
+    path("automations/orders/bulk-update/", core_views.order_tracker_bulk_update_view, name="order_tracker_bulk_update"),
     path(
         "automations/orders/recap.docx",
         core_views.order_tracker_recap_docx_view,
@@ -97,6 +99,11 @@ urlpatterns = [
         "automations/orders/<int:container_id>/commercial-invoice/",
         core_views.order_container_commercial_invoice_view,
         name="order_container_commercial_invoice",
+    ),
+    path(
+        "automations/orders/<int:container_id>/sync-jsoncargo/",
+        core_views.order_container_sync_jsoncargo_view,
+        name="order_container_sync_jsoncargo",
     ),
     
     path(
@@ -194,6 +201,40 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
