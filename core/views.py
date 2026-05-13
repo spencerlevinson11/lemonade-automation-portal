@@ -4594,22 +4594,29 @@ def order_tracker_view(request):
 
     # Split active vs delivered (delivered means status == "Delivered" case-insensitive)
     delivered_q = Q(status__iexact="delivered")
-    delivered_containers = containers.filter(delivered_q)
-    active_containers = containers.exclude(delivered_q)
+    delivered_containers = list(containers.filter(delivered_q))
+    active_containers = list(containers.exclude(delivered_q))
 
-    # Track which containers have pending JSONCargo updates (so we can show a badge in the UI)
+    # Attach latest pending JSONCargo update to each row so the master tracker
+    # can show the API ETA next to the manually maintained ETA.
     try:
         from core.models import OrderContainerTrackingUpdate
 
-        active_ids = list(active_containers.values_list("id", flat=True))
-        pending_container_ids = set(
-            OrderContainerTrackingUpdate.objects.filter(
-                container_id__in=active_ids,
-                status=OrderContainerTrackingUpdate.STATUS_PENDING,
-            ).values_list("container_id", flat=True)
-        )
+        visible_ids = [c.id for c in active_containers] + [c.id for c in delivered_containers]
+        latest_by_container = {}
+        for upd in OrderContainerTrackingUpdate.objects.filter(
+            container_id__in=visible_ids,
+            status=OrderContainerTrackingUpdate.STATUS_PENDING,
+        ).order_by("-created_at", "-id"):
+            latest_by_container.setdefault(upd.container_id, upd)
+
+        pending_container_ids = set(latest_by_container.keys())
+        for c in active_containers + delivered_containers:
+            c.latest_pending_tracking_update = latest_by_container.get(c.id)
     except Exception:
         pending_container_ids = set()
+        for c in active_containers + delivered_containers:
+            c.latest_pending_tracking_update = None
 
     # --- Vessel map data (MyShipTracking) ---
     vessel_points = []
@@ -4815,49 +4822,157 @@ def _fmt_short_date(d: dt.date | None) -> str:
 
 
 @login_required
-
-@login_required
 def order_tracker_sync_jsoncargo_view(request):
-    """Manually sync JSONCargo tracking for all non-delivered orders with a container number.
+    """Launch the same safer JSONCargo sync command the user runs in Render Shell.
 
-    This does NOT auto-apply changes. It creates/updates pending tracking updates
-    (including 'no change' notes) that must be approved per-container.
+    The previous in-request button path could produce a browser 500/timeout even
+    when the Render Shell command worked. This starts the exact management-shell
+    command as a separate process and immediately returns to the tracker; stdout
+    and tracebacks go to Render logs.
     """
     if request.method != "POST":
         return HttpResponseForbidden("POST required")
+
+    import subprocess
+    import sys
 
     api_key = os.getenv("JSONCARGO_API_KEY", "").strip()
     if not api_key:
         messages.error(request, "JSONCARGO_API_KEY is not set on the server.")
         return redirect("order_tracker")
 
-    from core.services.jsoncargo_order_tracker import sync_all_containers
+    command = """import traceback; from core.services.jsoncargo_order_tracker import sync_all_containers; print('Starting JSONCargo sync...');
+try:
+    result = sync_all_containers()
+    print('JSONCargo sync complete:', result)
+except Exception as e:
+    print('JSONCargo sync failed:', type(e).__name__, str(e))
+    traceback.print_exc()"""
+
+    try:
+        subprocess.Popen(
+            [sys.executable, "manage.py", "shell", "-c", command],
+            cwd=str(settings.BASE_DIR),
+            stderr=subprocess.STDOUT,
+        )
+        messages.success(
+            request,
+            "JSONCargo sync started using the same safer Render Shell command. Refresh the tracker after it finishes; details will appear in Render logs.",
+        )
+    except Exception as e:
+        messages.error(request, f"Could not start JSONCargo sync command: {type(e).__name__}: {e}")
+
+    return redirect("order_tracker")
+
+
+@require_POST
+@login_required
+def order_tracker_clear_jsoncargo_updates_view(request):
+    """Clear all pending JSONCargo updates/errors for the current user's visible orders."""
+    from core.models import OrderContainerTrackingUpdate
 
     user = request.user
-
     if user.is_superuser:
-        qs = OrderContainer.objects.all()
+        containers = OrderContainer.objects.filter(is_archived=False)
     else:
         company = get_object_or_404(Company, owner=user)
-        qs = OrderContainer.objects.filter(company=company)
+        containers = OrderContainer.objects.filter(company=company, is_archived=False)
 
-    # Only sync containers that actually have a container number entered.
-    # (Prevents unnecessary API calls + avoids timeouts on blank/placeholder rows.)
-    qs = qs.filter(is_archived=False)
-    qs = qs.exclude(status__iexact="Delivered")
-    qs = qs.exclude(container_number__isnull=True).exclude(container_number__exact="")
-    # Extra safety: exclude strings that are only whitespace.
-    qs = qs.exclude(container_number__regex=r"^\s*$")
+    deleted_count, _details = OrderContainerTrackingUpdate.objects.filter(
+        container__in=containers,
+        status=OrderContainerTrackingUpdate.STATUS_PENDING,
+    ).delete()
 
-    stats = sync_all_containers(api_key=api_key, queryset=qs, limit=500)
+    messages.success(request, f"Cleared {deleted_count} pending JSONCargo update(s).")
+    return redirect(request.META.get("HTTP_REFERER") or "order_tracker")
 
-    messages.success(
-        request,
-        "JSONCargo sync complete: "
-        f"checked {stats['checked']}, created {stats['created']}, updated {stats['updated']}, "
-        f"skipped {stats['skipped']}, errors {stats['errors']}.",
-    )
-    return redirect("order_tracker")
+
+@require_POST
+@login_required
+def order_container_sync_jsoncargo_view(request, container_id: int):
+    """Track one specific container with JSONCargo and create/update its pending update."""
+    import traceback
+    from core.services.jsoncargo_order_tracker import sync_one_container
+
+    user = request.user
+    if user.is_superuser:
+        container = get_object_or_404(OrderContainer, id=container_id)
+    else:
+        company = get_object_or_404(Company, owner=user)
+        container = get_object_or_404(OrderContainer, id=container_id, company=company)
+
+    if getattr(container, "is_archived", False):
+        messages.error(request, "This order is archived. Unarchive it before syncing.")
+        return redirect("order_container_edit", container_id=container.id)
+
+    api_key = os.getenv("JSONCARGO_API_KEY", "").strip()
+    if not api_key:
+        messages.error(request, "JSONCARGO_API_KEY is not set on the server.")
+        return redirect("order_container_edit", container_id=container.id)
+
+    print(f"Starting JSONCargo sync for container {container.container_number}...")
+    try:
+        result, pending = sync_one_container(container, api_key=api_key)
+        print("Single-container JSONCargo sync complete:", result)
+        if pending and getattr(pending, "note", ""):
+            messages.success(request, f"JSONCargo check complete for {container.container_number}: {result}. {pending.note}")
+        else:
+            messages.success(request, f"JSONCargo check complete for {container.container_number}: {result}.")
+    except Exception as e:
+        print("Single-container JSONCargo sync failed:", type(e).__name__, str(e))
+        traceback.print_exc()
+        messages.error(request, f"JSONCargo sync failed for {container.container_number}: {type(e).__name__}: {e}")
+
+    return redirect(request.META.get("HTTP_REFERER") or reverse("order_container_edit", kwargs={"container_id": container.id}))
+
+
+@require_POST
+@login_required
+def order_tracker_bulk_update_view(request):
+    """Save manual ETA edits made directly on the master Order Tracker screen."""
+    user = request.user
+    if user.is_superuser:
+        containers = OrderContainer.objects.filter(is_archived=False).exclude(status__iexact="Delivered")
+    else:
+        company = get_object_or_404(Company, owner=user)
+        containers = OrderContainer.objects.filter(company=company, is_archived=False).exclude(status__iexact="Delivered")
+
+    ids = request.POST.getlist("container_ids")
+    if ids:
+        containers = containers.filter(id__in=ids)
+
+    changed_count = 0
+    error_count = 0
+
+    for c in containers:
+        raw_eta = (request.POST.get(f"eta_{c.id}") or "").strip()
+        raw_city = (request.POST.get(f"eta_city_{c.id}") or "").strip()
+
+        try:
+            new_eta = datetime.datetime.strptime(raw_eta, "%Y-%m-%d").date() if raw_eta else None
+        except ValueError:
+            error_count += 1
+            continue
+
+        fields = []
+        if c.eta != new_eta:
+            c.eta = new_eta
+            fields.append("eta")
+        if (c.eta_city or "") != raw_city:
+            c.eta_city = raw_city
+            fields.append("eta_city")
+
+        if fields:
+            fields.append("updated_at")
+            c.save(update_fields=fields)
+            changed_count += 1
+
+    if error_count:
+        messages.error(request, f"Saved {changed_count} ETA edit(s). {error_count} row(s) had invalid date format; use YYYY-MM-DD.")
+    else:
+        messages.success(request, f"Saved {changed_count} ETA edit(s).")
+
+    return redirect(request.META.get("HTTP_REFERER") or "order_tracker")
 
 def order_tracker_recap_docx_view(request):
     """Download an Order Recap DOCX for all (filtered) containers.
@@ -5996,6 +6111,213 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
