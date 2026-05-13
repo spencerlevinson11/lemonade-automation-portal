@@ -5022,6 +5022,244 @@ def order_tracker_recap_docx_view(request):
 
 
 @login_required
+@require_http_methods(["GET", "POST"])
+def order_container_commercial_invoice_view(request, container_id: int):
+    """Build a commercial invoice for one order container.
+
+    The invoice uses the order's PO#, loading date, and packing lines. The user
+    enters the bill-to address, Euro pricing for each line, and chooses the
+    commercial terms blurb before downloading a DOCX invoice.
+    """
+    user = request.user
+    if user.is_superuser:
+        container = get_object_or_404(OrderContainer.objects.prefetch_related("lines"), pk=container_id)
+        company = container.company
+    else:
+        company = get_object_or_404(Company, owner=user)
+        container = get_object_or_404(
+            OrderContainer.objects.prefetch_related("lines"),
+            pk=container_id,
+            company=company,
+        )
+
+    lines = list(container.lines.all())
+
+    def _attach_invoice_price_values(post_data=None):
+        post_data = post_data or {}
+        for ln in lines:
+            try:
+                ln.invoice_price = post_data.get(f"price_{ln.id}", "")
+            except Exception:
+                ln.invoice_price = ""
+
+    _attach_invoice_price_values()
+
+    if not lines:
+        messages.error(request, "Add at least one packing line before creating a commercial invoice.")
+        return redirect("order_container_edit", container_id=container.id)
+
+    BLURB_DELIVERED = "Delivered prices. The sales conditions of Retriever Packaging Company LLC are applicable."
+    BLURB_EXW = "EXW Waalwijk. Sales conditions of Retriever Packaging Company LLC are applicable."
+    blurb_choices = [
+        ("delivered", BLURB_DELIVERED),
+        ("exw", BLURB_EXW),
+    ]
+
+    if request.method == "POST":
+        bill_to = (request.POST.get("bill_to") or "").strip()
+        invoice_number = (request.POST.get("invoice_number") or "").strip()
+        selected_blurb_key = (request.POST.get("terms_blurb") or "delivered").strip()
+        terms_blurb = BLURB_EXW if selected_blurb_key == "exw" else BLURB_DELIVERED
+
+        if not bill_to:
+            _attach_invoice_price_values(request.POST)
+            messages.error(request, "Please enter a bill-to address.")
+            return render(
+                request,
+                "core/commercial_invoice_form.html",
+                {
+                    "automation_name": "Commercial Invoice",
+                    "company": company,
+                    "container": container,
+                    "lines": lines,
+                    "blurb_choices": blurb_choices,
+                    "selected_blurb": selected_blurb_key,
+                    "bill_to": bill_to,
+                    "invoice_number": invoice_number,
+                    "posted_prices": request.POST,
+                },
+            )
+
+        priced_lines = []
+        errors = []
+        grand_total = Decimal("0.00")
+        for line in lines:
+            raw_price = (request.POST.get(f"price_{line.id}") or "").strip().replace(",", ".")
+            try:
+                unit_price = Decimal(raw_price).quantize(Decimal("0.0001"))
+                if unit_price < 0:
+                    raise InvalidOperation()
+            except Exception:
+                errors.append(f"Enter a valid Euro price for {line.item_description}.")
+                unit_price = Decimal("0.0000")
+
+            pallets = int(line.pallets or 0)
+            units_per_pallet = int(line.units_per_pallet or 0)
+            total_units = int(line.total_units or (pallets * units_per_pallet))
+            amount = (Decimal(total_units) * unit_price).quantize(Decimal("0.01"))
+            grand_total += amount
+            priced_lines.append(
+                {
+                    "line": line,
+                    "pallets": pallets,
+                    "units_per_pallet": units_per_pallet,
+                    "total_units": total_units,
+                    "unit_price": unit_price,
+                    "amount": amount,
+                }
+            )
+
+        if errors:
+            _attach_invoice_price_values(request.POST)
+            for err in errors:
+                messages.error(request, err)
+            return render(
+                request,
+                "core/commercial_invoice_form.html",
+                {
+                    "automation_name": "Commercial Invoice",
+                    "company": company,
+                    "container": container,
+                    "lines": lines,
+                    "blurb_choices": blurb_choices,
+                    "selected_blurb": selected_blurb_key,
+                    "bill_to": bill_to,
+                    "invoice_number": invoice_number,
+                    "posted_prices": request.POST,
+                },
+            )
+
+        doc = Document()
+        style = doc.styles["Normal"]
+        style.font.name = "Calibri"
+        style.font.size = Pt(10)
+
+        def add_label_value(paragraph, label: str, value: str):
+            r = paragraph.add_run(label)
+            r.bold = True
+            paragraph.add_run(value)
+
+        title = doc.add_paragraph()
+        title.alignment = 1  # centered
+        run = title.add_run("COMMERCIAL INVOICE")
+        run.bold = True
+        run.font.size = Pt(16)
+
+        header = doc.add_table(rows=1, cols=2)
+        header.style = "Table Grid"
+        left = header.cell(0, 0)
+        right = header.cell(0, 1)
+        p_left = left.paragraphs[0]
+        add_label_value(p_left, "Shipper:\n", "Naber Plastics BV\nVan Hilststraat 12\n5145 RL Waalwijk\nThe Netherlands")
+        p_right = right.paragraphs[0]
+        invoice_date = container.loading_date or timezone.localdate()
+        add_label_value(p_right, "Invoice date: ", _fmt_short_date(invoice_date))
+        p = right.add_paragraph()
+        add_label_value(p, "PO#: ", (container.po_number or "TBD"))
+        p = right.add_paragraph()
+        add_label_value(p, "RPC#: ", (container.rpc_number or "TBD"))
+        if invoice_number:
+            p = right.add_paragraph()
+            add_label_value(p, "Invoice #: ", invoice_number)
+        if container.container_number:
+            p = right.add_paragraph()
+            add_label_value(p, "Container #: ", container.container_number)
+
+        doc.add_paragraph("")
+        addr = doc.add_table(rows=1, cols=2)
+        addr.style = "Table Grid"
+        bill_cell = addr.cell(0, 0)
+        ship_cell = addr.cell(0, 1)
+        add_label_value(bill_cell.paragraphs[0], "Bill To:\n", bill_to)
+        ship_to_parts = [container.customer_name]
+        if container.location_name:
+            ship_to_parts.append(container.location_name)
+        add_label_value(ship_cell.paragraphs[0], "Order / Destination:\n", "\n".join(ship_to_parts))
+
+        p = doc.add_paragraph()
+        add_label_value(p, "Ship via: ", "sea container")
+        p = doc.add_paragraph()
+        add_label_value(p, "Loading date: ", _fmt_short_date(container.loading_date))
+
+        table = doc.add_table(rows=1, cols=6)
+        table.style = "Table Grid"
+        hdr = table.rows[0].cells
+        headings = ["Description", "Packing", "Pallets", "Quantity", "Unit price EUR", "Amount EUR"]
+        for idx, heading in enumerate(headings):
+            hdr[idx].text = heading
+            for run in hdr[idx].paragraphs[0].runs:
+                run.bold = True
+
+        for item in priced_lines:
+            line = item["line"]
+            row = table.add_row().cells
+            row[0].text = line.item_description or ""
+            row[1].text = f'{item["pallets"]} x {item["units_per_pallet"]} pieces/pallet'
+            row[2].text = f'{item["pallets"]:,}'
+            row[3].text = f'{item["total_units"]:,}'
+            row[4].text = f'€ {item["unit_price"]:,.4f}'
+            row[5].text = f'€ {item["amount"]:,.2f}'
+
+        total_row = table.add_row().cells
+        total_row[0].text = "Total"
+        total_row[1].text = ""
+        total_row[2].text = ""
+        total_row[3].text = f'{sum(i["total_units"] for i in priced_lines):,}'
+        total_row[4].text = ""
+        total_row[5].text = f'€ {grand_total:,.2f}'
+        for cell in total_row:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.bold = True
+
+        doc.add_paragraph("")
+        p = doc.add_paragraph(terms_blurb)
+        p.runs[0].bold = True
+
+        doc.add_paragraph("Country of origin: The Netherlands")
+        doc.add_paragraph("Currency: EUR")
+
+        buf = BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+
+        safe_po = re.sub(r"[^A-Za-z0-9_-]+", "_", (container.po_number or f"order_{container.id}")).strip("_")
+        filename = f"commercial_invoice_{safe_po}.docx"
+        return FileResponse(
+            buf,
+            as_attachment=True,
+            filename=filename,
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+    return render(
+        request,
+        "core/commercial_invoice_form.html",
+        {
+            "automation_name": "Commercial Invoice",
+            "company": company,
+            "container": container,
+            "lines": lines,
+            "blurb_choices": blurb_choices,
+            "selected_blurb": "delivered",
+            "bill_to": "",
+            "invoice_number": "",
+            "posted_prices": {},
+        },
+    )
+
+
+@login_required
 @require_http_methods(["POST"])
 def order_container_toggle_delivered_view(request, container_id: int):
     """Toggle an OrderContainer between Delivered and Active."""
@@ -5729,6 +5967,12 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
 
 
 
