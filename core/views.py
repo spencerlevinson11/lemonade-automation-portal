@@ -4597,26 +4597,39 @@ def order_tracker_view(request):
     delivered_containers = list(containers.filter(delivered_q))
     active_containers = list(containers.exclude(delivered_q))
 
-    # Attach latest pending JSONCargo update to each row so the master tracker
-    # can show the API ETA next to the manually maintained ETA.
+    # Attach JSONCargo updates to each row so the master tracker can show the
+    # latest API ETA next to the manually maintained ETA. We keep both values:
+    # - latest_pending_tracking_update: actionable pending change/error
+    # - latest_tracking_update: most recent JSONCargo result, even after approval
+    # This prevents the API ETA column from disappearing after you acknowledge
+    # an update.
     try:
         from core.models import OrderContainerTrackingUpdate
 
         visible_ids = [c.id for c in active_containers] + [c.id for c in delivered_containers]
-        latest_by_container = {}
+
+        latest_pending_by_container = {}
         for upd in OrderContainerTrackingUpdate.objects.filter(
             container_id__in=visible_ids,
             status=OrderContainerTrackingUpdate.STATUS_PENDING,
         ).order_by("-created_at", "-id"):
-            latest_by_container.setdefault(upd.container_id, upd)
+            latest_pending_by_container.setdefault(upd.container_id, upd)
 
-        pending_container_ids = set(latest_by_container.keys())
+        latest_any_by_container = {}
+        for upd in OrderContainerTrackingUpdate.objects.filter(
+            container_id__in=visible_ids,
+        ).order_by("-created_at", "-id"):
+            latest_any_by_container.setdefault(upd.container_id, upd)
+
+        pending_container_ids = set(latest_pending_by_container.keys())
         for c in active_containers + delivered_containers:
-            c.latest_pending_tracking_update = latest_by_container.get(c.id)
+            c.latest_pending_tracking_update = latest_pending_by_container.get(c.id)
+            c.latest_tracking_update = latest_any_by_container.get(c.id)
     except Exception:
         pending_container_ids = set()
         for c in active_containers + delivered_containers:
             c.latest_pending_tracking_update = None
+            c.latest_tracking_update = None
 
     # --- Vessel map data (MyShipTracking) ---
     vessel_points = []
@@ -4880,10 +4893,9 @@ def order_tracker_clear_jsoncargo_updates_view(request):
 
     deleted_count, _details = OrderContainerTrackingUpdate.objects.filter(
         container__in=containers,
-        status=OrderContainerTrackingUpdate.STATUS_PENDING,
     ).delete()
 
-    messages.success(request, f"Cleared {deleted_count} pending JSONCargo update(s).")
+    messages.success(request, f"Cleared {deleted_count} JSONCargo update record(s).")
     return redirect(request.META.get("HTTP_REFERER") or "order_tracker")
 
 
@@ -6111,204 +6123,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
