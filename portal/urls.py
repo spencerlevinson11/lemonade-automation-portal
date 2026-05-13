@@ -93,6 +93,11 @@ urlpatterns = [
         core_views.order_container_edit_view,
         name="order_container_edit",
     ),
+    path(
+        "automations/orders/<int:container_id>/commercial-invoice/",
+        core_views.order_container_commercial_invoice_view,
+        name="order_container_commercial_invoice",
+    ),
     
     path(
         "automations/orders/<int:container_id>/delete/",
@@ -189,6 +194,64 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
