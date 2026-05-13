@@ -443,6 +443,7 @@
               <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
               <td>
+                <a class="btn" href="{% url 'order_container_commercial_invoice' c.id %}" style="margin-bottom:8px;">Invoice</a>
                 <form method="post" action="{% url 'order_container_toggle_delivered' c.id %}" style="display:inline;">
                   {% csrf_token %}
                   <button class="btn" type="submit" onclick="return confirm('Mark this order as Delivered?');">Mark delivered</button>
@@ -539,6 +540,7 @@
                 <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
                 <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
                 <td>
+                  <a class="btn" href="{% url 'order_container_commercial_invoice' c.id %}" style="margin-bottom:8px;">Invoice</a>
                   <form method="post" action="{% url 'order_container_toggle_delivered' c.id %}" style="display:inline;">
                     {% csrf_token %}
                     <button class="btn" type="submit" onclick="return confirm('Move this order back to Active?');">Reopen</button>
@@ -613,6 +615,29 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
