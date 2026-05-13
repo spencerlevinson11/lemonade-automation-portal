@@ -100,6 +100,57 @@ def normalize_city(raw: str | None) -> str:
     return s
 
 
+
+
+# Some carriers return better JSONCargo results when looked up by booking/BOL instead of
+# container number. Keep this small and explicit so it does not affect other carriers.
+JSONCARGO_BOOKING_REFERENCE_SHIPPING_LINES = {"0014"}  # Evergreen
+
+
+def tracking_reference_for_jsoncargo(container: OrderContainer) -> str:
+    """Return the best tracking reference to send to JSONCargo for this order.
+
+    Evergreen tracking is more complete when queried by booking number, so for
+    Evergreen rows we prefer booking_number when present. All other carriers use
+    the container number exactly as before.
+    """
+    sid = (getattr(container, "shipping_line_id", "") or "").strip()
+    if sid in JSONCARGO_BOOKING_REFERENCE_SHIPPING_LINES:
+        booking = (getattr(container, "booking_number", "") or "").strip()
+        if booking:
+            return booking
+    return (getattr(container, "container_number", "") or "").strip()
+
+
+def _extract_eta(data: Dict[str, Any]) -> dt.date | None:
+    """Extract the most useful ETA from JSONCargo's possible ETA fields."""
+    return _parse_date(
+        data.get("eta_final_destination")
+        or data.get("eta_next_destination")
+        or data.get("eta_destination")
+        or data.get("eta")
+        or data.get("eta_delivery")
+        or data.get("eta_discharge")
+    )
+
+
+def _extract_city(data: Dict[str, Any]) -> str:
+    """Extract a useful destination/next-destination city from JSONCargo."""
+    raw_city = (
+        data.get("final_destination")
+        or data.get("final_destination_port")
+        or data.get("final_destination_city")
+        or data.get("destination")
+        or data.get("delivery_to")
+        or data.get("delivered_to")
+        or data.get("consignee_city")
+        or data.get("shipped_to")
+        or data.get("next_location")
+        or data.get("discharging_port")
+        or ""
+    )
+    return normalize_city(str(raw_city).strip())
+
 def sync_all_containers(
     *,
     api_key: str | None = None,
@@ -181,8 +232,9 @@ def sync_one_container(
         - 'error'
     """
     shipping_line = container.jsoncargo_shipping_line_param()
+    tracking_reference = tracking_reference_for_jsoncargo(container)
     tracking, err = fetch_container_tracking(
-        container_number=container.container_number,
+        container_number=tracking_reference,
         api_key=api_key,
         shipping_line=shipping_line,
     )
@@ -190,11 +242,15 @@ def sync_one_container(
         # Create a pending "error" note so the user sees that tracking did not run.
         # Common cause: container prefix requires shipping_line but it was missing/wrong.
         msg = f"JSONCargo error ({err.status_code}): {err.message}"
+        if tracking_reference and tracking_reference != (container.container_number or "").strip():
+            msg += f". Tracking reference used: {tracking_reference}."
         if err.status_code == 404:
             if shipping_line:
                 msg += f". Not found under shipping line '{shipping_line}'."
             else:
                 msg += ". Try setting a Carrier (shipping line) for this container and re-sync."
+        if (container.shipping_line_id or "").strip() == "0014" and not (container.booking_number or "").strip():
+            msg += " Evergreen rows should have a booking number entered for best JSONCargo results."
 
         pending = (
             OrderContainerTrackingUpdate.objects.filter(
@@ -242,33 +298,15 @@ def sync_one_container(
         container.shipping_line_id = resp_line_id
         container.save(update_fields=["shipping_line_id", "updated_at"])
 
-    # Prefer ETA to final destination when present; fall back to other common ETA fields.
-    proposed_eta = _parse_date(
-        data.get("eta_final_destination")
-        or data.get("eta_destination")
-        or data.get("eta")
-        or data.get("eta_delivery")
-        or data.get("eta_discharge")
-    )
-    # Prefer discharging_port (usually clean). Fall back to shipped_to if needed.
-    # Choose a *destination* label for display.
-    # JSONCargo sometimes returns a discharge/transshipment port (e.g., Antwerpen) even when the
-    # final delivery city/terminal is elsewhere. We try several destination-like fields first,
-    # and only fall back to discharge/shipped_to if nothing better exists.
-    raw_city = (
-        data.get("final_destination")
-        or data.get("final_destination_port")
-        or data.get("final_destination_city")
-        or data.get("destination")
-        or data.get("delivery_to")
-        or data.get("delivered_to")
-        or data.get("consignee_city")
-        or data.get("shipped_to")
-        or data.get("discharging_port")
-        or ""
-    )
-    raw_city = str(raw_city).strip()
-    proposed_city = normalize_city(raw_city)
+    # Prefer ETA to final destination when present; fall back to next destination
+    # and other common ETA fields. This fixes cases where the diagnostic payload
+    # has an ETA but the app was only reading a different JSONCargo field.
+    proposed_eta = _extract_eta(data)
+
+    # Choose a destination label for display. JSONCargo sometimes returns a
+    # discharge/transshipment port when the final delivery city is blank, so we
+    # try final-destination fields first, then next_location, then discharge.
+    proposed_city = _extract_city(data)
     source_last_updated = _parse_dt(data.get("last_updated"))
 
     if proposed_eta is None and not proposed_city:
@@ -353,6 +391,9 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
+
 
 
 
