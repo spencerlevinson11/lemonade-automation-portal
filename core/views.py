@@ -55,6 +55,8 @@ from .forms import (
     OrderContainerLineForm,
     OrderContainerDocumentForm,
     OrderContainerTagForm,
+    IndustryRelationshipNodeForm,
+    IndustryRelationshipEdgeForm,
 )
 from .models import (
     Automation,
@@ -72,6 +74,8 @@ from .models import (
     OrderContainerTag,
     GardenMap,
     PlantProfile,
+    IndustryRelationshipNode,
+    IndustryRelationshipEdge,
 )
 
 from .rpc_generation import PER_PALLET, generate_rpc_from_form
@@ -3246,6 +3250,15 @@ def run_automation(request, pk):
     if "order tracker" in name_normalized or "container tracker" in name_normalized or "order tracking" in name_normalized:
         return redirect("order_tracker")
 
+    # --- Branch: Industry Relationship Web ---
+    if (
+        "relationship web" in name_normalized
+        or "industry relationship" in name_normalized
+        or "company map" in name_normalized
+        or "relationship map" in name_normalized
+    ):
+        return redirect("industry_relationship_web")
+
  # --- Branch: Permaculture Garden Planner ---
     if "permaculture" in name_normalized or "garden" in name_normalized or "backyard" in name_normalized:
         return redirect("permaculture_map")
@@ -3271,6 +3284,212 @@ def run_automation(request, pk):
 
     return render(request, "core/run_bol.html", {"automation": automation, "form": form})
 
+
+
+# -----------------------------
+# Industry Relationship Web
+# -----------------------------
+
+_INDUSTRY_RELATIONSHIP_SEED = {
+    "nodes": [
+        {"name": "Oboya LLC", "kind": "backer", "notes": "Based in China."},
+        {"name": "A-Roo", "kind": "company", "notes": "Backed by Oboya LLC."},
+        {"name": "Oboya USA", "kind": "company", "notes": "Backed by Oboya LLC."},
+        {"name": "Bamaplast", "kind": "supplier", "notes": "Supplier in the mapped industry web."},
+        {"name": "Passion Growers", "kind": "customer", "notes": "Buys from Bamaplast."},
+        {"name": "Imported Papers", "kind": "customer", "notes": "Formerly PCA."},
+        {"name": "Van Tuijl", "kind": "supplier", "notes": "Supplier to Imported Papers."},
+        {"name": "Plastipak", "kind": "supplier", "notes": "Supplier to Plastirex."},
+        {"name": "Plastirex", "kind": "customer", "notes": "Buys from Plastipak."},
+        {"name": "Naber Plastics BV", "kind": "supplier", "notes": "Supplier to Retriever Packaging and Decowraps."},
+        {"name": "Retriever Packaging", "kind": "customer", "notes": "Buys from Naber Plastics BV."},
+        {"name": "Decowraps", "kind": "customer", "notes": "Buys from Naber Plastics BV."},
+        {"name": "EB Products & Polymers", "kind": "supplier", "notes": "Owned by Naber Plastics."},
+        {"name": "Koen Pack USA", "kind": "customer", "notes": "Supplied by EB Products & Polymers."},
+        {"name": "Broekhof USA", "kind": "customer", "notes": "Supplied by EB Products & Polymers."},
+        {"name": "Modiform BV", "kind": "supplier", "notes": "Supplies A-Roo."},
+        {"name": "Lolaar", "kind": "supplier", "notes": "Former supplier to Imported Papers."},
+    ],
+    "edges": [
+        ("Oboya LLC", "A-Roo", "backs", False),
+        ("Oboya LLC", "Oboya USA", "backs", False),
+        ("Bamaplast", "Passion Growers", "supplies", False),
+        ("Bamaplast", "Imported Papers", "supplies", False),
+        ("Van Tuijl", "Imported Papers", "supplies", False),
+        ("Plastipak", "Plastirex", "supplies", False),
+        ("Naber Plastics BV", "Retriever Packaging", "supplies", False),
+        ("Naber Plastics BV", "Decowraps", "supplies", False),
+        ("Naber Plastics BV", "EB Products & Polymers", "owns", False),
+        ("EB Products & Polymers", "Koen Pack USA", "supplies", False),
+        ("EB Products & Polymers", "Broekhof USA", "supplies", False),
+        ("Modiform BV", "A-Roo", "supplies", False),
+        ("Lolaar", "Imported Papers", "former supplier", True),
+    ],
+}
+
+
+def _get_user_company_or_403(request):
+    if request.user.is_superuser:
+        company = Company.objects.filter(name__icontains="Retriever").order_by("id").first() or Company.objects.order_by("id").first()
+    else:
+        company = Company.objects.filter(owner=request.user).order_by("id").first()
+    if not company:
+        return None
+    if not (request.user.is_superuser or company.owner_id == request.user.id):
+        return None
+    return company
+
+
+def _seed_industry_relationship_web(company):
+    if IndustryRelationshipNode.objects.filter(company=company).exists():
+        return
+    created = {}
+    with transaction.atomic():
+        for index, item in enumerate(_INDUSTRY_RELATIONSHIP_SEED["nodes"]):
+            node, _ = IndustryRelationshipNode.objects.get_or_create(
+                company=company,
+                name=item["name"],
+                defaults={
+                    "kind": item.get("kind", "company"),
+                    "notes": item.get("notes", ""),
+                    "x": 160 + (index % 5) * 190,
+                    "y": 110 + (index // 5) * 150,
+                },
+            )
+            created[node.name] = node
+        for source_name, target_name, label, is_former in _INDUSTRY_RELATIONSHIP_SEED["edges"]:
+            source = created.get(source_name) or IndustryRelationshipNode.objects.get(company=company, name=source_name)
+            target = created.get(target_name) or IndustryRelationshipNode.objects.get(company=company, name=target_name)
+            IndustryRelationshipEdge.objects.get_or_create(
+                company=company,
+                source=source,
+                target=target,
+                label=label,
+                defaults={"is_former": is_former},
+            )
+
+
+@login_required
+def industry_relationship_web_view(request):
+    company = _get_user_company_or_403(request)
+    if not company:
+        return HttpResponseForbidden("No company is linked to your account yet.")
+
+    _seed_industry_relationship_web(company)
+
+    if request.method == "POST":
+        action = request.POST.get("action", "")
+        if action == "add_node":
+            form = IndustryRelationshipNodeForm(request.POST)
+            if form.is_valid():
+                node = form.save(commit=False)
+                node.company = company
+                node.save()
+                messages.success(request, f"Added node: {node.name}")
+            else:
+                messages.error(request, "Could not add the node. Check for duplicates or missing fields.")
+        elif action == "add_edge":
+            form = IndustryRelationshipEdgeForm(request.POST, company=company)
+            if form.is_valid():
+                edge = form.save(commit=False)
+                edge.company = company
+                edge.save()
+                messages.success(request, "Added relationship.")
+            else:
+                messages.error(request, "Could not add the relationship. Make sure both nodes are selected and are different.")
+        elif action == "delete_node":
+            node = get_object_or_404(IndustryRelationshipNode, pk=request.POST.get("node_id"), company=company)
+            node_name = node.name
+            node.delete()
+            messages.success(request, f"Deleted node and its relationships: {node_name}")
+        elif action == "delete_edge":
+            edge = get_object_or_404(IndustryRelationshipEdge, pk=request.POST.get("edge_id"), company=company)
+            edge.delete()
+            messages.success(request, "Deleted relationship.")
+        elif action == "reset_seed":
+            IndustryRelationshipEdge.objects.filter(company=company).delete()
+            IndustryRelationshipNode.objects.filter(company=company).delete()
+            _seed_industry_relationship_web(company)
+            messages.success(request, "Relationship web reset to the seeded map from your PDF.")
+        return redirect("industry_relationship_web")
+
+    nodes = list(IndustryRelationshipNode.objects.filter(company=company).order_by("name"))
+    edges = list(
+        IndustryRelationshipEdge.objects.filter(company=company)
+        .select_related("source", "target")
+        .order_by("source__name", "target__name")
+    )
+
+    node_form = IndustryRelationshipNodeForm()
+    edge_form = IndustryRelationshipEdgeForm(company=company)
+
+    graph_nodes = [
+        {
+            "id": node.id,
+            "name": node.name,
+            "kind": node.kind,
+            "notes": node.notes,
+            "x": node.x,
+            "y": node.y,
+        }
+        for node in nodes
+    ]
+    graph_edges = [
+        {
+            "id": edge.id,
+            "source": edge.source_id,
+            "target": edge.target_id,
+            "label": edge.label,
+            "is_former": edge.is_former,
+            "notes": edge.notes,
+        }
+        for edge in edges
+    ]
+
+    return render(
+        request,
+        "core/industry_relationship_web.html",
+        {
+            "company": company,
+            "nodes": nodes,
+            "edges": edges,
+            "node_form": node_form,
+            "edge_form": edge_form,
+            "graph_json": json.dumps({"nodes": graph_nodes, "edges": graph_edges}),
+            "portal_theme": get_portal_theme(user=request.user, company=company),
+        },
+    )
+
+
+@login_required
+@require_POST
+def industry_relationship_positions_save_view(request):
+    company = _get_user_company_or_403(request)
+    if not company:
+        return JsonResponse({"ok": False, "error": "Not authorized"}, status=403)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        positions = payload.get("positions", [])
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
+
+    nodes = {n.id: n for n in IndustryRelationshipNode.objects.filter(company=company)}
+    updated = 0
+    for item in positions:
+        try:
+            node_id = int(item.get("id"))
+            x = float(item.get("x"))
+            y = float(item.get("y"))
+        except (TypeError, ValueError):
+            continue
+        node = nodes.get(node_id)
+        if not node:
+            continue
+        node.x = x
+        node.y = y
+        node.save(update_fields=["x", "y", "updated_at"])
+        updated += 1
+    return JsonResponse({"ok": True, "updated": updated})
 
 
 # --- Permaculture: Excel diagram seeding ---
@@ -6123,6 +6342,21 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
