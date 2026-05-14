@@ -155,17 +155,7 @@
 
         <!-- Order recap export (DOCX) -->
         <a class="btn" href="{% url 'order_tracker_recap_docx' %}?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}">Download order recap</a>
-      
-        <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" style="display:inline;">
-          {% csrf_token %}
-          <input type="hidden" name="sync_scope" value="all" />
-          <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for all active containers?');">Sync all JSONCargo updates</button>
-        </form>
 
-        <form method="post" action="{% url 'order_tracker_clear_jsoncargo_updates' %}" style="display:inline;">
-          {% csrf_token %}
-          <button class="btn btn-danger" type="submit" onclick="return confirm('Clear all pending JSONCargo updates/errors from the tracker?');">Clear JSONCargo updates</button>
-        </form>
 
         <a class="btn" href="{% url 'order_tracker_archived' %}">Archived orders</a>
 </div>
@@ -223,7 +213,7 @@
           <input type="hidden" name="sync_scope" value="customer_city" />
           <label>Sync by customer/city</label>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <input type="text" name="customer" placeholder="Customer, e.g. Koen Pack" style="min-width:190px; flex:1;" />
+            <input type="text" name="customer" placeholder="Customer, e.g. customer name" style="min-width:190px; flex:1;" />
             <input type="text" name="city" placeholder="City, e.g. Bensenville" style="min-width:170px; flex:1;" />
             <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for orders matching the typed customer/city filters?');">Sync customer/city</button>
           </div>
@@ -708,6 +698,9 @@
   </script>
 </body>
 </html>
+
+
+
 
 
 
