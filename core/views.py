@@ -4816,6 +4816,31 @@ def order_tracker_view(request):
     delivered_containers = list(containers.filter(delivered_q))
     active_containers = list(containers.exclude(delivered_q))
 
+    # JSONCargo targeted sync options. These are built from the same visible,
+    # non-archived tracker rows so the dropdowns match what the user can see.
+    jsoncargo_owner_options = [
+        owner
+        for owner in sorted({(c.assigned_to or "").strip() for c in active_containers}, key=lambda x: x.lower())
+        if owner
+    ]
+    # Keep Spencer/Jaime visible even if one of them currently has no active containers.
+    for default_owner in ["Spencer", "Jaime"]:
+        if default_owner not in jsoncargo_owner_options:
+            jsoncargo_owner_options.append(default_owner)
+
+    seen_customer_city = set()
+    jsoncargo_customer_city_options = []
+    for c in sorted(active_containers, key=lambda row: ((row.customer_name or "").lower(), (row.location_name or "").lower())):
+        customer = (c.customer_name or "").strip()
+        city = (c.location_name or "").strip()
+        if not customer:
+            continue
+        key = (customer.lower(), city.lower())
+        if key in seen_customer_city:
+            continue
+        seen_customer_city.add(key)
+        jsoncargo_customer_city_options.append({"customer": customer, "city": city})
+
     # Attach JSONCargo updates to each row so the master tracker can show the
     # latest API ETA next to the manually maintained ETA. We keep both values:
     # - latest_pending_tracking_update: actionable pending change/error
@@ -4912,6 +4937,8 @@ def order_tracker_view(request):
             "vessel_points_json": json.dumps(vessel_points),
             "vessel_map_error": vessel_map_error,
             "pending_container_ids": pending_container_ids,
+            "jsoncargo_owner_options": jsoncargo_owner_options,
+            "jsoncargo_customer_city_options": jsoncargo_customer_city_options,
         },
     )
 
@@ -5055,16 +5082,15 @@ def _fmt_short_date(d: dt.date | None) -> str:
 
 @login_required
 def order_tracker_sync_jsoncargo_view(request):
-    """Launch the same safer JSONCargo sync command the user runs in Render Shell.
+    """Launch JSONCargo sync for all active orders, an owner, or one customer/city.
 
-    The previous in-request button path could produce a browser 500/timeout even
-    when the Render Shell command worked. This starts the exact management-shell
-    command as a separate process and immediately returns to the tracker; stdout
-    and tracebacks go to Render logs.
+    This still uses the safer Render Shell subprocess pattern, but now it can
+    limit the queryset before calling sync_all_containers().
     """
     if request.method != "POST":
         return HttpResponseForbidden("POST required")
 
+    import json as _json
     import subprocess
     import sys
 
@@ -5073,13 +5099,74 @@ def order_tracker_sync_jsoncargo_view(request):
         messages.error(request, "JSONCARGO_API_KEY is not set on the server.")
         return redirect("order_tracker")
 
-    command = """import traceback; from core.services.jsoncargo_order_tracker import sync_all_containers; print('Starting JSONCargo sync...');
+    user = request.user
+    company_id = None
+    if not user.is_superuser:
+        company = get_object_or_404(Company, owner=user)
+        company_id = company.id
+
+    sync_scope = (request.POST.get("sync_scope") or "all").strip().lower()
+    owner = ""
+    customer = ""
+    city = ""
+
+    if sync_scope == "owner":
+        owner = (request.POST.get("owner") or "").strip()
+        if not owner:
+            messages.error(request, "Choose an owner before syncing by owner.")
+            return redirect("order_tracker")
+        label = f"owner {owner}"
+    elif sync_scope == "customer_city":
+        customer_city = (request.POST.get("customer_city") or "").strip()
+        if not customer_city:
+            messages.error(request, "Choose a customer/city before syncing by customer/city.")
+            return redirect("order_tracker")
+        if "||" in customer_city:
+            customer, city = customer_city.split("||", 1)
+        else:
+            customer = customer_city
+            city = ""
+        customer = customer.strip()
+        city = city.strip()
+        if not customer:
+            messages.error(request, "Choose a valid customer/city before syncing.")
+            return redirect("order_tracker")
+        label = f"{customer} / {city or 'all cities'}"
+    else:
+        sync_scope = "all"
+        label = "all active containers"
+
+    command = f"""
+import traceback
+from core.models import OrderContainer
+from core.services.jsoncargo_order_tracker import sync_all_containers
+
+company_id = {company_id!r}
+sync_scope = {_json.dumps(sync_scope)}
+owner = {_json.dumps(owner)}
+customer = {_json.dumps(customer)}
+city = {_json.dumps(city)}
+label = {_json.dumps(label)}
+
+print(f'Starting JSONCargo sync for {{label}}...')
 try:
-    result = sync_all_containers()
+    qs = OrderContainer.objects.all()
+    if company_id is not None:
+        qs = qs.filter(company_id=company_id)
+    if sync_scope == 'owner' and owner:
+        qs = qs.filter(assigned_to__iexact=owner)
+    elif sync_scope == 'customer_city' and customer:
+        qs = qs.filter(customer_name__iexact=customer)
+        if city:
+            qs = qs.filter(location_name__iexact=city)
+        else:
+            qs = qs.filter(location_name__exact='')
+    result = sync_all_containers(queryset=qs)
     print('JSONCargo sync complete:', result)
 except Exception as e:
     print('JSONCargo sync failed:', type(e).__name__, str(e))
-    traceback.print_exc()"""
+    traceback.print_exc()
+"""
 
     try:
         subprocess.Popen(
@@ -5089,7 +5176,7 @@ except Exception as e:
         )
         messages.success(
             request,
-            "JSONCargo sync started using the same safer Render Shell command. Refresh the tracker after it finishes; details will appear in Render logs.",
+            f"JSONCargo sync started for {label}. Refresh the tracker after it finishes; details will appear in Render logs.",
         )
     except Exception as e:
         messages.error(request, f"Could not start JSONCargo sync command: {type(e).__name__}: {e}")
@@ -6342,6 +6429,16 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
 
 
 
