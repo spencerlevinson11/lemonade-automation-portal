@@ -15,6 +15,8 @@ from .models import (
     OrderContainerImportFile,
     OrderContainerTrackingUpdate,
     ScheduleActivity,
+    IndustryRelationshipNode,
+    IndustryRelationshipEdge,
 )
 
 
@@ -188,10 +190,25 @@ class ScheduleActivityAdmin(admin.ModelAdmin):
     ordering = ("-date", "start_time", "-updated_at")
 
 
+@admin.register(IndustryRelationshipNode)
+class IndustryRelationshipNodeAdmin(admin.ModelAdmin):
+    list_display = ("name", "company", "kind", "updated_at")
+    list_filter = ("company", "kind")
+    search_fields = ("name", "notes", "company__name")
+    ordering = ("company__name", "name")
+
+
+@admin.register(IndustryRelationshipEdge)
+class IndustryRelationshipEdgeAdmin(admin.ModelAdmin):
+    list_display = ("source", "label", "target", "is_former", "company", "updated_at")
+    list_filter = ("company", "label", "is_former")
+    search_fields = ("source__name", "target__name", "label", "notes", "company__name")
+    ordering = ("company__name", "source__name", "target__name")
+
+
 # ---- Global admin branding (no "Lemonade Stand") ----
 admin.site.site_header = "Automation Portal Admin"
 admin.site.site_title = "Automation Portal"
 admin.site.index_title = "Control center for your automations"
-
 
 
