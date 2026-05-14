@@ -158,7 +158,8 @@
       
         <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" style="display:inline;">
           {% csrf_token %}
-          <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for all active containers?');">Sync JSONCargo updates</button>
+          <input type="hidden" name="sync_scope" value="all" />
+          <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for all active containers?');">Sync all JSONCargo updates</button>
         </form>
 
         <form method="post" action="{% url 'order_tracker_clear_jsoncargo_updates' %}" style="display:inline;">
@@ -181,21 +182,56 @@
     {% endif %}
 
     <div class="card" style="border-color: rgba(250,204,21,0.34);">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
         <div>
           <div style="font-weight:900;">JSONCargo Controls</div>
-          <div class="muted tiny">Sync all active containers, or clear all saved JSONCargo update records from this tracker view.</div>
+          <div class="muted tiny">Sync all active containers, sync only Spencer/Jaime orders, or sync one customer/city group.</div>
         </div>
         <div class="actions">
           <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" style="display:inline;">
             {% csrf_token %}
-            <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for all active containers?');">Sync JSONCargo updates</button>
+            <input type="hidden" name="sync_scope" value="all" />
+            <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for all active containers?');">Sync all</button>
           </form>
           <form method="post" action="{% url 'order_tracker_clear_jsoncargo_updates' %}" style="display:inline;">
             {% csrf_token %}
             <button class="btn btn-danger" type="submit" onclick="return confirm('Clear all saved JSONCargo update records from this tracker view?');">Clear JSONCargo updates</button>
           </form>
         </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row" style="align-items:flex-end;">
+        <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" class="field" style="min-width:280px; max-width:360px;">
+          {% csrf_token %}
+          <input type="hidden" name="sync_scope" value="owner" />
+          <label>Sync by owner</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select name="owner" required>
+              <option value="">Choose owner...</option>
+              {% for owner in jsoncargo_owner_options %}
+                <option value="{{ owner }}">{{ owner }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for the selected owner only?');">Sync owner</button>
+          </div>
+        </form>
+
+        <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" class="field" style="min-width:380px; flex:1;">
+          {% csrf_token %}
+          <input type="hidden" name="sync_scope" value="customer_city" />
+          <label>Sync by customer/city</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select name="customer_city" required>
+              <option value="">Choose customer/city...</option>
+              {% for opt in jsoncargo_customer_city_options %}
+                <option value="{{ opt.customer }}||{{ opt.city }}">{{ opt.customer }}{% if opt.city %} — {{ opt.city }}{% else %} — No city{% endif %}</option>
+              {% endfor %}
+            </select>
+            <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for the selected customer/city only?');">Sync customer/city</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -675,6 +711,14 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
 
 
 
