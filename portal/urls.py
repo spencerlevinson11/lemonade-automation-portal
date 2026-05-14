@@ -140,6 +140,11 @@ urlpatterns = [
         name="order_container_tracking_reject",
     ),
 
+
+    # Industry Relationship Web
+    path("automations/industry-relationships/", core_views.industry_relationship_web_view, name="industry_relationship_web"),
+    path("automations/industry-relationships/save-positions/", core_views.industry_relationship_positions_save_view, name="industry_relationship_positions_save"),
+
     # Bucket Metrics
     path("automations/bucket-metrics/", core_views.bucket_metrics_view, name="bucket_metrics"),
 
@@ -201,6 +206,17 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
+
+
+
+
+
+
+
+
+
+
+
 
 
 
