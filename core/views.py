@@ -4828,19 +4828,6 @@ def order_tracker_view(request):
         if default_owner not in jsoncargo_owner_options:
             jsoncargo_owner_options.append(default_owner)
 
-    seen_customer_city = set()
-    jsoncargo_customer_city_options = []
-    for c in sorted(active_containers, key=lambda row: ((row.customer_name or "").lower(), (row.location_name or "").lower())):
-        customer = (c.customer_name or "").strip()
-        city = (c.location_name or "").strip()
-        if not customer:
-            continue
-        key = (customer.lower(), city.lower())
-        if key in seen_customer_city:
-            continue
-        seen_customer_city.add(key)
-        jsoncargo_customer_city_options.append({"customer": customer, "city": city})
-
     # Attach JSONCargo updates to each row so the master tracker can show the
     # latest API ETA next to the manually maintained ETA. We keep both values:
     # - latest_pending_tracking_update: actionable pending change/error
@@ -4938,7 +4925,6 @@ def order_tracker_view(request):
             "vessel_map_error": vessel_map_error,
             "pending_container_ids": pending_container_ids,
             "jsoncargo_owner_options": jsoncargo_owner_options,
-            "jsoncargo_customer_city_options": jsoncargo_customer_city_options,
         },
     )
 
@@ -5082,10 +5068,11 @@ def _fmt_short_date(d: dt.date | None) -> str:
 
 @login_required
 def order_tracker_sync_jsoncargo_view(request):
-    """Launch JSONCargo sync for all active orders, an owner, or one customer/city.
+    """Launch JSONCargo sync for all active orders, an owner, or typed customer/city filters.
 
-    This still uses the safer Render Shell subprocess pattern, but now it can
-    limit the queryset before calling sync_all_containers().
+    This still uses the safer Render Shell subprocess pattern. Customer and city
+    filtering is normalized in Python so capitalization, punctuation, and extra
+    spacing do not prevent matches.
     """
     if request.method != "POST":
         return HttpResponseForbidden("POST required")
@@ -5117,26 +5104,23 @@ def order_tracker_sync_jsoncargo_view(request):
             return redirect("order_tracker")
         label = f"owner {owner}"
     elif sync_scope == "customer_city":
-        customer_city = (request.POST.get("customer_city") or "").strip()
-        if not customer_city:
-            messages.error(request, "Choose a customer/city before syncing by customer/city.")
+        customer = (request.POST.get("customer") or "").strip()
+        city = (request.POST.get("city") or "").strip()
+        if not customer and not city:
+            messages.error(request, "Type a customer, a city, or both before syncing by customer/city.")
             return redirect("order_tracker")
-        if "||" in customer_city:
-            customer, city = customer_city.split("||", 1)
-        else:
-            customer = customer_city
-            city = ""
-        customer = customer.strip()
-        city = city.strip()
-        if not customer:
-            messages.error(request, "Choose a valid customer/city before syncing.")
-            return redirect("order_tracker")
-        label = f"{customer} / {city or 'all cities'}"
+        label_parts = []
+        if customer:
+            label_parts.append(f"customer matching '{customer}'")
+        if city:
+            label_parts.append(f"city matching '{city}'")
+        label = " and ".join(label_parts)
     else:
         sync_scope = "all"
         label = "all active containers"
 
     command = f"""
+import re
 import traceback
 from core.models import OrderContainer
 from core.services.jsoncargo_order_tracker import sync_all_containers
@@ -5148,6 +5132,23 @@ customer = {_json.dumps(customer)}
 city = {_json.dumps(city)}
 label = {_json.dumps(label)}
 
+
+def normalize_filter_text(value):
+    value = str(value or '').casefold().strip()
+    value = re.sub(r'[^a-z0-9]+', ' ', value)
+    return ' '.join(value.split())
+
+
+def normalized_match(needle, haystack):
+    needle = normalize_filter_text(needle)
+    haystack = normalize_filter_text(haystack)
+    if not needle:
+        return True
+    if not haystack:
+        return False
+    # A typed value can be the full normalized name/city or a meaningful partial.
+    return needle == haystack or needle in haystack
+
 print(f'Starting JSONCargo sync for {{label}}...')
 try:
     qs = OrderContainer.objects.all()
@@ -5155,12 +5156,15 @@ try:
         qs = qs.filter(company_id=company_id)
     if sync_scope == 'owner' and owner:
         qs = qs.filter(assigned_to__iexact=owner)
-    elif sync_scope == 'customer_city' and customer:
-        qs = qs.filter(customer_name__iexact=customer)
-        if city:
-            qs = qs.filter(location_name__iexact=city)
-        else:
-            qs = qs.filter(location_name__exact='')
+    elif sync_scope == 'customer_city':
+        matching_ids = []
+        for container in qs:
+            if customer and not normalized_match(customer, getattr(container, 'customer_name', '')):
+                continue
+            if city and not normalized_match(city, getattr(container, 'location_name', '')):
+                continue
+            matching_ids.append(container.id)
+        qs = OrderContainer.objects.filter(id__in=matching_ids)
     result = sync_all_containers(queryset=qs)
     print('JSONCargo sync complete:', result)
 except Exception as e:
@@ -5172,20 +5176,15 @@ except Exception as e:
         subprocess.Popen(
             [sys.executable, "manage.py", "shell", "-c", command],
             cwd=str(settings.BASE_DIR),
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
         )
-        messages.success(
-            request,
-            f"JSONCargo sync started for {label}. Refresh the tracker after it finishes; details will appear in Render logs.",
-        )
-    except Exception as e:
-        messages.error(request, f"Could not start JSONCargo sync command: {type(e).__name__}: {e}")
+        messages.success(request, f"JSONCargo sync started for {label}. Refresh in a minute to see pending updates.")
+    except Exception as exc:
+        messages.error(request, f"Could not start JSONCargo sync: {exc}")
 
     return redirect("order_tracker")
 
-
-@require_POST
-@login_required
 def order_tracker_clear_jsoncargo_updates_view(request):
     """Clear all pending JSONCargo updates/errors for the current user's visible orders."""
     from core.models import OrderContainerTrackingUpdate
@@ -6429,6 +6428,8 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
 
 
 
