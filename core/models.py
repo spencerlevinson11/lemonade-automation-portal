@@ -982,3 +982,126 @@ class PlantProfile(models.Model):
 
 
 
+
+
+# =========================
+# Industry Relationship Web
+# =========================
+
+
+class IndustryRelationshipNode(models.Model):
+    """A company/person/entity shown as a node in the industry relationship web."""
+
+    KIND_COMPANY = "company"
+    KIND_CUSTOMER = "customer"
+    KIND_SUPPLIER = "supplier"
+    KIND_BACKER = "backer"
+    KIND_OTHER = "other"
+
+    KIND_CHOICES = [
+        (KIND_COMPANY, "Company"),
+        (KIND_CUSTOMER, "Customer"),
+        (KIND_SUPPLIER, "Supplier"),
+        (KIND_BACKER, "Backer / Owner"),
+        (KIND_OTHER, "Other"),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="industry_relationship_nodes",
+    )
+    name = models.CharField(max_length=255)
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES, default=KIND_COMPANY)
+    notes = models.TextField(blank=True, default="")
+    x = models.FloatField(null=True, blank=True)
+    y = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("company", "name")
+        ordering = ("name",)
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class IndustryRelationshipEdge(models.Model):
+    """A directional relationship between two industry map nodes."""
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="industry_relationship_edges",
+    )
+    source = models.ForeignKey(
+        IndustryRelationshipNode,
+        on_delete=models.CASCADE,
+        related_name="outgoing_relationships",
+    )
+    target = models.ForeignKey(
+        IndustryRelationshipNode,
+        on_delete=models.CASCADE,
+        related_name="incoming_relationships",
+    )
+    label = models.CharField(max_length=80, default="supplies")
+    is_former = models.BooleanField(default=False)
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("source__name", "target__name")
+
+    def __str__(self) -> str:
+        return f"{self.source} {self.label} {self.target}"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
