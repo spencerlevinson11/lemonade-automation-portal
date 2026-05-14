@@ -218,19 +218,16 @@
           </div>
         </form>
 
-        <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" class="field" style="min-width:380px; flex:1;">
+        <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" class="field" style="min-width:420px; flex:1;">
           {% csrf_token %}
           <input type="hidden" name="sync_scope" value="customer_city" />
           <label>Sync by customer/city</label>
-          <div style="display:flex; gap:8px; align-items:center;">
-            <select name="customer_city" required>
-              <option value="">Choose customer/city...</option>
-              {% for opt in jsoncargo_customer_city_options %}
-                <option value="{{ opt.customer }}||{{ opt.city }}">{{ opt.customer }}{% if opt.city %} — {{ opt.city }}{% else %} — No city{% endif %}</option>
-              {% endfor %}
-            </select>
-            <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for the selected customer/city only?');">Sync customer/city</button>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="text" name="customer" placeholder="Customer, e.g. Koen Pack" style="min-width:190px; flex:1;" />
+            <input type="text" name="city" placeholder="City, e.g. Bensenville" style="min-width:170px; flex:1;" />
+            <button class="btn" type="submit" onclick="return confirm('Sync JSONCargo updates for orders matching the typed customer/city filters?');">Sync customer/city</button>
           </div>
+          <div class="muted tiny" style="margin-top:6px;">Type customer, city, or both. Matching is not case-sensitive and ignores extra spaces/punctuation.</div>
         </form>
       </div>
     </div>
@@ -711,6 +708,9 @@
   </script>
 </body>
 </html>
+
+
+
 
 
 
