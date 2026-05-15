@@ -5173,18 +5173,28 @@ except Exception as e:
 """
 
     try:
-        subprocess.Popen(
+        completed = subprocess.run(
             [sys.executable, "manage.py", "shell", "-c", command],
             cwd=str(settings.BASE_DIR),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
+            capture_output=True,
+            text=True,
+            timeout=int(os.getenv("JSONCARGO_WEB_SYNC_TIMEOUT", "900")),
         )
-        messages.success(request, f"JSONCargo sync started for {label}. Refresh in a minute to see pending updates.")
+        output = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
+        preview = output[-1200:] if output else "No output returned."
+        if completed.returncode == 0:
+            messages.success(request, f"JSONCargo sync complete for {label}. {preview}")
+        else:
+            messages.error(request, f"JSONCargo sync failed for {label}. {preview}")
+    except subprocess.TimeoutExpired as exc:
+        messages.error(request, f"JSONCargo sync timed out before completion for {label}. Increase JSONCARGO_WEB_SYNC_TIMEOUT in Render if needed. {exc}")
     except Exception as exc:
-        messages.error(request, f"Could not start JSONCargo sync: {exc}")
+        messages.error(request, f"Could not run JSONCargo sync: {exc}")
 
     return redirect("order_tracker")
 
+@require_POST
+@login_required
 def order_tracker_clear_jsoncargo_updates_view(request):
     """Clear all pending JSONCargo updates/errors for the current user's visible orders."""
     from core.models import OrderContainerTrackingUpdate
@@ -6003,38 +6013,47 @@ def order_container_edit_view(request, container_id: int | None = None):
             return ""
         return str(val).strip()
 
-    if isinstance(jsoncargo_data, dict):
-        for key in (
-            "eta_next_destination",
-            "eta_final_destination",
-            "eta_destination",
-            "eta",
-            "eta_delivery",
-            "eta_discharge",
-        ):
-            candidate = _clean_str(jsoncargo_data.get(key))
-            if candidate:
-                jsoncargo_display_eta = candidate
-                break
+    # Use the exact same normalized values saved on the tracking update that the
+    # master Order Tracker table uses. This prevents discrepancies between the
+    # edit page JSONCargo card and the Latest JSONCargo ETA column.
+    if pending_tracking_update is not None:
+        if getattr(pending_tracking_update, "proposed_eta", None):
+            jsoncargo_display_eta = str(pending_tracking_update.proposed_eta)
+        if getattr(pending_tracking_update, "proposed_eta_city", ""):
+            jsoncargo_next_destination = str(pending_tracking_update.proposed_eta_city)
 
-        for key in (
-            "next_location",
-            "next_location_terminal",
-            "final_destination",
-            "final_destination_port",
-            "final_destination_city",
-            "destination",
-            "delivery_to",
-            "delivered_to",
-            "consignee_city",
-            "shipped_to",
-            "shipped_to_terminal",
-            "discharging_port",
-        ):
-            candidate = _clean_str(jsoncargo_data.get(key))
-            if candidate:
-                jsoncargo_next_destination = candidate
-                break
+    if isinstance(jsoncargo_data, dict):
+        if not jsoncargo_display_eta:
+            for key in (
+                "eta_final_destination",
+                "eta_next_destination",
+                "eta_destination",
+                "eta",
+                "eta_delivery",
+                "eta_discharge",
+            ):
+                candidate = _clean_str(jsoncargo_data.get(key))
+                if candidate:
+                    jsoncargo_display_eta = candidate
+                    break
+
+        if not jsoncargo_next_destination:
+            for key in (
+                "final_destination",
+                "final_destination_port",
+                "final_destination_city",
+                "destination",
+                "delivery_to",
+                "delivered_to",
+                "consignee_city",
+                "shipped_to",
+                "next_location",
+                "discharging_port",
+            ):
+                candidate = _clean_str(jsoncargo_data.get(key))
+                if candidate:
+                    jsoncargo_next_destination = candidate
+                    break
 
     return render(
         request,
@@ -6428,6 +6447,17 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
 
 
 
