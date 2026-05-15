@@ -208,6 +208,71 @@ def sync_all_containers(
 
     return stats
 
+def _should_retry_without_shipping_line(err) -> bool:
+    """Return True when JSONCargo may succeed if provider auto-detects the carrier.
+
+    Some valid leased-container prefixes are not mapped to the selected carrier in
+    JSONCargo. In those cases JSONCargo may reject the prefix when we force a
+    provider, even though a provider-less lookup can still work. We also retry
+    provider-less on JSONCargo 500s because those are often carrier/provider
+    lookup failures with no useful payload.
+    """
+    if not err:
+        return False
+    message = (getattr(err, "message", "") or "").lower()
+    if getattr(err, "status_code", None) == 400 and "prefix not found" in message:
+        return True
+    if getattr(err, "status_code", None) in (404, 500):
+        return True
+    return False
+
+
+def _save_jsoncargo_error(
+    *,
+    container: OrderContainer,
+    msg: str,
+    payload: Dict[str, Any] | None,
+) -> Tuple[str, OrderContainerTrackingUpdate]:
+    """Create/update the pending JSONCargo error note for a container."""
+    pending = (
+        OrderContainerTrackingUpdate.objects.filter(
+            container=container,
+            status=OrderContainerTrackingUpdate.STATUS_PENDING,
+            kind=OrderContainerTrackingUpdate.KIND_ERROR,
+        )
+        .order_by("-created_at", "-id")
+        .first()
+    )
+
+    if pending:
+        pending.note = msg
+        pending.source_payload = payload or {}
+        pending.source_last_updated = timezone.now()
+        pending.proposed_eta = None
+        pending.proposed_eta_city = ""
+        pending.save(update_fields=[
+            "note",
+            "source_payload",
+            "source_last_updated",
+            "proposed_eta",
+            "proposed_eta_city",
+            "updated_at",
+        ])
+        return ("error_note_updated", pending)
+
+    new_obj = OrderContainerTrackingUpdate.objects.create(
+        container=container,
+        kind=OrderContainerTrackingUpdate.KIND_ERROR,
+        note=msg,
+        proposed_eta=None,
+        proposed_eta_city="",
+        source_last_updated=timezone.now(),
+        source_payload=payload or {},
+        status=OrderContainerTrackingUpdate.STATUS_PENDING,
+    )
+    return ("error_note_created", new_obj)
+
+
 @transaction.atomic
 def sync_one_container(
     container: OrderContainer,
@@ -221,65 +286,95 @@ def sync_one_container(
         - 'change_created' / 'change_updated'
         - 'no_change_created' / 'no_change_updated'
         - 'skipped_no_data'
-        - 'error'
+        - 'error_note_created' / 'error_note_updated'
     """
     shipping_line = container.jsoncargo_shipping_line_param()
     tracking_reference = tracking_reference_for_jsoncargo(container)
+
     tracking, err = fetch_container_tracking(
         container_number=tracking_reference,
         api_key=api_key,
         shipping_line=shipping_line,
     )
+
+    first_error = err
+    used_fallback_without_shipping_line = False
+
+    # Fallback: if JSONCargo rejects the selected carrier/provider, try again
+    # without shipping_line so JSONCargo can auto-detect. This helps with valid
+    # leased-container prefixes that are not mapped to the selected carrier.
+    if err and shipping_line and _should_retry_without_shipping_line(err):
+        fallback_tracking, fallback_err = fetch_container_tracking(
+            container_number=tracking_reference,
+            api_key=api_key,
+            shipping_line=None,
+        )
+        if fallback_err is None:
+            tracking = fallback_tracking
+            err = None
+            used_fallback_without_shipping_line = True
+        else:
+            err = fallback_err
+            tracking = fallback_tracking
+
     if err:
         # Create a pending "error" note so the user sees that tracking did not run.
-        # Common cause: container prefix requires shipping_line but it was missing/wrong.
         msg = f"JSONCargo error ({err.status_code}): {err.message}"
         if tracking_reference and tracking_reference != (container.container_number or "").strip():
             msg += f". Tracking reference used: {tracking_reference}."
-        if err.status_code == 404:
+
+        payload: Dict[str, Any] = {
+            "tracking_reference": tracking_reference,
+            "selected_shipping_line": shipping_line,
+            "final_attempt": {
+                "shipping_line": None if (first_error and err is not first_error) else shipping_line,
+                "status_code": err.status_code,
+                "message": err.message,
+                "payload": err.payload or {},
+            },
+        }
+
+        if first_error:
+            payload["first_attempt"] = {
+                "shipping_line": shipping_line,
+                "status_code": first_error.status_code,
+                "message": first_error.message,
+                "payload": first_error.payload or {},
+            }
+
+        if first_error and err is not first_error:
+            msg = (
+                f"JSONCargo error after fallback ({err.status_code}): {err.message}. "
+                f"First attempt with shipping line '{shipping_line}' failed as "
+                f"({first_error.status_code}): {first_error.message}. "
+                "Fallback without shipping line also failed."
+            )
+        elif err.status_code == 404:
             if shipping_line:
-                msg += f". Not found under shipping line '{shipping_line}'."
+                msg += f". Not found under shipping line '{shipping_line}'. The app will retry without forcing the carrier on eligible errors."
             else:
                 msg += ". Try setting a Carrier (shipping line) for this container and re-sync."
-        pending = (
-            OrderContainerTrackingUpdate.objects.filter(
-                container=container,
-                status=OrderContainerTrackingUpdate.STATUS_PENDING,
-                kind=OrderContainerTrackingUpdate.KIND_ERROR,
-            )
-            .order_by("-created_at", "-id")
-            .first()
-        )
+        elif err.status_code == 400 and "prefix not found" in (err.message or "").lower():
+            msg += ". JSONCargo does not recognize this container prefix for the selected carrier."
+        elif err.status_code == 500:
+            msg += ". JSONCargo returned an internal/provider error for this container."
 
-        if pending:
-            pending.note = msg
-            pending.source_payload = (err.payload or {})
-            pending.source_last_updated = timezone.now()
-            pending.proposed_eta = None
-            pending.proposed_eta_city = ""
-            pending.save(update_fields=[
-                "note",
-                "source_payload",
-                "source_last_updated",
-                "proposed_eta",
-                "proposed_eta_city",
-                "updated_at",
-            ])
-            return ("error_note_updated", pending)
-
-        new_obj = OrderContainerTrackingUpdate.objects.create(
-            container=container,
-            kind=OrderContainerTrackingUpdate.KIND_ERROR,
-            note=msg,
-            proposed_eta=None,
-            proposed_eta_city="",
-            source_last_updated=timezone.now(),
-            source_payload=(err.payload or {}),
-            status=OrderContainerTrackingUpdate.STATUS_PENDING,
-        )
-        return ("error_note_created", new_obj)
+        return _save_jsoncargo_error(container=container, msg=msg, payload=payload)
 
     data: Dict[str, Any] = (tracking or {}).get("data") or {}
+    if used_fallback_without_shipping_line:
+        tracking = {
+            **(tracking or {}),
+            "jsoncargo_fallback": {
+                "used_without_shipping_line": True,
+                "first_attempt": {
+                    "shipping_line": shipping_line,
+                    "status_code": first_error.status_code if first_error else None,
+                    "message": first_error.message if first_error else "",
+                    "payload": first_error.payload if first_error else {},
+                },
+            },
+        }
 
     # Auto-learn shipping line id from JSONCargo when available.
     resp_line_id = str(data.get("shipping_line_id") or "").strip()
@@ -380,6 +475,12 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
+
+
+
+
 
 
 
