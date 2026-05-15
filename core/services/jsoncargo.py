@@ -99,3 +99,76 @@ def fetch_container_tracking(
 
     return data, None
 
+
+
+def fetch_bill_of_lading_lookup(
+    *,
+    bill_of_lading_number: str,
+    api_key: str,
+    shipping_line: str | None = None,
+    timeout: int | None = None,
+    max_retries: int | None = None,
+) -> Tuple[Optional[Dict[str, Any]], Optional[JsonCargoError]]:
+    """Look up associated containers from JSONCargo's BOL/booking endpoint.
+
+    JSONCargo exposes this separately from the container endpoint:
+      GET /api/v1/containers/bol/{bill_of_lading_number}?shipping_line={shipping_line}
+
+    It usually returns associated_container_numbers rather than full ETA data.
+    The order sync uses this only as a fallback to confirm/find the actual
+    container number, then calls the normal container endpoint for ETA/city.
+    """
+    bill_of_lading_number = (bill_of_lading_number or "").strip()
+    if not bill_of_lading_number:
+        return None, JsonCargoError(status_code=400, message="Missing bill of lading / booking reference")
+
+    if timeout is None:
+        timeout = _env_int("JSONCARGO_TIMEOUT", 90)
+    if max_retries is None:
+        max_retries = _env_int("JSONCARGO_MAX_RETRIES", 2)
+    max_retries = max(0, int(max_retries))
+
+    headers = {
+        "x-api-key": api_key,
+        "Accept": "application/json",
+    }
+    params: Dict[str, str] = {}
+    if shipping_line:
+        params["shipping_line"] = str(shipping_line).strip()
+
+    url = f"{JSONCARGO_BASE_URL}/api/v1/containers/bol/{bill_of_lading_number}"
+
+    last_exc: requests.RequestException | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+            break
+        except requests.RequestException as e:
+            last_exc = e
+            if attempt >= max_retries:
+                return None, JsonCargoError(
+                    status_code=0,
+                    message=f"BOL/booking request error after {attempt + 1} attempt(s): {e}",
+                )
+            time.sleep(min(2 ** attempt, 5))
+    else:
+        return None, JsonCargoError(status_code=0, message=f"BOL/booking request error: {last_exc}")
+
+    try:
+        data = resp.json()
+    except Exception:
+        data = None
+
+    if resp.status_code != 200:
+        msg = "Unknown BOL/booking lookup error"
+        if isinstance(data, dict):
+            err = data.get("error")
+            if isinstance(err, dict):
+                msg = err.get("title") or err.get("message") or msg
+        return None, JsonCargoError(status_code=resp.status_code, message=msg, payload=data if isinstance(data, dict) else None)
+
+    if not isinstance(data, dict):
+        return None, JsonCargoError(status_code=500, message="Unexpected BOL/booking JSON response", payload=None)
+
+    return data, None
+
