@@ -272,7 +272,30 @@ def _save_jsoncargo_error(
     )
     return ("error_note_created", new_obj)
 
+def _save_jsoncargo_no_data_note(
+    *,
+    container: OrderContainer,
+    msg: str,
+    payload: Dict[str, Any] | None,
+) -> Tuple[str, OrderContainerTrackingUpdate]:
+    """Create/update a visible pending note when JSONCargo returns no usable ETA/city data.
 
+    This intentionally uses KIND_ERROR so the Order Tracker surfaces it instead
+    of silently counting the container as skipped. These are not application
+    crashes; they are tracking lookups that produced no actionable update.
+    """
+    return _save_jsoncargo_error(container=container, msg=msg, payload=payload)
+
+
+def _jsoncargo_data(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Return the most likely shipment-data dict from a JSONCargo response."""
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data")
+    if isinstance(data, dict):
+        return data
+    # Some endpoints/providers return shipment fields at the top level.
+    return payload
 
 
 def _tracking_reference_candidates(container: OrderContainer) -> list[str]:
@@ -308,7 +331,7 @@ def _attempt_container_lookup(
         "shipping_line": shipping_line,
         "status_code": getattr(err, "status_code", 200 if err is None else None),
         "message": getattr(err, "message", "success" if err is None else ""),
-        "payload": getattr(err, "payload", None) or {},
+        "payload": (tracking if err is None else (getattr(err, "payload", None) or {})),
     })
     if err is None:
         return tracking, None, attempts
@@ -325,7 +348,7 @@ def _attempt_container_lookup(
             "shipping_line": None,
             "status_code": getattr(fallback_err, "status_code", 200 if fallback_err is None else None),
             "message": getattr(fallback_err, "message", "success" if fallback_err is None else ""),
-            "payload": getattr(fallback_err, "payload", None) or {},
+            "payload": (fallback_tracking if fallback_err is None else (getattr(fallback_err, "payload", None) or {})),
         })
         if fallback_err is None:
             if isinstance(fallback_tracking, dict):
@@ -356,9 +379,12 @@ def _attempt_booking_lookup_then_container(
     last_err = None
 
     for ref in refs:
-        # First use the selected carrier on the BOL/booking endpoint. If that
-        # fails, also try provider auto-detect where JSONCargo allows it.
-        for bol_shipping_line in ([shipping_line, None] if shipping_line else [None]):
+        # JSONCargo requires shipping_line for BOL/booking lookups. When the
+        # order has a selected carrier, always include it. Do not make a final
+        # provider-less BOL/booking retry because JSONCargo returns an avoidable
+        # 400: "Missing required parameter shipping_line".
+        bol_shipping_lines = [shipping_line] if shipping_line else [None]
+        for bol_shipping_line in bol_shipping_lines:
             bol_tracking, bol_err = fetch_bill_of_lading_lookup(
                 bill_of_lading_number=ref,
                 api_key=api_key,
@@ -370,17 +396,24 @@ def _attempt_booking_lookup_then_container(
                 "shipping_line": bol_shipping_line,
                 "status_code": getattr(bol_err, "status_code", 200 if bol_err is None else None),
                 "message": getattr(bol_err, "message", "success" if bol_err is None else ""),
-                "payload": getattr(bol_err, "payload", None) or {},
+                "payload": (bol_tracking if bol_err is None else (getattr(bol_err, "payload", None) or {})),
             })
             if bol_err is not None:
                 last_tracking, last_err = bol_tracking, bol_err
                 continue
 
-            data = (bol_tracking or {}).get("data") or {}
-            associated = data.get("associated_container_numbers") or []
+            data = _jsoncargo_data(bol_tracking)
+            associated = data.get("associated_container_numbers") or data.get("containers") or data.get("container_numbers") or []
             if isinstance(associated, str):
                 associated = [associated]
-            associated = [str(x).strip() for x in associated if str(x or "").strip()]
+            normalized_associated: list[str] = []
+            for item in associated:
+                if isinstance(item, dict):
+                    item = item.get("container_number") or item.get("number") or item.get("tracking_number") or ""
+                item_s = str(item or "").strip()
+                if item_s:
+                    normalized_associated.append(item_s)
+            associated = normalized_associated
 
             # Prefer the actual container stored on the order when it appears in
             # the booking/BOL response, then try any associated containers.
@@ -486,7 +519,7 @@ def sync_one_container(
         if len(attempts) > 1:
             msg = (
                 f"JSONCargo error after {len(attempts)} attempt(s) ({err.status_code}): {err.message}. "
-                "The app tried the selected carrier, carrier auto-detect, and any booking/BOL reference available."
+                "The app tried the selected carrier, carrier auto-detect where appropriate, and any booking/BOL reference available with its required shipping line."
             )
         elif err.status_code == 404:
             if shipping_line:
@@ -500,7 +533,7 @@ def sync_one_container(
 
         return _save_jsoncargo_error(container=container, msg=msg, payload=payload)
 
-    data: Dict[str, Any] = (tracking or {}).get("data") or {}
+    data: Dict[str, Any] = _jsoncargo_data(tracking)
 
     # Auto-learn shipping line id from JSONCargo when available.
     resp_line_id = str(data.get("shipping_line_id") or "").strip()
@@ -520,7 +553,23 @@ def sync_one_container(
     source_last_updated = _parse_dt(data.get("last_updated"))
 
     if proposed_eta is None and not proposed_city:
-        return ("skipped_no_data", None)
+        payload: Dict[str, Any] = {
+            "tracking_reference": tracking_reference,
+            "selected_shipping_line": shipping_line,
+            "booking_number": (getattr(container, "booking_number", "") or "").strip(),
+            "bill_of_lading_number": (getattr(container, "bill_of_lading_number", "") or "").strip(),
+            "attempts": attempts,
+            "final_attempt": attempts[-1] if attempts else None,
+            "tracking_response": tracking or {},
+            "extracted_data": data,
+        }
+        msg = (
+            "JSONCargo returned a successful response, but the app could not find "
+            "a usable ETA or destination city in the response."
+        )
+        if attempts:
+            msg += f" The app made {len(attempts)} lookup attempt(s), including any available booking/BOL reference."
+        return _save_jsoncargo_no_data_note(container=container, msg=msg, payload=payload)
 
     same_eta = proposed_eta == container.eta
     same_city = (proposed_city or "") == (container.eta_city or "")
@@ -601,6 +650,16 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
+
+
+
+
+
+
+
+
 
 
 
