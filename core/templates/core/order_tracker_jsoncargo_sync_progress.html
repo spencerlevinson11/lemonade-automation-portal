@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JSONCargo Sync Progress</title>
+  <style>
+    :root { color-scheme: light; }
+    body { margin:0; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#f8fafc; color:#0f172a; }
+    .wrap { max-width: 760px; margin: 56px auto; padding: 0 20px; }
+    .card { background:#fff; border:1px solid #e2e8f0; border-radius:22px; padding:28px; box-shadow:0 18px 45px rgba(15,23,42,0.08); }
+    .muted { color:#64748b; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    .bar { height:16px; background:#e2e8f0; border-radius:999px; overflow:hidden; margin:20px 0 8px; }
+    .fill { height:100%; width:0%; background:#0f172a; transition:width .25s ease; }
+    .stats { display:grid; grid-template-columns: repeat(5, minmax(90px, 1fr)); gap:10px; margin-top:22px; }
+    .stat { border:1px solid #e2e8f0; border-radius:16px; padding:12px; background:#f8fafc; }
+    .stat strong { display:block; font-size:1.25rem; }
+    .spinner { width:22px; height:22px; border:3px solid #cbd5e1; border-top-color:#0f172a; border-radius:50%; animation:spin .9s linear infinite; }
+    .done .spinner { display:none; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:12px; border:1px solid #cbd5e1; color:#0f172a; text-decoration:none; background:#fff; font-weight:800; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @media (max-width: 650px) { .stats { grid-template-columns: repeat(2, minmax(120px, 1fr)); } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" id="syncCard">
+      <div class="row">
+        <div>
+          <h1 style="margin:0 0 6px; font-size:1.55rem;">Tracking JSONCargo updates</h1>
+          <div class="muted" id="label">Starting sync...</div>
+        </div>
+        <div class="spinner" aria-hidden="true"></div>
+      </div>
+
+      <div class="bar" aria-label="Sync progress"><div class="fill" id="fill"></div></div>
+      <div class="muted" id="percent">0%</div>
+
+      <p id="message" style="font-weight:800; margin-top:22px;">Starting...</p>
+      <p class="muted" id="current"></p>
+
+      <div class="stats">
+        <div class="stat"><strong id="checked">0</strong><span class="muted">Checked</span></div>
+        <div class="stat"><strong id="created">0</strong><span class="muted">Created</span></div>
+        <div class="stat"><strong id="updated">0</strong><span class="muted">Updated</span></div>
+        <div class="stat"><strong id="skipped">0</strong><span class="muted">Skipped</span></div>
+        <div class="stat"><strong id="errors">0</strong><span class="muted">Errors</span></div>
+      </div>
+
+      <div style="margin-top:24px; display:flex; gap:10px; flex-wrap:wrap;">
+        <a class="btn" href="{% url 'order_tracker' %}" id="returnBtn" style="display:none;">Return to order tracker</a>
+        <a class="btn" href="{% url 'order_tracker' %}">Open tracker now</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusUrl = "{% url 'order_tracker_jsoncargo_sync_status' job_id %}";
+    const card = document.getElementById('syncCard');
+    const fill = document.getElementById('fill');
+    const percent = document.getElementById('percent');
+    const label = document.getElementById('label');
+    const message = document.getElementById('message');
+    const current = document.getElementById('current');
+    const returnBtn = document.getElementById('returnBtn');
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value ?? 0;
+    }
+
+    async function poll() {
+      try {
+        const response = await fetch(statusUrl, {headers: {'Accept': 'application/json'}});
+        const data = await response.json();
+        label.textContent = data.label || 'JSONCargo sync';
+        message.textContent = data.message || 'Syncing...';
+        current.textContent = data.current ? `Current container: ${data.current}` : '';
+        setText('checked', data.checked || 0);
+        setText('created', data.created || 0);
+        setText('updated', data.updated || 0);
+        setText('skipped', data.skipped || 0);
+        setText('errors', data.errors || 0);
+
+        const total = Number(data.total || 0);
+        const checked = Number(data.checked || 0);
+        const pct = total > 0 ? Math.min(100, Math.round((checked / total) * 100)) : (data.state === 'complete' ? 100 : 0);
+        fill.style.width = `${pct}%`;
+        percent.textContent = total > 0 ? `${pct}% (${checked} of ${total})` : `${pct}%`;
+
+        if (data.state === 'complete') {
+          card.classList.add('done');
+          returnBtn.style.display = 'inline-flex';
+          return;
+        }
+        if (data.state === 'error' || data.state === 'missing') {
+          card.classList.add('done');
+          returnBtn.style.display = 'inline-flex';
+          return;
+        }
+      } catch (err) {
+        message.textContent = `Could not read sync progress: ${err}`;
+      }
+      window.setTimeout(poll, 1500);
+    }
+    poll();
+  </script>
+</body>
+</html>
