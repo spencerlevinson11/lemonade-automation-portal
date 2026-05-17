@@ -209,22 +209,17 @@ def sync_all_containers(
     return stats
 
 def _should_retry_without_shipping_line(err) -> bool:
-    """Return True when JSONCargo may succeed if provider auto-detects the carrier.
+    """Return True only when no carrier was selected and auto-detect is needed.
 
-    Some valid leased-container prefixes are not mapped to the selected carrier in
-    JSONCargo. In those cases JSONCargo may reject the prefix when we force a
-    provider, even though a provider-less lookup can still work. We also retry
-    provider-less on JSONCargo 500s because those are often carrier/provider
-    lookup failures with no useful payload.
+    A user-selected carrier must be authoritative. If an order is set to HMM,
+    MSC, Evergreen, etc., we should not let a provider-less / auto-detect lookup
+    check a different carrier and then surface that different carrier as the
+    final error. This helper is retained for older call sites, but selected
+    carriers now bypass auto-detect entirely.
     """
     if not err:
         return False
-    message = (getattr(err, "message", "") or "").lower()
-    if getattr(err, "status_code", None) == 400 and "prefix not found" in message:
-        return True
-    if getattr(err, "status_code", None) in (404, 500):
-        return True
-    return False
+    return getattr(err, "status_code", None) in (404, 500)
 
 
 def _save_jsoncargo_error(
@@ -314,7 +309,13 @@ def _attempt_container_lookup(
     api_key: str,
     shipping_line: str | None,
 ) -> tuple[dict[str, Any] | None, Any, list[dict[str, Any]]]:
-    """Try container tracking with selected carrier, then auto-detect fallback.
+    """Try container tracking using the selected carrier when one exists.
+
+    Important: a selected carrier is authoritative. If the order is set to HMM,
+    this function must not make a provider-less lookup that may route to
+    Evergreen or another carrier and then surface that unrelated provider error.
+    Auto-detect/provider-less lookup is only used when the order has no selected
+    carrier at all.
 
     Returns (tracking, err, attempts). err is None on success.
     """
@@ -326,42 +327,16 @@ def _attempt_container_lookup(
         shipping_line=shipping_line,
     )
     attempts.append({
-        "type": "container",
+        "type": "container" if shipping_line else "container_auto_detect",
         "tracking_reference": tracking_reference,
         "shipping_line": shipping_line,
         "status_code": getattr(err, "status_code", 200 if err is None else None),
         "message": getattr(err, "message", "success" if err is None else ""),
         "payload": (tracking if err is None else (getattr(err, "payload", None) or {})),
     })
-    if err is None:
-        return tracking, None, attempts
 
-    if shipping_line and _should_retry_without_shipping_line(err):
-        fallback_tracking, fallback_err = fetch_container_tracking(
-            container_number=tracking_reference,
-            api_key=api_key,
-            shipping_line=None,
-        )
-        attempts.append({
-            "type": "container_auto_detect",
-            "tracking_reference": tracking_reference,
-            "shipping_line": None,
-            "status_code": getattr(fallback_err, "status_code", 200 if fallback_err is None else None),
-            "message": getattr(fallback_err, "message", "success" if fallback_err is None else ""),
-            "payload": (fallback_tracking if fallback_err is None else (getattr(fallback_err, "payload", None) or {})),
-        })
-        if fallback_err is None:
-            if isinstance(fallback_tracking, dict):
-                fallback_tracking = {
-                    **fallback_tracking,
-                    "jsoncargo_fallback": {
-                        "used_without_shipping_line": True,
-                        "first_attempt": attempts[0],
-                    },
-                }
-            return fallback_tracking, None, attempts
-        return fallback_tracking, fallback_err, attempts
-
+    # Do not fall back to provider-less tracking when a carrier is selected.
+    # That is what caused an HMM container to show a misleading Evergreen 404.
     return tracking, err, attempts
 
 
@@ -519,7 +494,8 @@ def sync_one_container(
         if len(attempts) > 1:
             msg = (
                 f"JSONCargo error after {len(attempts)} attempt(s) ({err.status_code}): {err.message}. "
-                "The app tried the selected carrier, carrier auto-detect where appropriate, and any booking/BOL reference available with its required shipping line."
+                "The app tried the selected carrier and any booking/BOL reference available with its required shipping line. "
+                "Carrier auto-detect is only used when no carrier is selected on the order."
             )
         elif err.status_code == 404:
             if shipping_line:
@@ -568,7 +544,7 @@ def sync_one_container(
             "a usable ETA or destination city in the response."
         )
         if attempts:
-            msg += f" The app made {len(attempts)} lookup attempt(s), including any available booking/BOL reference."
+            msg += f" The app made {len(attempts)} lookup attempt(s), using the selected carrier and any available booking/BOL reference."
         return _save_jsoncargo_no_data_note(container=container, msg=msg, payload=payload)
 
     same_eta = proposed_eta == container.eta
