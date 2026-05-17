@@ -1,54 +1,32 @@
 from __future__ import annotations
 
-import datetime as dt
+import json
 import os
+import re
+import traceback
+from pathlib import Path
 
 from django.core.management.base import BaseCommand
-from django.db import transaction
 from django.utils import timezone
 
 from core.models import OrderContainer
 from core.services.jsoncargo_order_tracker import sync_one_container
 
 
-def _parse_date(val: str | None) -> dt.date | None:
-    """Parse JSONCargo timestamps like '2026-02-22 07:00' into a date."""
-    if not val:
-        return None
-    s = str(val).strip()
-    if not s:
-        return None
-    # Common formats seen:
-    # - 2026-02-22 07:00
-    # - 2026-02-22 07:00:00
-    # - 2026-02-22
-    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-        try:
-            return dt.datetime.strptime(s, fmt).date()
-        except Exception:
-            continue
-    return None
+def normalize_filter_text(value):
+    value = str(value or "").casefold().strip()
+    value = re.sub(r"[^a-z0-9]+", " ", value)
+    return " ".join(value.split())
 
 
-def _parse_dt(val: str | None) -> dt.datetime | None:
-    """Parse JSONCargo timestamps to a timezone-aware datetime when possible."""
-    if not val:
-        return None
-    s = str(val).strip()
-    if not s:
-        return None
-    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
-        try:
-            naive = dt.datetime.strptime(s, fmt)
-            return timezone.make_aware(naive, timezone.get_current_timezone())
-        except Exception:
-            continue
-    # Try date-only
-    try:
-        naive = dt.datetime.strptime(s, "%Y-%m-%d")
-        return timezone.make_aware(naive, timezone.get_current_timezone())
-    except Exception:
-        return None
+def normalized_match(needle, haystack):
+    needle = normalize_filter_text(needle)
+    haystack = normalize_filter_text(haystack)
+    if not needle:
+        return True
+    if not haystack:
+        return False
+    return needle == haystack or needle in haystack
 
 
 class Command(BaseCommand):
@@ -58,75 +36,139 @@ class Command(BaseCommand):
     )
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "--company-id",
-            type=int,
-            default=None,
-            help="Only sync containers for this company id.",
-        )
-        parser.add_argument(
-            "--container-id",
-            type=int,
-            default=None,
-            help="Only sync a single OrderContainer id.",
-        )
-        parser.add_argument(
-            "--limit",
-            type=int,
-            default=250,
-            help="Max number of containers to sync.",
-        )
+        parser.add_argument("--company-id", type=int, default=None, help="Only sync containers for this company id.")
+        parser.add_argument("--container-id", type=int, default=None, help="Only sync a single OrderContainer id.")
+        parser.add_argument("--limit", type=int, default=500, help="Max number of containers to sync.")
+        parser.add_argument("--sync-scope", default="all", choices=["all", "owner", "customer_city"])
+        parser.add_argument("--owner", default="", help="Assigned owner to sync when --sync-scope=owner.")
+        parser.add_argument("--customer", default="", help="Customer text filter when --sync-scope=customer_city.")
+        parser.add_argument("--city", default="", help="City/location text filter when --sync-scope=customer_city.")
+        parser.add_argument("--label", default="JSONCargo sync", help="Human-readable job label for progress display.")
+        parser.add_argument("--status-file", default="", help="Optional JSON file used by the web progress page.")
 
-    @transaction.atomic
+    def _write_status(self, status_file, payload):
+        if not status_file:
+            return
+        path = Path(status_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = dict(payload)
+        payload["updated_at"] = timezone.now().isoformat()
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps(payload, default=str), encoding="utf-8")
+        tmp_path.replace(path)
+
     def handle(self, *args, **options):
         api_key = os.getenv("JSONCARGO_API_KEY", "").strip()
+        status_file = options.get("status_file") or ""
+        label = options.get("label") or "JSONCargo sync"
+        state = {
+            "state": "running",
+            "label": label,
+            "message": "Starting JSONCargo sync...",
+            "total": 0,
+            "checked": 0,
+            "created": 0,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "current": "",
+        }
+        self._write_status(status_file, state)
+
         if not api_key:
-            self.stderr.write("JSONCARGO_API_KEY is not set. Aborting.")
+            state.update({"state": "error", "message": "JSONCARGO_API_KEY is not set on the server."})
+            self._write_status(status_file, state)
+            self.stderr.write(state["message"])
             return
 
-        qs = OrderContainer.objects.all().order_by("-updated_at", "-created_at")
+        try:
+            qs = OrderContainer.objects.all()
 
-        company_id = options.get("company_id")
-        if company_id:
-            qs = qs.filter(company_id=company_id)
+            company_id = options.get("company_id")
+            if company_id:
+                qs = qs.filter(company_id=company_id)
 
-        container_id = options.get("container_id")
-        if container_id:
-            qs = qs.filter(id=container_id)
+            container_id = options.get("container_id")
+            if container_id:
+                qs = qs.filter(id=container_id)
 
-        # Only containers that have a container number.
-        qs = qs.exclude(container_number__isnull=True).exclude(container_number__exact="")
+            # Match the web button behavior: only active, non-delivered containers with a container number.
+            qs = qs.filter(is_archived=False)
+            qs = qs.exclude(status__iexact="Delivered")
+            qs = qs.exclude(container_number__isnull=True).exclude(container_number__exact="")
+            qs = qs.exclude(container_number__regex=r"^\s*$")
 
-        limit = int(options.get("limit") or 250)
-        qs = qs[:limit]
+            sync_scope = options.get("sync_scope") or "all"
+            owner = (options.get("owner") or "").strip()
+            customer = (options.get("customer") or "").strip()
+            city = (options.get("city") or "").strip()
 
-        total = 0
-        created = 0
-        updated = 0
-        skipped = 0
-        errors = 0
+            if sync_scope == "owner" and owner:
+                qs = qs.filter(assigned_to__iexact=owner)
+            elif sync_scope == "customer_city":
+                matching_ids = []
+                for container in qs.only("id", "customer_name", "location_name"):
+                    if customer and not normalized_match(customer, getattr(container, "customer_name", "")):
+                        continue
+                    if city and not normalized_match(city, getattr(container, "location_name", "")):
+                        continue
+                    matching_ids.append(container.id)
+                qs = OrderContainer.objects.filter(id__in=matching_ids)
 
-        for c in qs:
-            total += 1
+            limit = int(options.get("limit") or 500)
+            containers = list(qs.order_by("-updated_at", "-created_at")[:limit])
+            state.update({"total": len(containers), "message": f"Found {len(containers)} container(s) to check."})
+            self._write_status(status_file, state)
 
-            result, pending = sync_one_container(c, api_key=api_key)
+            for container in containers:
+                label_current = (container.container_number or f"Order {container.id}").strip()
+                state.update({
+                    "checked": state["checked"] + 1,
+                    "current": label_current,
+                    "message": f"Checking {label_current} ({state['checked']} of {state['total']})...",
+                })
+                self._write_status(status_file, state)
 
-            if result == "error":
-                errors += 1
-                self.stderr.write(f"[{c.id}] {c.container_number}: error while fetching tracking")
-                continue
-            if result == "skipped_no_data":
-                skipped += 1
-                continue
-            if result in ("change_created", "no_change_created"):
-                created += 1
-                continue
-            if result in ("change_updated", "no_change_updated"):
-                updated += 1
-                continue
+                try:
+                    result, _pending = sync_one_container(container, api_key=api_key)
+                except Exception as exc:
+                    state["errors"] += 1
+                    state["message"] = f"Error checking {label_current}: {type(exc).__name__}: {exc}"
+                    self._write_status(status_file, state)
+                    self.stderr.write(state["message"])
+                    continue
 
-            skipped += 1
+                if result in ("error_note_created", "error_note_updated", "error"):
+                    state["errors"] += 1
+                elif result == "skipped_no_data":
+                    state["skipped"] += 1
+                elif result in ("change_created", "no_change_created"):
+                    state["created"] += 1
+                elif result in ("change_updated", "no_change_updated"):
+                    state["updated"] += 1
+                else:
+                    state["skipped"] += 1
 
-        self.stdout.write(
-            f"Done. scanned={total} created={created} updated={updated} skipped={skipped} errors={errors}"
-        )
+                state["message"] = f"Finished {label_current}."
+                self._write_status(status_file, state)
+
+            state.update({
+                "state": "complete",
+                "current": "",
+                "message": (
+                    f"Complete. Checked {state['checked']} container(s). "
+                    f"Created {state['created']}, updated {state['updated']}, "
+                    f"skipped {state['skipped']}, errors {state['errors']}."
+                ),
+            })
+            self._write_status(status_file, state)
+            self.stdout.write(state["message"])
+        except Exception as exc:
+            state.update({
+                "state": "error",
+                "message": f"JSONCargo sync failed: {type(exc).__name__}: {exc}",
+                "traceback": traceback.format_exc()[-4000:],
+            })
+            self._write_status(status_file, state)
+            self.stderr.write(state["message"])
+            raise
