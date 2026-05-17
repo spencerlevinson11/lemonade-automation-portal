@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import re
 from typing import Any, Dict, Optional, Tuple
 
 from django.db import transaction
@@ -221,6 +222,66 @@ def _should_retry_without_shipping_line(err) -> bool:
         return False
     return getattr(err, "status_code", None) in (404, 500)
 
+
+
+def _prefix_carrier_error_details(
+    *,
+    attempts: list[dict[str, Any]] | None,
+    err: Any,
+    tracking_reference: str,
+    shipping_line: str | None,
+) -> dict[str, str] | None:
+    """Detect JSONCargo's unsupported-prefix error and return actionable details.
+
+    JSONCargo returns messages like:
+      "Prefix not found for tracking number DRYU9193557. Please contact ...
+       request adding this prefix DRYU to HMM shipping line."
+
+    When this happens, we want the Order Tracker note to clearly show the
+    exact prefix and carrier the user should send to JSONCargo support.
+    """
+    candidate_attempts = list(attempts or [])
+    if err is not None:
+        candidate_attempts.append({
+            "tracking_reference": tracking_reference,
+            "shipping_line": shipping_line,
+            "status_code": getattr(err, "status_code", None),
+            "message": getattr(err, "message", "") or "",
+            "payload": getattr(err, "payload", None) or {},
+        })
+
+    for attempt in reversed(candidate_attempts):
+        message = str(attempt.get("message") or "")
+        payload = attempt.get("payload") or {}
+        if isinstance(payload, dict):
+            payload_title = str((payload.get("error") or {}).get("title") or "")
+            payload_details = str((payload.get("error") or {}).get("details") or "")
+            combined = " ".join(x for x in [message, payload_title, payload_details] if x).strip()
+        else:
+            combined = message
+
+        if "prefix not found" not in combined.lower():
+            continue
+
+        reference = str(attempt.get("tracking_reference") or tracking_reference or "").strip().upper()
+        prefix_match = re.search(r"prefix\s+([A-Z]{4})\b", combined, flags=re.IGNORECASE)
+        prefix = (prefix_match.group(1).upper() if prefix_match else "")
+        if not prefix and len(reference) >= 4:
+            prefix = reference[:4]
+
+        line_match = re.search(r"to\s+([A-Z0-9_-]+)\s+shipping\s+line", combined, flags=re.IGNORECASE)
+        line = (line_match.group(1).upper() if line_match else "")
+        if not line:
+            line = str(attempt.get("shipping_line") or shipping_line or "").strip().upper()
+
+        if prefix and line:
+            return {
+                "prefix": prefix,
+                "shipping_line": line,
+                "tracking_reference": reference,
+                "message": combined,
+            }
+    return None
 
 def _save_jsoncargo_error(
     *,
@@ -491,7 +552,26 @@ def sync_one_container(
             },
         }
 
-        if len(attempts) > 1:
+        prefix_details = _prefix_carrier_error_details(
+            attempts=attempts,
+            err=err,
+            tracking_reference=tracking_reference,
+            shipping_line=shipping_line,
+        )
+        if prefix_details:
+            payload["jsoncargo_prefix_carrier_error"] = prefix_details
+            booking = payload.get("booking_number") or payload.get("bill_of_lading_number") or ""
+            booking_text = f" Booking/BOL reference tried: {booking}." if booking else ""
+            msg = (
+                "JSONCargo prefix/carrier setup needed: "
+                f"container prefix '{prefix_details['prefix']}' is not currently supported for "
+                f"shipping line '{prefix_details['shipping_line']}'. "
+                f"Container checked: {prefix_details['tracking_reference']}."
+                f"{booking_text} "
+                f"Email JSONCargo support and ask them to add prefix {prefix_details['prefix']} "
+                f"to {prefix_details['shipping_line']} shipping line."
+            )
+        elif len(attempts) > 1:
             msg = (
                 f"JSONCargo error after {len(attempts)} attempt(s) ({err.status_code}): {err.message}. "
                 "The app tried the selected carrier and any booking/BOL reference available with its required shipping line. "
@@ -626,6 +706,16 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
+
+
+
+
+
+
+
+
 
 
 
