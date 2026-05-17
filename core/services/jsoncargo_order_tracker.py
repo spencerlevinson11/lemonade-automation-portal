@@ -337,10 +337,12 @@ def _save_jsoncargo_no_data_note(
     """Create/update a visible pending note when JSONCargo returns no usable ETA/city data.
 
     This intentionally uses KIND_ERROR so the Order Tracker surfaces it instead
-    of silently counting the container as skipped. These are not application
-    crashes; they are tracking lookups that produced no actionable update.
+    of silently hiding the container. The returned result remains
+    ``skipped_no_data`` so batch/progress counters classify the lookup as
+    skipped rather than as a provider/API error.
     """
-    return _save_jsoncargo_error(container=container, msg=msg, payload=payload)
+    _result, pending = _save_jsoncargo_error(container=container, msg=msg, payload=payload)
+    return ("skipped_no_data", pending)
 
 
 def _jsoncargo_data(payload: Dict[str, Any] | None) -> Dict[str, Any]:
@@ -619,12 +621,18 @@ def sync_one_container(
             "tracking_response": tracking or {},
             "extracted_data": data,
         }
+        selected_line_label = (shipping_line or "carrier auto-detect").strip()
         msg = (
-            "JSONCargo returned a successful response, but the app could not find "
+            "SKIPPED: JSONCargo returned a successful response, but the app could not find "
             "a usable ETA or destination city in the response."
         )
         if attempts:
-            msg += f" The app made {len(attempts)} lookup attempt(s), using the selected carrier and any available booking/BOL reference."
+            msg += f" The app made {len(attempts)} lookup attempt(s), using {selected_line_label} and any available booking/BOL reference."
+        if (shipping_line or "").strip().upper() == "EVERGREEN":
+            msg += (
+                " Evergreen containers that loaded recently may not return full container-level "
+                "tracking details yet; keep the booking number on the order and re-sync later."
+            )
         return _save_jsoncargo_no_data_note(container=container, msg=msg, payload=payload)
 
     same_eta = proposed_eta == container.eta
@@ -706,6 +714,16 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
+
+
+
+
+
+
+
+
 
 
 
