@@ -5066,20 +5066,36 @@ def _fmt_short_date(d: dt.date | None) -> str:
     return f"{d.month}/{d.day}/{d.year}"
 
 
+def _jsoncargo_sync_status_dir() -> Path:
+    """Directory for lightweight JSONCargo sync progress files."""
+    root = os.getenv("JSONCARGO_SYNC_STATUS_DIR") or tempfile.gettempdir()
+    return Path(root) / "lemonade_jsoncargo_sync"
+
+
+def _jsoncargo_sync_status_path(job_id: str) -> Path:
+    """Return a safe status-file path for a sync job id."""
+    safe_job_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(job_id or ""))
+    if not safe_job_id:
+        raise Http404("Invalid sync job")
+    return _jsoncargo_sync_status_dir() / f"{safe_job_id}.json"
+
+
 @login_required
 def order_tracker_sync_jsoncargo_view(request):
-    """Launch JSONCargo sync for all active orders, an owner, or typed customer/city filters.
+    """Start JSONCargo sync without blocking the web request.
 
-    This still uses the safer Render Shell subprocess pattern. Customer and city
-    filtering is normalized in Python so capitalization, punctuation, and extra
-    spacing do not prevent matches.
+    The previous implementation used subprocess.run() and waited for all JSONCargo
+    calls to finish inside this request. On Render/Gunicorn that can exceed the
+    worker timeout and produce a 500. This version starts a management command in
+    a separate process, writes progress to a small JSON status file, and redirects
+    the user to a progress page that polls until the sync is complete.
     """
     if request.method != "POST":
         return HttpResponseForbidden("POST required")
 
-    import json as _json
     import subprocess
     import sys
+    import uuid
 
     api_key = os.getenv("JSONCARGO_API_KEY", "").strip()
     if not api_key:
@@ -5119,79 +5135,85 @@ def order_tracker_sync_jsoncargo_view(request):
         sync_scope = "all"
         label = "all active containers"
 
-    command = f"""
-import re
-import traceback
-from core.models import OrderContainer
-from core.services.jsoncargo_order_tracker import sync_all_containers
+    job_id = uuid.uuid4().hex
+    status_file = _jsoncargo_sync_status_path(job_id)
+    status_file.parent.mkdir(parents=True, exist_ok=True)
+    status_file.write_text(
+        json.dumps({
+            "state": "queued",
+            "label": label,
+            "message": "JSONCargo sync is queued...",
+            "total": 0,
+            "checked": 0,
+            "created": 0,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "current": "",
+        }),
+        encoding="utf-8",
+    )
 
-company_id = {company_id!r}
-sync_scope = {_json.dumps(sync_scope)}
-owner = {_json.dumps(owner)}
-customer = {_json.dumps(customer)}
-city = {_json.dumps(city)}
-label = {_json.dumps(label)}
-
-
-def normalize_filter_text(value):
-    value = str(value or '').casefold().strip()
-    value = re.sub(r'[^a-z0-9]+', ' ', value)
-    return ' '.join(value.split())
-
-
-def normalized_match(needle, haystack):
-    needle = normalize_filter_text(needle)
-    haystack = normalize_filter_text(haystack)
-    if not needle:
-        return True
-    if not haystack:
-        return False
-    # A typed value can be the full normalized name/city or a meaningful partial.
-    return needle == haystack or needle in haystack
-
-print(f'Starting JSONCargo sync for {{label}}...')
-try:
-    qs = OrderContainer.objects.all()
+    args = [
+        sys.executable,
+        "manage.py",
+        "jsoncargo_sync_order_tracker",
+        "--sync-scope",
+        sync_scope,
+        "--label",
+        label,
+        "--status-file",
+        str(status_file),
+        "--limit",
+        os.getenv("JSONCARGO_WEB_SYNC_LIMIT", "500"),
+    ]
     if company_id is not None:
-        qs = qs.filter(company_id=company_id)
-    if sync_scope == 'owner' and owner:
-        qs = qs.filter(assigned_to__iexact=owner)
-    elif sync_scope == 'customer_city':
-        matching_ids = []
-        for container in qs:
-            if customer and not normalized_match(customer, getattr(container, 'customer_name', '')):
-                continue
-            if city and not normalized_match(city, getattr(container, 'location_name', '')):
-                continue
-            matching_ids.append(container.id)
-        qs = OrderContainer.objects.filter(id__in=matching_ids)
-    result = sync_all_containers(queryset=qs)
-    print('JSONCargo sync complete:', result)
-except Exception as e:
-    print('JSONCargo sync failed:', type(e).__name__, str(e))
-    traceback.print_exc()
-"""
+        args.extend(["--company-id", str(company_id)])
+    if owner:
+        args.extend(["--owner", owner])
+    if customer:
+        args.extend(["--customer", customer])
+    if city:
+        args.extend(["--city", city])
 
     try:
-        completed = subprocess.run(
-            [sys.executable, "manage.py", "shell", "-c", command],
-            cwd=str(settings.BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=int(os.getenv("JSONCARGO_WEB_SYNC_TIMEOUT", "900")),
-        )
-        output = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
-        preview = output[-1200:] if output else "No output returned."
-        if completed.returncode == 0:
-            messages.success(request, f"JSONCargo sync complete for {label}. {preview}")
-        else:
-            messages.error(request, f"JSONCargo sync failed for {label}. {preview}")
-    except subprocess.TimeoutExpired as exc:
-        messages.error(request, f"JSONCargo sync timed out before completion for {label}. Increase JSONCARGO_WEB_SYNC_TIMEOUT in Render if needed. {exc}")
+        log_path = status_file.with_suffix(".log")
+        with open(log_path, "ab") as log_handle:
+            subprocess.Popen(
+                args,
+                cwd=str(settings.BASE_DIR),
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+                start_new_session=True,
+            )
     except Exception as exc:
-        messages.error(request, f"Could not run JSONCargo sync: {exc}")
+        messages.error(request, f"Could not start JSONCargo sync for {label}: {exc}")
+        return redirect("order_tracker")
 
-    return redirect("order_tracker")
+    return redirect("order_tracker_jsoncargo_sync_progress", job_id=job_id)
+
+
+@login_required
+def order_tracker_jsoncargo_sync_progress_view(request, job_id: str):
+    """Display the JSONCargo sync progress page."""
+    # Validate the id/path up front; the status endpoint will return the details.
+    _jsoncargo_sync_status_path(job_id)
+    return render(request, "core/order_tracker_jsoncargo_sync_progress.html", {"job_id": job_id})
+
+
+@login_required
+def order_tracker_jsoncargo_sync_status_view(request, job_id: str):
+    """Return JSON progress for a running/completed JSONCargo sync."""
+    status_file = _jsoncargo_sync_status_path(job_id)
+    if not status_file.exists():
+        return JsonResponse({"state": "missing", "message": "Sync status is no longer available."}, status=404)
+    try:
+        data = json.loads(status_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        data = {"state": "error", "message": f"Could not read sync status: {exc}"}
+    return JsonResponse(data)
 
 @require_POST
 @login_required
@@ -6447,6 +6469,10 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
 
 
 
