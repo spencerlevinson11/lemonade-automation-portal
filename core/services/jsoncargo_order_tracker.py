@@ -117,32 +117,114 @@ def tracking_reference_for_jsoncargo(container: OrderContainer) -> str:
 
 def _extract_eta(data: Dict[str, Any]) -> dt.date | None:
     """Extract the most useful ETA from JSONCargo's possible ETA fields."""
-    return _parse_date(
-        data.get("eta_final_destination")
-        or data.get("eta_next_destination")
-        or data.get("eta_destination")
-        or data.get("eta")
-        or data.get("eta_delivery")
-        or data.get("eta_discharge")
-    )
+    eta, _city = _extract_eta_city(data)
+    return eta
 
 
 def _extract_city(data: Dict[str, Any]) -> str:
     """Extract a useful destination/next-destination city from JSONCargo."""
-    raw_city = (
-        data.get("final_destination")
-        or data.get("final_destination_port")
-        or data.get("final_destination_city")
-        or data.get("destination")
-        or data.get("delivery_to")
-        or data.get("delivered_to")
-        or data.get("consignee_city")
-        or data.get("shipped_to")
-        or data.get("next_location")
-        or data.get("discharging_port")
-        or ""
+    _eta, city = _extract_eta_city(data)
+    return city
+
+
+def _clean_jsoncargo_value(value: Any) -> str:
+    """Return a stripped string for JSONCargo fields, treating None as blank."""
+    return str(value or "").strip()
+
+
+def _same_jsoncargo_day(left: Any, right: Any) -> bool:
+    """Return True when two JSONCargo date/timestamp fields are the same day."""
+    left_date = _parse_date(_clean_jsoncargo_value(left))
+    right_date = _parse_date(_clean_jsoncargo_value(right))
+    return bool(left_date and right_date and left_date == right_date)
+
+
+def _extract_eta_city(data: Dict[str, Any]) -> tuple[dt.date | None, str]:
+    """Extract an ETA/date and city from the same JSONCargo event.
+
+    JSONCargo sometimes returns a final destination city like CHICAGO while the
+    available timestamp actually belongs to the current/last location, such as
+    NORFOLK. In that situation, pairing ``eta_final_destination`` with
+    ``shipped_to`` creates a false display like "May 17 Chicago" even though
+    the May 17 event is Norfolk.
+
+    To avoid mixing fields from different events, this function keeps each date
+    and city together and prioritizes event pairs in this order:
+
+    1. next_location + eta_next_destination, when next_location exists.
+    2. last_location + timestamp_of_last_location/eta_next_destination when
+       JSONCargo has no next_location or the timestamps clearly match the last
+       location event.
+    3. final/destination fields + eta_final_destination only when there is no
+       competing last-location timestamp for the same day.
+    4. generic ETA/city fallbacks.
+    """
+    if not isinstance(data, dict):
+        return None, ""
+
+    next_location = _clean_jsoncargo_value(data.get("next_location"))
+    last_location = _clean_jsoncargo_value(data.get("last_location"))
+    shipped_to = _clean_jsoncargo_value(data.get("shipped_to"))
+    final_city_raw = (
+        _clean_jsoncargo_value(data.get("final_destination"))
+        or _clean_jsoncargo_value(data.get("final_destination_port"))
+        or _clean_jsoncargo_value(data.get("final_destination_city"))
+        or _clean_jsoncargo_value(data.get("destination"))
+        or _clean_jsoncargo_value(data.get("delivery_to"))
+        or _clean_jsoncargo_value(data.get("delivered_to"))
+        or _clean_jsoncargo_value(data.get("consignee_city"))
+        or shipped_to
+        or _clean_jsoncargo_value(data.get("discharging_port"))
     )
-    return normalize_city(str(raw_city).strip())
+
+    eta_next = data.get("eta_next_destination")
+    eta_final = data.get("eta_final_destination")
+    timestamp_last = data.get("timestamp_of_last_location")
+    last_movement = data.get("last_movement_timestamp")
+    atd_last = data.get("atd_last_location")
+
+    # If JSONCargo gives a real next location, use that event pair.
+    if next_location:
+        eta = _parse_date(_clean_jsoncargo_value(eta_next))
+        if eta:
+            return eta, normalize_city(next_location)
+
+    # If there is no next_location, a same-day eta_next/eta_final can actually
+    # be the current/last location event. Keep that date with last_location.
+    # Do NOT blindly use timestamp_of_last_location first, because that would
+    # turn normal future final ETAs into origin/current-location dates.
+    if last_location and timestamp_last and not next_location:
+        if eta_next and _same_jsoncargo_day(eta_next, timestamp_last):
+            eta = _parse_date(_clean_jsoncargo_value(eta_next))
+            if eta:
+                return eta, normalize_city(last_location)
+        if eta_final and _same_jsoncargo_day(eta_final, timestamp_last):
+            eta = _parse_date(_clean_jsoncargo_value(eta_final))
+            if eta:
+                return eta, normalize_city(last_location)
+
+    # Only use final destination date/city after location-specific events above.
+    eta = _parse_date(_clean_jsoncargo_value(eta_final))
+    if eta and final_city_raw:
+        return eta, normalize_city(final_city_raw)
+
+    # If JSONCargo provides no forward-looking ETA, fall back to the last known
+    # location timestamp so the order still gets a truthful city/date pair.
+    if last_location:
+        for date_value in (timestamp_last, last_movement, atd_last):
+            eta = _parse_date(_clean_jsoncargo_value(date_value))
+            if eta:
+                return eta, normalize_city(last_location)
+
+    # Generic fallbacks. Keep these last because they are less reliable pairs.
+    fallback_eta = _parse_date(
+        _clean_jsoncargo_value(data.get("eta_destination"))
+        or _clean_jsoncargo_value(data.get("eta"))
+        or _clean_jsoncargo_value(data.get("eta_delivery"))
+        or _clean_jsoncargo_value(data.get("eta_discharge"))
+    )
+    fallback_city = normalize_city(final_city_raw or next_location or last_location or _clean_jsoncargo_value(data.get("discharging_port")))
+    return fallback_eta, fallback_city
 
 def sync_all_containers(
     *,
@@ -599,15 +681,9 @@ def sync_one_container(
         container.shipping_line_id = resp_line_id
         container.save(update_fields=["shipping_line_id", "updated_at"])
 
-    # Prefer ETA to final destination when present; fall back to next destination
-    # and other common ETA fields. This fixes cases where the diagnostic payload
-    # has an ETA but the app was only reading a different JSONCargo field.
-    proposed_eta = _extract_eta(data)
-
-    # Choose a destination label for display. JSONCargo sometimes returns a
-    # discharge/transshipment port when the final delivery city is blank, so we
-    # try final-destination fields first, then next_location, then discharge.
-    proposed_city = _extract_city(data)
+    # Extract ETA/city from the same JSONCargo event so we do not combine a
+    # Norfolk timestamp with a Chicago destination field.
+    proposed_eta, proposed_city = _extract_eta_city(data)
     source_last_updated = _parse_dt(data.get("last_updated"))
 
     if proposed_eta is None and not proposed_city:
@@ -714,6 +790,47 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
