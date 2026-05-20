@@ -332,13 +332,21 @@
                       {% if jsoncargo_data and jsoncargo_data.container_status %}{{ jsoncargo_data.container_status }}{% else %}<span class="muted">Container status unavailable</span>{% endif %}
                     </div>
                     <div style="margin-top:10px; padding:10px 12px; border-radius:12px; border:1px solid rgba(34,197,94,0.35); background: rgba(34,197,94,0.08);">
-                      <div class="muted tiny" style="margin-bottom:4px;">Latest JSONCargo ETA</div>
+                      <div class="muted tiny" style="margin-bottom:4px;">Latest JSONCargo update</div>
                       <div style="font-weight:1000; font-size:22px;">
-                        {% if jsoncargo_display_eta %}{{ jsoncargo_display_eta }}{% else %}<span class="muted">—</span>{% endif %}
+                        {% if jsoncargo_display_message %}
+                          {{ jsoncargo_display_message }}
+                        {% elif jsoncargo_display_eta %}
+                          {{ jsoncargo_display_eta }}
+                        {% else %}
+                          <span class="muted">—</span>
+                        {% endif %}
                       </div>
-                      <div class="tiny" style="margin-top:6px; font-weight:900;">
-                        City: {% if jsoncargo_next_destination %}{{ jsoncargo_next_destination }}{% else %}<span class="muted">—</span>{% endif %}
-                      </div>
+                      {% if not jsoncargo_display_message %}
+                        <div class="tiny" style="margin-top:6px; font-weight:900;">
+                          City: {% if jsoncargo_next_destination %}{{ jsoncargo_next_destination }}{% else %}<span class="muted">—</span>{% endif %}
+                        </div>
+                      {% endif %}
                     </div>
                     {% if pending_tracking_update.source_last_updated %}
                       <div class="muted tiny" style="margin-top:8px;">JSONCargo last updated {{ pending_tracking_update.source_last_updated|date:"Y-m-d H:i" }}</div>
@@ -394,8 +402,8 @@
                                 <td class="tiny">{% if jsoncargo_next_destination %}{{ jsoncargo_next_destination }}{% else %}<span class="muted">—</span>{% endif %}</td>
                               </tr>
                               <tr>
-                                <td class="tiny"><code>latest_jsoncargo_eta_display</code></td>
-                                <td class="tiny" style="font-weight:1000;">{% if jsoncargo_display_eta %}{{ jsoncargo_display_eta }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                                <td class="tiny"><code>latest_jsoncargo_update_display</code></td>
+                                <td class="tiny" style="font-weight:1000;">{% if jsoncargo_display_message %}{{ jsoncargo_display_message }}{% elif jsoncargo_display_eta %}{{ jsoncargo_display_eta }}{% else %}<span class="muted">—</span>{% endif %}</td>
                               </tr>
                           </tbody>
                         </table>
@@ -849,6 +857,22 @@
   </div>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
