@@ -140,90 +140,100 @@ def _same_jsoncargo_day(left: Any, right: Any) -> bool:
 
 
 def _extract_eta_city(data: Dict[str, Any]) -> tuple[dt.date | None, str]:
-    """Extract an ETA/date and city from the same JSONCargo event.
+    """Extract the best ETA/city pair from JSONCargo.
 
-    JSONCargo sometimes returns a final destination city like CHICAGO while the
-    available timestamp actually belongs to the current/last location, such as
-    NORFOLK. In that situation, pairing ``eta_final_destination`` with
-    ``shipped_to`` creates a false display like "May 17 Chicago" even though
-    the May 17 event is Norfolk.
-
-    To avoid mixing fields from different events, this function keeps each date
-    and city together and prioritizes event pairs in this order:
-
-    1. next_location + eta_next_destination, when next_location exists.
-    2. last_location + timestamp_of_last_location/eta_next_destination when
-       JSONCargo has no next_location or the timestamps clearly match the last
-       location event.
-    3. final/destination fields + eta_final_destination only when there is no
-       competing last-location timestamp for the same day.
-    4. generic ETA/city fallbacks.
+    Important rule: do not let an old location event hide a newer forward ETA.
+    JSONCargo can return a stale "last_location" event such as "May 17 Norfolk"
+    while the same response also contains a later rail/final ETA such as
+    "May 24 Chicago". The tracker should show the best forward-looking ETA
+    first, and only fall back to last_location/timestamp data when there is no
+    future ETA available.
     """
     if not isinstance(data, dict):
         return None, ""
 
-    next_location = _clean_jsoncargo_value(data.get("next_location"))
-    last_location = _clean_jsoncargo_value(data.get("last_location"))
-    shipped_to = _clean_jsoncargo_value(data.get("shipped_to"))
+    def clean(value: Any) -> str:
+        return _clean_jsoncargo_value(value)
+
+    def parsed(value: Any) -> dt.date | None:
+        return _parse_date(clean(value))
+
+    def city(value: Any) -> str:
+        return normalize_city(clean(value))
+
+    today = dt.date.today()
+
+    next_location = clean(data.get("next_location"))
+    last_location = clean(data.get("last_location"))
+    shipped_to = clean(data.get("shipped_to"))
     final_city_raw = (
-        _clean_jsoncargo_value(data.get("final_destination"))
-        or _clean_jsoncargo_value(data.get("final_destination_port"))
-        or _clean_jsoncargo_value(data.get("final_destination_city"))
-        or _clean_jsoncargo_value(data.get("destination"))
-        or _clean_jsoncargo_value(data.get("delivery_to"))
-        or _clean_jsoncargo_value(data.get("delivered_to"))
-        or _clean_jsoncargo_value(data.get("consignee_city"))
+        clean(data.get("final_destination"))
+        or clean(data.get("final_destination_port"))
+        or clean(data.get("final_destination_city"))
+        or clean(data.get("destination"))
+        or clean(data.get("delivery_to"))
+        or clean(data.get("delivered_to"))
+        or clean(data.get("consignee_city"))
         or shipped_to
-        or _clean_jsoncargo_value(data.get("discharging_port"))
+        or clean(data.get("discharging_port"))
     )
 
     eta_next = data.get("eta_next_destination")
     eta_final = data.get("eta_final_destination")
+    eta_destination = data.get("eta_destination")
+    eta_generic = data.get("eta")
+    eta_delivery = data.get("eta_delivery")
+    eta_discharge = data.get("eta_discharge")
     timestamp_last = data.get("timestamp_of_last_location")
     last_movement = data.get("last_movement_timestamp")
     atd_last = data.get("atd_last_location")
 
-    # If JSONCargo gives a real next location, use that event pair.
-    if next_location:
-        eta = _parse_date(_clean_jsoncargo_value(eta_next))
-        if eta:
-            return eta, normalize_city(next_location)
+    candidates: list[tuple[int, dt.date, str, str]] = []
 
-    # If there is no next_location, a same-day eta_next/eta_final can actually
-    # be the current/last location event. Keep that date with last_location.
-    # Do NOT blindly use timestamp_of_last_location first, because that would
-    # turn normal future final ETAs into origin/current-location dates.
-    if last_location and timestamp_last and not next_location:
-        if eta_next and _same_jsoncargo_day(eta_next, timestamp_last):
-            eta = _parse_date(_clean_jsoncargo_value(eta_next))
-            if eta:
-                return eta, normalize_city(last_location)
-        if eta_final and _same_jsoncargo_day(eta_final, timestamp_last):
-            eta = _parse_date(_clean_jsoncargo_value(eta_final))
-            if eta:
-                return eta, normalize_city(last_location)
+    def add_candidate(priority: int, date_value: Any, city_value: Any, label: str) -> None:
+        eta = parsed(date_value)
+        city_name = city(city_value)
+        if eta and city_name:
+            candidates.append((priority, eta, city_name, label))
 
-    # Only use final destination date/city after location-specific events above.
-    eta = _parse_date(_clean_jsoncargo_value(eta_final))
-    if eta and final_city_raw:
-        return eta, normalize_city(final_city_raw)
+    # Forward-looking / destination events. These should win over stale
+    # last-location timestamps when the ETA is today or in the future.
+    add_candidate(10, eta_next, next_location, "next_location + eta_next_destination")
+    add_candidate(20, eta_final, final_city_raw, "final destination + eta_final_destination")
+    add_candidate(30, eta_destination, final_city_raw, "final destination + eta_destination")
+    add_candidate(40, eta_generic, final_city_raw, "final destination + eta")
+    add_candidate(50, eta_delivery, final_city_raw, "final destination + eta_delivery")
+    add_candidate(60, eta_discharge, final_city_raw, "discharging/final city + eta_discharge")
 
-    # If JSONCargo provides no forward-looking ETA, fall back to the last known
-    # location timestamp so the order still gets a truthful city/date pair.
-    if last_location:
-        for date_value in (timestamp_last, last_movement, atd_last):
-            eta = _parse_date(_clean_jsoncargo_value(date_value))
-            if eta:
-                return eta, normalize_city(last_location)
+    future_candidates = [c for c in candidates if c[1] >= today]
+    if future_candidates:
+        # Prefer explicit next destination first, then final destination. Within
+        # the same priority, use the soonest upcoming date.
+        priority, eta, city_name, _label = sorted(future_candidates, key=lambda c: (c[0], c[1]))[0]
+        return eta, city_name
 
-    # Generic fallbacks. Keep these last because they are less reliable pairs.
-    fallback_eta = _parse_date(
-        _clean_jsoncargo_value(data.get("eta_destination"))
-        or _clean_jsoncargo_value(data.get("eta"))
-        or _clean_jsoncargo_value(data.get("eta_delivery"))
-        or _clean_jsoncargo_value(data.get("eta_discharge"))
-    )
-    fallback_city = normalize_city(final_city_raw or next_location or last_location or _clean_jsoncargo_value(data.get("discharging_port")))
+    # If no candidate is in the future, still prefer a destination/next-location
+    # ETA over a last-location timestamp. Use the most recent destination event
+    # so stale historical entries do not override newer historical ones.
+    if candidates:
+        priority, eta, city_name, _label = sorted(candidates, key=lambda c: (c[1], -c[0]), reverse=True)[0]
+        return eta, city_name
+
+    # Last known location is a fallback only. It is useful when JSONCargo gives
+    # no forward ETA, but it should not be treated as the destination ETA.
+    last_candidates: list[tuple[dt.date, str]] = []
+    for date_value in (timestamp_last, last_movement, atd_last):
+        eta = parsed(date_value)
+        city_name = city(last_location)
+        if eta and city_name:
+            last_candidates.append((eta, city_name))
+
+    if last_candidates:
+        eta, city_name = sorted(last_candidates, key=lambda c: c[0], reverse=True)[0]
+        return eta, city_name
+
+    fallback_eta = parsed(eta_final) or parsed(eta_next) or parsed(eta_destination) or parsed(eta_generic) or parsed(eta_delivery) or parsed(eta_discharge)
+    fallback_city = city(final_city_raw or next_location or last_location)
     return fallback_eta, fallback_city
 
 def sync_all_containers(
@@ -790,6 +800,16 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
+
+
+
+
+
+
+
+
 
 
 
