@@ -534,7 +534,9 @@
                       <span class="badge" style="border-color: rgba(249,115,115,0.55); color:#fecaca; background: rgba(249,115,115,0.12);">Error</span>
                       <div class="muted tiny" style="margin-top:6px;">{{ upd.note|truncatechars:120 }}</div>
                     {% else %}
-                      {% if upd.proposed_eta %}
+                      {% if c.latest_jsoncargo_display_text %}
+                        <strong>{{ c.latest_jsoncargo_display_text }}</strong>
+                      {% elif upd.proposed_eta %}
                         <strong>{{ upd.proposed_eta }}</strong>{% if upd.proposed_eta_city %} {{ upd.proposed_eta_city }}{% endif %}
                       {% elif upd.proposed_eta_city %}
                         <strong>{{ upd.proposed_eta_city }}</strong>
@@ -754,6 +756,12 @@
 
 </body>
 </html>
+
+
+
+
+
+
 
 
 
