@@ -4745,6 +4745,122 @@ def order_container_toggle_delivered_view(request, container_id: int):
     # Return to where the user was (keep filters), fall back to tracker.
     return redirect(request.META.get("HTTP_REFERER") or "order_tracker")
     
+
+def _jsoncargo_update_data(update) -> dict:
+    """Return the flat JSONCargo data object saved on a tracking update."""
+    if update is None:
+        return {}
+    payload = getattr(update, "source_payload", None) or {}
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data")
+    if isinstance(data, dict):
+        return data
+    tracking_response = payload.get("tracking_response")
+    if isinstance(tracking_response, dict):
+        data = tracking_response.get("data")
+        if isinstance(data, dict):
+            return data
+    extracted_data = payload.get("extracted_data")
+    if isinstance(extracted_data, dict):
+        return extracted_data
+    return payload
+
+
+def _jsoncargo_city_label(raw) -> str:
+    """Small display-only city cleanup matching the service behavior closely enough for templates."""
+    s = " ".join(str(raw or "").strip().split())
+    if not s:
+        return ""
+    lower = s.lower()
+    for token in [" united states", " usa", " us"]:
+        idx = lower.find(token)
+        if idx != -1:
+            s = s[:idx].strip()
+            lower = s.lower()
+    for token in [" terminal", " container", " term", " port", " ramp", " rail", " depot", " yard", " facility"]:
+        idx = lower.find(token)
+        if idx != -1:
+            s = s[:idx].strip()
+            lower = s.lower()
+    letters = [ch for ch in s if ch.isalpha()]
+    if letters and (sum(1 for ch in letters if ch.isupper()) / len(letters) > 0.7):
+        s = s.title()
+    return s
+
+
+def _jsoncargo_parse_date_for_display(raw):
+    val = str(raw or "").strip()
+    if not val:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.datetime.strptime(val, fmt).date()
+        except Exception:
+            pass
+    return None
+
+
+def _jsoncargo_on_rail_no_eta_message(update) -> str:
+    """Display 'On rail to City, no ETA yet' when JSONCargo has rail status but no reliable inland ETA.
+
+    This also protects older pending records that previously saved a stale ETA by checking
+    whether the saved ETA matches the last-location timestamp while the saved city is a
+    different inland destination.
+    """
+    if update is None:
+        return ""
+    data = _jsoncargo_update_data(update)
+    status = str(data.get("container_status") or "")
+    if "rail" not in status.lower():
+        return ""
+
+    city = str(getattr(update, "proposed_eta_city", "") or "").strip()
+    if not city:
+        city = (
+            _jsoncargo_city_label(data.get("shipped_to"))
+            or _jsoncargo_city_label(data.get("next_location"))
+            or _jsoncargo_city_label(data.get("discharging_port"))
+            or _jsoncargo_city_label(data.get("final_destination"))
+            or _jsoncargo_city_label(data.get("destination"))
+        )
+
+    proposed_eta = getattr(update, "proposed_eta", None)
+    if not proposed_eta:
+        return f"On rail to {city}, no ETA yet" if city else "On rail, no ETA yet"
+
+    last_city = _jsoncargo_city_label(data.get("last_location"))
+    next_city = _jsoncargo_city_label(data.get("next_location"))
+    timestamp_last = _jsoncargo_parse_date_for_display(data.get("timestamp_of_last_location"))
+    eta_next = _jsoncargo_parse_date_for_display(data.get("eta_next_destination"))
+    try:
+        proposed_date = proposed_eta if isinstance(proposed_eta, datetime.date) else _jsoncargo_parse_date_for_display(proposed_eta)
+    except Exception:
+        proposed_date = None
+
+    if city and last_city and city.lower() != last_city.lower() and not next_city:
+        if proposed_date and (proposed_date == timestamp_last or proposed_date == eta_next):
+            return f"On rail to {city}, no ETA yet"
+    return ""
+
+
+def _jsoncargo_update_display_text(update) -> str:
+    """One consistent display string for the master list and edit screen."""
+    if update is None:
+        return ""
+    rail_message = _jsoncargo_on_rail_no_eta_message(update)
+    if rail_message:
+        return rail_message
+    eta = getattr(update, "proposed_eta", None)
+    city = str(getattr(update, "proposed_eta_city", "") or "").strip()
+    if eta and city:
+        return f"{eta} {city}"
+    if eta:
+        return str(eta)
+    if city:
+        return city
+    return "No ETA returned"
+
 @login_required
 def order_tracker_view(request):
     """
@@ -4856,11 +4972,15 @@ def order_tracker_view(request):
         for c in active_containers + delivered_containers:
             c.latest_pending_tracking_update = latest_pending_by_container.get(c.id)
             c.latest_tracking_update = latest_any_by_container.get(c.id)
+            c.latest_jsoncargo_display_text = _jsoncargo_update_display_text(
+                c.latest_pending_tracking_update or c.latest_tracking_update
+            )
     except Exception:
         pending_container_ids = set()
         for c in active_containers + delivered_containers:
             c.latest_pending_tracking_update = None
             c.latest_tracking_update = None
+            c.latest_jsoncargo_display_text = ""
 
     # --- Vessel map data (MyShipTracking) ---
     vessel_points = []
@@ -6021,61 +6141,37 @@ def order_container_edit_view(request, container_id: int | None = None):
     jsoncargo_data: dict = {}
     jsoncargo_next_destination: str = ""
     jsoncargo_display_eta: str = ""
+    jsoncargo_display_message: str = ""
     if pending_tracking_update is not None:
-        payload = getattr(pending_tracking_update, "source_payload", None) or {}
-        if isinstance(payload, dict):
-            raw_data = payload.get("data")
-            if isinstance(raw_data, dict):
-                jsoncargo_data = raw_data
+        jsoncargo_data = _jsoncargo_update_data(pending_tracking_update)
+        jsoncargo_display_message = _jsoncargo_on_rail_no_eta_message(pending_tracking_update)
 
-    # Best-effort "next destination" label (city/port). JSONCargo may leave next_location null;
-    # fall back to other routing fields so the UI always shows something useful.
-    def _clean_str(val) -> str:
-        if val is None:
-            return ""
-        return str(val).strip()
-
-    # Use the exact same normalized values saved on the tracking update that the
-    # master Order Tracker table uses. This prevents discrepancies between the
-    # edit page JSONCargo card and the Latest JSONCargo ETA column.
+    # Use the exact same saved values/display rules as the master Order Tracker table.
+    # Do not fall back to raw JSONCargo ETA fields here; those raw fields can be stale
+    # last-port timestamps and can create misleading pairs like "05/17 Chicago".
     if pending_tracking_update is not None:
-        if getattr(pending_tracking_update, "proposed_eta", None):
+        if getattr(pending_tracking_update, "proposed_eta", None) and not jsoncargo_display_message:
             jsoncargo_display_eta = str(pending_tracking_update.proposed_eta)
         if getattr(pending_tracking_update, "proposed_eta_city", ""):
             jsoncargo_next_destination = str(pending_tracking_update.proposed_eta_city)
 
-    if isinstance(jsoncargo_data, dict):
-        if not jsoncargo_display_eta:
-            for key in (
-                "eta_final_destination",
-                "eta_next_destination",
-                "eta_destination",
-                "eta",
-                "eta_delivery",
-                "eta_discharge",
-            ):
-                candidate = _clean_str(jsoncargo_data.get(key))
-                if candidate:
-                    jsoncargo_display_eta = candidate
-                    break
-
-        if not jsoncargo_next_destination:
-            for key in (
-                "final_destination",
-                "final_destination_port",
-                "final_destination_city",
-                "destination",
-                "delivery_to",
-                "delivered_to",
-                "consignee_city",
-                "shipped_to",
-                "next_location",
-                "discharging_port",
-            ):
-                candidate = _clean_str(jsoncargo_data.get(key))
-                if candidate:
-                    jsoncargo_next_destination = candidate
-                    break
+    if isinstance(jsoncargo_data, dict) and not jsoncargo_next_destination:
+        for key in (
+            "final_destination",
+            "final_destination_port",
+            "final_destination_city",
+            "destination",
+            "delivery_to",
+            "delivered_to",
+            "consignee_city",
+            "shipped_to",
+            "next_location",
+            "discharging_port",
+        ):
+            candidate = _jsoncargo_city_label(jsoncargo_data.get(key))
+            if candidate:
+                jsoncargo_next_destination = candidate
+                break
 
     return render(
         request,
@@ -6092,6 +6188,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             "jsoncargo_data": jsoncargo_data,
             "jsoncargo_display_eta": jsoncargo_display_eta,
             "jsoncargo_next_destination": jsoncargo_next_destination,
+            "jsoncargo_display_message": jsoncargo_display_message,
         },
     )
 
@@ -6469,6 +6566,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
