@@ -139,6 +139,31 @@ def _same_jsoncargo_day(left: Any, right: Any) -> bool:
     return bool(left_date and right_date and left_date == right_date)
 
 
+def _status_on_rail_no_eta_message(data: Dict[str, Any], city_name: str | None = None) -> str:
+    """Return a human-friendly message when JSONCargo shows rail movement but no inland ETA.
+
+    JSONCargo can report status=On rail and shipped_to/discharging_port=Chicago while
+    leaving the actual Chicago ETA blank/stale. In that case the tracker should show
+    a status message instead of a misleading date/city pair.
+    """
+    if not isinstance(data, dict):
+        return ""
+    status = _clean_jsoncargo_value(data.get("container_status"))
+    if "rail" not in status.lower():
+        return ""
+    destination = (
+        city_name
+        or normalize_city(data.get("shipped_to"))
+        or normalize_city(data.get("next_location"))
+        or normalize_city(data.get("discharging_port"))
+        or normalize_city(data.get("final_destination"))
+        or normalize_city(data.get("destination"))
+    )
+    if not destination:
+        return "On rail, no ETA yet"
+    return f"On rail to {destination}, no ETA yet"
+
+
 def _extract_eta_city(data: Dict[str, Any]) -> tuple[dt.date | None, str]:
     """Extract the best ETA/city pair from JSONCargo.
 
@@ -750,6 +775,7 @@ def sync_one_container(
     # Norfolk timestamp with a Chicago destination field.
     proposed_eta, proposed_city = _extract_eta_city(data)
     source_last_updated = _parse_dt(data.get("last_updated"))
+    proposed_note = _status_on_rail_no_eta_message(data, proposed_city) if proposed_eta is None else ""
 
     if proposed_eta is None and not proposed_city:
         payload: Dict[str, Any] = {
@@ -832,7 +858,7 @@ def sync_one_container(
         pending.proposed_eta_city = proposed_city
         pending.source_last_updated = source_last_updated
         pending.source_payload = tracking or {}
-        pending.note = ""  # clear
+        pending.note = proposed_note
         pending.save(
             update_fields=[
                 "proposed_eta",
@@ -852,9 +878,27 @@ def sync_one_container(
         proposed_eta_city=proposed_city,
         source_last_updated=source_last_updated,
         source_payload=tracking or {},
+        note=proposed_note,
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
