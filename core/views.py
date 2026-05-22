@@ -4844,6 +4844,23 @@ def _jsoncargo_on_rail_no_eta_message(update) -> str:
     return ""
 
 
+
+
+def _jsoncargo_special_note_display(update) -> str:
+    """Return saved user-facing JSONCargo notes that should replace the normal ETA/city display."""
+    if update is None:
+        return ""
+    note = str(getattr(update, "note", "") or "").strip()
+    if not note:
+        return ""
+    lower = note.lower()
+    if lower.startswith("on rail") or lower.startswith("discharged at"):
+        return note
+    if lower.startswith("final destination eta"):
+        eta = getattr(update, "proposed_eta", None)
+        return f"{eta} {note}" if eta else note
+    return ""
+
 def _jsoncargo_update_display_text(update) -> str:
     """One consistent display string for the master list and edit screen."""
     if update is None:
@@ -4851,6 +4868,9 @@ def _jsoncargo_update_display_text(update) -> str:
     rail_message = _jsoncargo_on_rail_no_eta_message(update)
     if rail_message:
         return rail_message
+    special_note = _jsoncargo_special_note_display(update)
+    if special_note:
+        return special_note
     eta = getattr(update, "proposed_eta", None)
     city = str(getattr(update, "proposed_eta_city", "") or "").strip()
     if eta and city:
@@ -6144,7 +6164,7 @@ def order_container_edit_view(request, container_id: int | None = None):
     jsoncargo_display_message: str = ""
     if pending_tracking_update is not None:
         jsoncargo_data = _jsoncargo_update_data(pending_tracking_update)
-        jsoncargo_display_message = _jsoncargo_on_rail_no_eta_message(pending_tracking_update)
+        jsoncargo_display_message = _jsoncargo_on_rail_no_eta_message(pending_tracking_update) or _jsoncargo_special_note_display(pending_tracking_update)
 
     # Use the exact same saved values/display rules as the master Order Tracker table.
     # Do not fall back to raw JSONCargo ETA fields here; those raw fields can be stale
@@ -6566,101 +6586,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
