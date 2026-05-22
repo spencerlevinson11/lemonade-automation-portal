@@ -164,6 +164,92 @@ def _status_on_rail_no_eta_message(data: Dict[str, Any], city_name: str | None =
     return f"On rail to {destination}, no ETA yet"
 
 
+
+
+def _port_city_label(raw: Any) -> str:
+    """Return a clean city label for noisy port/terminal strings.
+
+    JSONCargo sometimes returns values like
+    ``Virginia International Gateway,Norfolk,Virginia,United States`` where the
+    first comma segment is a terminal/facility and the second segment is the city.
+    """
+    raw_s = _clean_jsoncargo_value(raw)
+    if not raw_s:
+        return ""
+    parts = [part.strip() for part in raw_s.split(",") if part.strip()]
+    if len(parts) >= 2:
+        first_lower = parts[0].lower()
+        facility_words = ("gateway", "terminal", "container", "port", "ramp", "rail", "depot", "yard", "facility")
+        if any(word in first_lower for word in facility_words):
+            return normalize_city(parts[1])
+    return normalize_city(raw_s)
+
+
+def _is_evergreen_final_eta_discharge_only(data: Dict[str, Any]) -> bool:
+    """Detect Evergreen feeds where eta_final_destination is inland/final ETA,
+    but JSONCargo only provides the ocean discharge port as a location.
+
+    Example: Evergreen returns eta_final_destination=2026-06-12, discharging_port=Norfolk,
+    while shipped_to/last_location are still Rotterdam. The date should not be
+    displayed as ``2026-06-12 Norfolk``; instead we show a note that this is the
+    final destination ETA and Norfolk is only the discharge port.
+    """
+    if not isinstance(data, dict):
+        return False
+    line_id = _clean_jsoncargo_value(data.get("shipping_line_id"))
+    line_name = _clean_jsoncargo_value(data.get("shipping_line_name")).lower()
+    if line_id != "0014" and "evergreen" not in line_name:
+        return False
+    if not _parse_date(_clean_jsoncargo_value(data.get("eta_final_destination"))):
+        return False
+    if not _clean_jsoncargo_value(data.get("discharging_port")):
+        return False
+
+    shipped_to = normalize_city(data.get("shipped_to"))
+    shipped_from = normalize_city(data.get("shipped_from"))
+    loading_port = normalize_city(data.get("loading_port"))
+    last_location = normalize_city(data.get("last_location"))
+    discharge_city = _port_city_label(data.get("discharging_port"))
+
+    # If shipped_to is blank or still points to the origin/current port, then
+    # discharging_port is just context, not the city for eta_final_destination.
+    if not shipped_to:
+        return True
+    if shipped_from and shipped_to.lower() == shipped_from.lower():
+        return True
+    if loading_port and shipped_to.lower() == loading_port.lower():
+        return True
+    if last_location and shipped_to.lower() == last_location.lower() and discharge_city and discharge_city.lower() != shipped_to.lower():
+        return True
+    return False
+
+
+def _jsoncargo_special_note(data: Dict[str, Any], proposed_eta: dt.date | None, proposed_city: str) -> str:
+    """Return a user-facing special status note for cases where normal ETA/city
+    pairing would be misleading.
+    """
+    if not isinstance(data, dict):
+        return ""
+
+    rail_note = _status_on_rail_no_eta_message(data, proposed_city) if proposed_eta is None else ""
+    if rail_note:
+        return rail_note
+
+    status = _clean_jsoncargo_value(data.get("container_status")).lower()
+    if "discharg" in status and proposed_eta is None:
+        port = _port_city_label(data.get("last_location") or data.get("discharging_port"))
+        if port:
+            return f"Discharged at {port}; no inland ETA yet"
+
+    if _is_evergreen_final_eta_discharge_only(data) and proposed_eta:
+        port = _port_city_label(data.get("discharging_port"))
+        if port:
+            return f"final destination ETA; discharge port {port}"
+        return "final destination ETA; discharge port unknown"
+
+    return ""
+
+
 def _extract_eta_city(data: Dict[str, Any]) -> tuple[dt.date | None, str]:
     """Extract the best ETA/city pair from JSONCargo.
 
@@ -240,6 +326,15 @@ def _extract_eta_city(data: Dict[str, Any]) -> tuple[dt.date | None, str]:
     final_city = city(final_city_raw)
     last_city = city(last_location)
     next_city = city(next_location)
+
+    # Evergreen can return eta_final_destination as the inland/final ETA while
+    # only providing the ocean discharge port as a location. In that case, do
+    # not pair the final ETA with Norfolk; the display note will explain that
+    # Norfolk is the discharge port.
+    if _is_evergreen_final_eta_discharge_only(data):
+        evergreen_eta = parsed(eta_final)
+        if evergreen_eta:
+            return evergreen_eta, ""
 
     def same_day(left: Any, right: Any) -> bool:
         left_date = parsed(left)
@@ -799,7 +894,7 @@ def sync_one_container(
     # Norfolk timestamp with a Chicago destination field.
     proposed_eta, proposed_city = _extract_eta_city(data)
     source_last_updated = _parse_dt(data.get("last_updated"))
-    proposed_note = _status_on_rail_no_eta_message(data, proposed_city) if proposed_eta is None else ""
+    proposed_note = _jsoncargo_special_note(data, proposed_eta, proposed_city)
 
     if proposed_eta is None and not proposed_city:
         payload: Dict[str, Any] = {
@@ -906,6 +1001,14 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
+
+
+
+
+
+
 
 
 
