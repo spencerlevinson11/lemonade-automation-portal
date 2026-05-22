@@ -192,6 +192,7 @@ def _extract_eta_city(data: Dict[str, Any]) -> tuple[dt.date | None, str]:
     next_location = clean(data.get("next_location"))
     last_location = clean(data.get("last_location"))
     shipped_to = clean(data.get("shipped_to"))
+    discharging_port = clean(data.get("discharging_port"))
     final_city_raw = (
         clean(data.get("final_destination"))
         or clean(data.get("final_destination_port"))
@@ -201,8 +202,31 @@ def _extract_eta_city(data: Dict[str, Any]) -> tuple[dt.date | None, str]:
         or clean(data.get("delivered_to"))
         or clean(data.get("consignee_city"))
         or shipped_to
-        or clean(data.get("discharging_port"))
+        or discharging_port
     )
+
+    # Some carrier feeds, especially HMM, use ``shipped_to`` for the
+    # current/departure port even while ``eta_final_destination`` points to the
+    # overseas discharge port. Example: shipped_to=Antwerp, last_location=Antwerp,
+    # discharging_port=Los Angeles, eta_final_destination=2026-05-27. In that
+    # case the ETA belongs to Los Angeles, not Antwerp, so prefer
+    # discharging_port as the destination city.
+    status_lower_for_city = clean(data.get("container_status")).lower()
+    shipped_to_city_probe = normalize_city(shipped_to)
+    last_city_probe = normalize_city(last_location)
+    discharging_city_probe = normalize_city(discharging_port)
+    if discharging_city_probe:
+        shipped_matches_last = (
+            shipped_to_city_probe
+            and last_city_probe
+            and shipped_to_city_probe.lower() == last_city_probe.lower()
+        )
+        departed_by_vessel = "depart" in status_lower_for_city and "vessel" in status_lower_for_city
+        if (departed_by_vessel or shipped_matches_last) and (
+            not shipped_to_city_probe
+            or discharging_city_probe.lower() != shipped_to_city_probe.lower()
+        ):
+            final_city_raw = discharging_port
 
     eta_next = data.get("eta_next_destination")
     eta_final = data.get("eta_final_destination")
@@ -882,6 +906,49 @@ def sync_one_container(
         status=OrderContainerTrackingUpdate.STATUS_PENDING,
     )
     return ("change_created", new_obj)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
