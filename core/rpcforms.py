@@ -122,7 +122,7 @@ class RpcOrderForm(forms.Form):
         ),
     )
     b_10_liter_n6_plus_x_2800 = forms.IntegerField(
-        label="10 liter N6+ x 2800",
+        label="10 liter wide N6+ x 2800",
         required=False,
         min_value=0,
         widget=forms.NumberInput(
