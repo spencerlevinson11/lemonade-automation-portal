@@ -26,7 +26,7 @@ PER_PALLET = {
     "10 Wide Standard Classic x 2660": 2660,
     "10 Wide Standard Classic x 2520": 2520,
     "10 liter classic N6+ 2520":    2520,
-    "10 liter N6+ x 2800":       2800,
+    "10 liter wide N6+ x 2800":       2800,
     "10 ltr conical Next Gen":  4050,
     "10 ltr conical black":     3960,
     "10 ltr wide NG eco":       2842,
