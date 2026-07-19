@@ -3299,35 +3299,52 @@ def amd_financial_data_view(request):
         "AMD", "AAPL", "MSFT", "AMZN", "GOOGL", "META", "NVDA",
         "AVGO", "TSM", "QCOM", "NFLX", "CRM", "ADBE", "INTU",
     ]
+    timeframe_options = [
+        ("today", "Today (5-minute)"),
+        ("5d", "Last 5 trading days (5-minute)"),
+        ("1mo", "Last month (daily)"),
+        ("ytd", "Year to date (daily)"),
+        ("full", "Since Jan. 1, 2025 (daily)"),
+    ]
     selected_ticker = request.GET.get("ticker", "AMD").strip().upper()
+    selected_timeframe = request.GET.get("timeframe", "full").strip().lower()
+    force_refresh = request.GET.get("refresh") == "1"
     context = {
-        "automation_name": "AMD Financial Data Analysis",
+        "automation_name": "Near-Real-Time Market Analytics",
         "supported_tickers": supported_tickers,
+        "timeframe_options": timeframe_options,
         "ticker": selected_ticker,
-        "start_date": "2025-01-01",
-        "end_date": "Current date",
+        "selected_timeframe": selected_timeframe,
         "row_count": 0,
         "chart_data_uri": "",
         "columns": [],
         "rows": [],
+        "cards": [],
     }
     try:
-        result = download_amd_financial_data(selected_ticker)
+        result = download_amd_financial_data(selected_ticker, selected_timeframe, force_refresh)
         display_df = result.data.copy()
         for column in display_df.columns:
-            if str(column).lower().startswith("date"):
+            if "date" in str(column).lower() or "time" in str(column).lower():
                 display_df[column] = display_df[column].apply(
-                    lambda value: value.strftime("%Y-%m-%d") if hasattr(value, "strftime") else value
+                    lambda value: value.strftime("%Y-%m-%d %H:%M") if hasattr(value, "strftime") else value
                 )
             elif getattr(display_df[column].dtype, "kind", "") in {"f", "c"}:
                 display_df[column] = display_df[column].round(4)
 
         context.update({
             "ticker": result.ticker,
+            "selected_timeframe": result.timeframe,
+            "timeframe_label": result.timeframe_label,
             "start_date": result.start_date,
             "end_date": result.end_date,
             "row_count": result.row_count,
             "chart_data_uri": result.chart_data_uri,
+            "last_updated": result.last_updated,
+            "latest_bar": result.latest_bar,
+            "market_status": result.market_status,
+            "cache_seconds": result.cache_seconds,
+            "cards": result.cards,
             "columns": [str(column) for column in display_df.columns],
             "rows": display_df.fillna("").values.tolist(),
         })
@@ -6637,6 +6654,10 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
 
 
 
