@@ -1,4 +1,4 @@
-"""Yahoo Finance downloader and chart builder for the AMD automation."""
+"""Yahoo Finance downloader and chart builder for the stock analysis automation."""
 
 from __future__ import annotations
 
@@ -13,18 +13,45 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-AMD_TICKER = "AMD"
-AMD_START_DATE = "2025-01-01"
+DEFAULT_TICKER = "AMD"
+STOCK_START_DATE = "2025-01-01"
+SUPPORTED_TICKERS = (
+    "AMD",
+    "AAPL",
+    "MSFT",
+    "AMZN",
+    "GOOGL",
+    "META",
+    "NVDA",
+    "AVGO",
+    "TSM",
+    "QCOM",
+    "NFLX",
+    "CRM",
+    "ADBE",
+    "INTU",
+)
 
 
 @dataclass(frozen=True)
-class AMDDownloadResult:
+class StockDownloadResult:
     data: pd.DataFrame
     row_count: int
     chart_data_uri: str
-    ticker: str = AMD_TICKER
-    start_date: str = AMD_START_DATE
+    ticker: str
+    start_date: str = STOCK_START_DATE
     end_date: str = ""
+
+
+def normalize_ticker(ticker: str | None) -> str:
+    """Return a supported uppercase ticker, defaulting to AMD."""
+    normalized = (ticker or DEFAULT_TICKER).strip().upper()
+    if normalized not in SUPPORTED_TICKERS:
+        raise ValueError(
+            f"Unsupported ticker '{normalized}'. Choose one of: "
+            + ", ".join(SUPPORTED_TICKERS)
+        )
+    return normalized
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -59,7 +86,7 @@ def _add_simple_returns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _build_chart_data_uri(df: pd.DataFrame) -> str:
+def _build_chart_data_uri(df: pd.DataFrame, ticker: str) -> str:
     """Create a two-panel adjusted-price and simple-return chart as a data URI."""
     if df.empty:
         return ""
@@ -75,7 +102,7 @@ def _build_chart_data_uri(df: pd.DataFrame) -> str:
         subplots=True,
         sharex=True,
         figsize=(12, 7),
-        title=["AMD Adjusted Closing Price", "AMD Daily Simple Return"],
+        title=[f"{ticker} Adjusted Closing Price", f"{ticker} Daily Simple Return"],
         grid=True,
     )
     axes[0].set_ylabel("Price (USD)")
@@ -95,17 +122,18 @@ def _build_chart_data_uri(df: pd.DataFrame) -> str:
     return f"data:image/png;base64,{encoded}"
 
 
-def download_amd_financial_data() -> AMDDownloadResult:
-    """Download AMD daily data from the configured start date through today."""
+def download_stock_financial_data(ticker: str = DEFAULT_TICKER) -> StockDownloadResult:
+    """Download supported stock data from the configured start date through today."""
     import yfinance as yf
 
+    selected_ticker = normalize_ticker(ticker)
     current_date = date.today()
     # yfinance's end date is exclusive, so tomorrow is passed to include today.
     download_end_date = current_date + timedelta(days=1)
 
     df = yf.download(
-        AMD_TICKER,
-        start=AMD_START_DATE,
+        selected_ticker,
+        start=STOCK_START_DATE,
         end=download_end_date.isoformat(),
         progress=False,
         auto_adjust=False,
@@ -116,12 +144,19 @@ def download_amd_financial_data() -> AMDDownloadResult:
 
     df = _normalize_columns(df.copy())
     df = _add_simple_returns(df)
-    chart_data_uri = _build_chart_data_uri(df)
+    chart_data_uri = _build_chart_data_uri(df, selected_ticker)
     display_df = df.reset_index()
 
-    return AMDDownloadResult(
+    return StockDownloadResult(
         data=display_df,
         row_count=len(display_df),
         chart_data_uri=chart_data_uri,
+        ticker=selected_ticker,
         end_date=current_date.isoformat(),
     )
+
+
+def download_amd_financial_data(ticker: str = DEFAULT_TICKER) -> StockDownloadResult:
+    """Backward-compatible entry point used by the existing Django view."""
+    return download_stock_financial_data(ticker)
+
