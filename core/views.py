@@ -3299,8 +3299,9 @@ def amd_financial_data_view(request):
         "automation_name": "AMD Financial Data Analysis",
         "ticker": "AMD",
         "start_date": "2025-01-01",
-        "end_date": "2026-07-17",
+        "end_date": "Current date",
         "row_count": 0,
+        "chart_data_uri": "",
         "columns": [],
         "rows": [],
     }
@@ -3320,6 +3321,7 @@ def amd_financial_data_view(request):
             "start_date": result.start_date,
             "end_date": result.end_date,
             "row_count": result.row_count,
+            "chart_data_uri": result.chart_data_uri,
             "columns": [str(column) for column in display_df.columns],
             "rows": display_df.fillna("").values.tolist(),
         })
@@ -6629,6 +6631,13 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
 
 
 
