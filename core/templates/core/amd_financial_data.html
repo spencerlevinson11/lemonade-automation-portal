@@ -7,77 +7,121 @@
   {% include "core/_theme_styles.html" %}
   <style>
     body { padding: 24px; }
-    .page { max-width: 1500px; margin: 0 auto; }
-    .header-card, .chart-card, .table-card { padding: 24px; margin-bottom: 20px; }
-    .selector { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
-    .selector label { display: grid; gap: 6px; font-weight: 600; }
-    .selector select { min-width: 180px; padding: 10px 12px; border-radius: 8px; }
-    .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
-    .meta strong { display: block; font-size: 1.25rem; }
-    .chart-card img { display: block; width: 100%; height: auto; }
-    .table-wrap { overflow-x: auto; max-height: 70vh; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid rgba(127,127,127,.22); white-space: nowrap; }
-    th:first-child, td:first-child { text-align: left; }
-    thead th { position: sticky; top: 0; background: var(--card-bg, #fff); z-index: 1; }
-    .error { padding: 14px; border: 1px solid #b42318; border-radius: 8px; }
-    .actions { margin-top: 18px; }
+    .page { max-width: 1550px; margin: 0 auto; }
+    .card, .header-card, .chart-card, .table-card { padding: 24px; margin-bottom: 20px; }
+    .selector { display:flex; align-items:end; gap:12px; flex-wrap:wrap; margin:20px 0; }
+    .selector label { display:grid; gap:6px; font-weight:600; }
+    .selector select { min-width:210px; padding:10px 12px; border-radius:8px; }
+    .meta { display:flex; gap:24px; flex-wrap:wrap; margin-top:12px; }
+    .meta strong { display:block; font-size:1.08rem; }
+    .status { margin-top:14px; padding:12px 14px; border-radius:9px; background:rgba(80,120,180,.12); }
+    .analytics-grid { display:grid; grid-template-columns:repeat(5, minmax(190px, 1fr)); gap:14px; margin-bottom:20px; }
+    .metric-card { padding:18px; min-height:125px; }
+    .metric-card h3 { font-size:.92rem; margin:0 0 10px; opacity:.78; }
+    .metric-label { font-size:1.3rem; font-weight:750; margin-bottom:8px; }
+    .metric-detail { font-size:.86rem; line-height:1.35; opacity:.78; }
+    .chart-card img { display:block; width:100%; height:auto; }
+    .table-wrap { overflow:auto; max-height:70vh; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:9px 12px; text-align:right; border-bottom:1px solid rgba(127,127,127,.22); white-space:nowrap; }
+    th:first-child, td:first-child { text-align:left; }
+    thead th { position:sticky; top:0; background:var(--card-bg, #fff); z-index:1; }
+    .error { padding:14px; border:1px solid #b42318; border-radius:8px; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
     .btn { display:inline-block; padding:10px 14px; border-radius:8px; text-decoration:none; font-weight:600; border:0; cursor:pointer; }
+    .note { font-size:.9rem; opacity:.78; }
+    @media (max-width:1100px) { .analytics-grid { grid-template-columns:repeat(2, minmax(220px, 1fr)); } }
+    @media (max-width:640px) { body { padding:12px; } .analytics-grid { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
   <main class="page">
     <section class="header-card card">
       <h1>{{ automation_name }}</h1>
-      <p>Yahoo Finance daily market data and daily returns for a selected stock.</p>
+      <p>Near-real-time Yahoo Finance analytics combining intraday price action, technical indicators, volume behavior, and broad market conditions.</p>
 
-      <form method="get" class="selector">
-        <label for="ticker">
-          Select stock
+      <form method="get" class="selector" id="analytics-form">
+        <label for="ticker">Stock
           <select id="ticker" name="ticker">
-            {% for symbol in supported_tickers %}
-              <option value="{{ symbol }}" {% if symbol == ticker %}selected{% endif %}>{{ symbol }}</option>
-            {% endfor %}
+            {% for symbol in supported_tickers %}<option value="{{ symbol }}" {% if symbol == ticker %}selected{% endif %}>{{ symbol }}</option>{% endfor %}
           </select>
         </label>
-        <button class="btn" type="submit">Load stock</button>
+        <label for="timeframe">Time period
+          <select id="timeframe" name="timeframe">
+            {% for value, label in timeframe_options %}<option value="{{ value }}" {% if value == selected_timeframe %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <button class="btn" type="submit">Load analytics</button>
+        <button class="btn" type="submit" name="refresh" value="1">Refresh now</button>
+        <label style="display:flex;grid-auto-flow:column;align-items:center;gap:8px;font-weight:500;padding-bottom:10px;">
+          <input type="checkbox" id="auto-refresh"> Auto-refresh every 5 minutes
+        </label>
       </form>
 
       <div class="meta">
         <div><span>Ticker</span><strong>{{ ticker }}</strong></div>
-        <div><span>Start date</span><strong>{{ start_date }}</strong></div>
-        <div><span>End date</span><strong>{{ end_date }}</strong></div>
-        <div><span>Downloaded rows</span><strong>{{ row_count }}</strong></div>
+        <div><span>Period</span><strong>{{ timeframe_label }}</strong></div>
+        <div><span>Data range</span><strong>{{ start_date }} – {{ end_date }}</strong></div>
+        <div><span>Rows</span><strong>{{ row_count }}</strong></div>
+        <div><span>Latest bar</span><strong>{{ latest_bar }}</strong></div>
+        <div><span>Updated</span><strong>{{ last_updated }}</strong></div>
       </div>
-      <p><small>The end date updates automatically each day. The most recent row depends on market hours and Yahoo Finance data availability.</small></p>
+      {% if market_status %}<div class="status"><strong>{{ market_status }}</strong></div>{% endif %}
+      <p class="note">Data is cached for about {{ cache_seconds }} seconds. “Today” uses regular-session 5-minute bars. This is near-real-time analytics, not an exchange-grade tick feed.</p>
       <div class="actions"><a class="btn" href="{% url 'dashboard' %}">Back to dashboard</a></div>
     </section>
 
     {% if error %}
-      <section class="error">The download could not be completed: {{ error }}</section>
-    {% elif rows %}
+      <section class="error">The analysis could not be completed: {{ error }}</section>
+    {% else %}
+      <section class="analytics-grid">
+        {% for card in cards %}
+          <article class="metric-card card">
+            <h3>{{ card.title }}</h3>
+            <div class="metric-label">{{ card.label }}</div>
+            <div class="metric-detail">{{ card.detail }}</div>
+          </article>
+        {% endfor %}
+      </section>
+
       {% if chart_data_uri %}
         <section class="chart-card card">
-          <h2>{{ ticker }} Price and Daily Return</h2>
-          <img src="{{ chart_data_uri }}" alt="{{ ticker }} adjusted closing price and daily simple return chart">
+          <h2>{{ ticker }} analytics — {{ timeframe_label }}</h2>
+          <img src="{{ chart_data_uri }}" alt="{{ ticker }} trend, volatility, momentum, institutional activity proxy, and market regime charts">
+          <p class="note">“Institutional activity” is a price-and-volume proxy based on relative volume, OBV, and Chaikin Money Flow; it is not direct real-time institutional ownership reporting.</p>
         </section>
       {% endif %}
-      <section class="table-card card">
-        <div class="table-wrap">
-          <table>
+
+      {% if rows %}
+        <section class="table-card card">
+          <h2>Underlying data and indicators</h2>
+          <div class="table-wrap"><table>
             <thead><tr>{% for column in columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
-            <tbody>
-              {% for row in rows %}
-                <tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    {% else %}
-      <section class="table-card card">No rows were returned for the selected stock and period.</section>
+            <tbody>{% for row in rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+          </table></div>
+        </section>
+      {% else %}
+        <section class="table-card card">No rows were returned for this stock and period.</section>
+      {% endif %}
     {% endif %}
   </main>
+  <script>
+    (function () {
+      const checkbox = document.getElementById('auto-refresh');
+      const key = 'marketAnalyticsAutoRefresh';
+      checkbox.checked = localStorage.getItem(key) === '1';
+      checkbox.addEventListener('change', function () {
+        localStorage.setItem(key, checkbox.checked ? '1' : '0');
+      });
+      if (checkbox.checked) {
+        window.setTimeout(function () {
+          const url = new URL(window.location.href);
+          url.searchParams.set('refresh', '1');
+          window.location.assign(url.toString());
+        }, 300000);
+      }
+    }());
+  </script>
 </body>
 </html>
 
