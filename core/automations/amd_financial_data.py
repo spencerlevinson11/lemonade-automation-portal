@@ -125,4 +125,3 @@ def download_amd_financial_data() -> AMDDownloadResult:
         chart_data_uri=chart_data_uri,
         end_date=current_date.isoformat(),
     )
-
