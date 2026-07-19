@@ -152,6 +152,7 @@ urlpatterns = [
 
 
     # Industry Relationship Web
+    path("automations/amd-financial-data/", core_views.amd_financial_data_view, name="amd_financial_data"),
     path("automations/industry-relationships/", core_views.industry_relationship_web_view, name="industry_relationship_web"),
     path("automations/industry-relationships/save-positions/", core_views.industry_relationship_positions_save_view, name="industry_relationship_positions_save"),
 
@@ -216,6 +217,37 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
