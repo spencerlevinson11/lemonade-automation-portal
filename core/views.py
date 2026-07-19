@@ -3295,9 +3295,15 @@ def run_automation(request, pk):
 @login_required
 @require_http_methods(["GET"])
 def amd_financial_data_view(request):
+    supported_tickers = [
+        "AMD", "AAPL", "MSFT", "AMZN", "GOOGL", "META", "NVDA",
+        "AVGO", "TSM", "QCOM", "NFLX", "CRM", "ADBE", "INTU",
+    ]
+    selected_ticker = request.GET.get("ticker", "AMD").strip().upper()
     context = {
         "automation_name": "AMD Financial Data Analysis",
-        "ticker": "AMD",
+        "supported_tickers": supported_tickers,
+        "ticker": selected_ticker,
         "start_date": "2025-01-01",
         "end_date": "Current date",
         "row_count": 0,
@@ -3306,7 +3312,7 @@ def amd_financial_data_view(request):
         "rows": [],
     }
     try:
-        result = download_amd_financial_data()
+        result = download_amd_financial_data(selected_ticker)
         display_df = result.data.copy()
         for column in display_df.columns:
             if str(column).lower().startswith("date"):
@@ -6631,13 +6637,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
-
-
-
-
-
 
 
 
