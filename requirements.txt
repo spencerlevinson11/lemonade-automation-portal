@@ -16,3 +16,4 @@ xlwings==0.33.16
 pandas>=2.2.0
 python-docx>=1.1.0
 yfinance>=0.2.54
+matplotlib>=3.8.0
