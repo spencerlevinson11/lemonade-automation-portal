@@ -42,6 +42,7 @@ from django.utils._os import safe_join
 from django.forms import inlineformset_factory
 from django.views.decorators.http import require_POST
 from .automations.bucket_metrics import analyze_prognosis_workbook, rebuild_projection_with_growth
+from .automations.amd_financial_data import download_amd_financial_data
 from .bol_generation import generate_bol_from_form, generate_bol_from_templates
 from .forms import (
     BOLForm,
@@ -3250,6 +3251,11 @@ def run_automation(request, pk):
     if "order tracker" in name_normalized or "container tracker" in name_normalized or "order tracking" in name_normalized:
         return redirect("order_tracker")
 
+
+    # --- Branch: AMD Financial Data Analysis ---
+    if "amd" in name_normalized and ("financial" in name_normalized or "stock" in name_normalized):
+        return redirect("amd_financial_data")
+
     # --- Branch: Industry Relationship Web ---
     if (
         "relationship web" in name_normalized
@@ -3284,6 +3290,43 @@ def run_automation(request, pk):
 
     return render(request, "core/run_bol.html", {"automation": automation, "form": form})
 
+
+
+@login_required
+@require_http_methods(["GET"])
+def amd_financial_data_view(request):
+    context = {
+        "automation_name": "AMD Financial Data Analysis",
+        "ticker": "AMD",
+        "start_date": "2025-01-01",
+        "end_date": "2026-07-17",
+        "row_count": 0,
+        "columns": [],
+        "rows": [],
+    }
+    try:
+        result = download_amd_financial_data()
+        display_df = result.data.copy()
+        for column in display_df.columns:
+            if str(column).lower().startswith("date"):
+                display_df[column] = display_df[column].apply(
+                    lambda value: value.strftime("%Y-%m-%d") if hasattr(value, "strftime") else value
+                )
+            elif getattr(display_df[column].dtype, "kind", "") in {"f", "c"}:
+                display_df[column] = display_df[column].round(4)
+
+        context.update({
+            "ticker": result.ticker,
+            "start_date": result.start_date,
+            "end_date": result.end_date,
+            "row_count": result.row_count,
+            "columns": [str(column) for column in display_df.columns],
+            "rows": display_df.fillna("").values.tolist(),
+        })
+    except Exception as exc:
+        context["error"] = str(exc)
+
+    return render(request, "core/amd_financial_data.html", context)
 
 
 # -----------------------------
@@ -6586,6 +6629,13 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
 
 
 
