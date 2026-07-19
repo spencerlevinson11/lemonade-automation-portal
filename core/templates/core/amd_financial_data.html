@@ -9,6 +9,9 @@
     body { padding: 24px; }
     .page { max-width: 1500px; margin: 0 auto; }
     .header-card, .chart-card, .table-card { padding: 24px; margin-bottom: 20px; }
+    .selector { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
+    .selector label { display: grid; gap: 6px; font-weight: 600; }
+    .selector select { min-width: 180px; padding: 10px 12px; border-radius: 8px; }
     .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
     .meta strong { display: block; font-size: 1.25rem; }
     .chart-card img { display: block; width: 100%; height: auto; }
@@ -19,14 +22,27 @@
     thead th { position: sticky; top: 0; background: var(--card-bg, #fff); z-index: 1; }
     .error { padding: 14px; border: 1px solid #b42318; border-radius: 8px; }
     .actions { margin-top: 18px; }
-    .btn { display:inline-block; padding:10px 14px; border-radius:8px; text-decoration:none; font-weight:600; }
+    .btn { display:inline-block; padding:10px 14px; border-radius:8px; text-decoration:none; font-weight:600; border:0; cursor:pointer; }
   </style>
 </head>
 <body>
   <main class="page">
     <section class="header-card card">
       <h1>{{ automation_name }}</h1>
-      <p>Yahoo Finance daily market data for AMD.</p>
+      <p>Yahoo Finance daily market data and daily returns for a selected stock.</p>
+
+      <form method="get" class="selector">
+        <label for="ticker">
+          Select stock
+          <select id="ticker" name="ticker">
+            {% for symbol in supported_tickers %}
+              <option value="{{ symbol }}" {% if symbol == ticker %}selected{% endif %}>{{ symbol }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="btn" type="submit">Load stock</button>
+      </form>
+
       <div class="meta">
         <div><span>Ticker</span><strong>{{ ticker }}</strong></div>
         <div><span>Start date</span><strong>{{ start_date }}</strong></div>
@@ -42,8 +58,8 @@
     {% elif rows %}
       {% if chart_data_uri %}
         <section class="chart-card card">
-          <h2>AMD Price and Daily Return</h2>
-          <img src="{{ chart_data_uri }}" alt="AMD adjusted closing price and daily simple return chart">
+          <h2>{{ ticker }} Price and Daily Return</h2>
+          <img src="{{ chart_data_uri }}" alt="{{ ticker }} adjusted closing price and daily simple return chart">
         </section>
       {% endif %}
       <section class="table-card card">
@@ -59,8 +75,9 @@
         </div>
       </section>
     {% else %}
-      <section class="table-card card">No rows were returned for the configured period.</section>
+      <section class="table-card card">No rows were returned for the selected stock and period.</section>
     {% endif %}
   </main>
 </body>
 </html>
+
