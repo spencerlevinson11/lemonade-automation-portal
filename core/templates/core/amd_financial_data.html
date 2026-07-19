@@ -8,9 +8,10 @@
   <style>
     body { padding: 24px; }
     .page { max-width: 1500px; margin: 0 auto; }
-    .header-card, .table-card { padding: 24px; margin-bottom: 20px; }
+    .header-card, .chart-card, .table-card { padding: 24px; margin-bottom: 20px; }
     .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
     .meta strong { display: block; font-size: 1.25rem; }
+    .chart-card img { display: block; width: 100%; height: auto; }
     .table-wrap { overflow-x: auto; max-height: 70vh; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid rgba(127,127,127,.22); white-space: nowrap; }
@@ -32,13 +33,19 @@
         <div><span>End date</span><strong>{{ end_date }}</strong></div>
         <div><span>Downloaded rows</span><strong>{{ row_count }}</strong></div>
       </div>
-      <p><small>Yahoo Finance treats the end date as exclusive.</small></p>
+      <p><small>The end date updates automatically each day. The most recent row depends on market hours and Yahoo Finance data availability.</small></p>
       <div class="actions"><a class="btn" href="{% url 'dashboard' %}">Back to dashboard</a></div>
     </section>
 
     {% if error %}
       <section class="error">The download could not be completed: {{ error }}</section>
     {% elif rows %}
+      {% if chart_data_uri %}
+        <section class="chart-card card">
+          <h2>AMD Price and Daily Return</h2>
+          <img src="{{ chart_data_uri }}" alt="AMD adjusted closing price and daily simple return chart">
+        </section>
+      {% endif %}
       <section class="table-card card">
         <div class="table-wrap">
           <table>
