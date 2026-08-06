@@ -255,6 +255,15 @@ class RpcOrderForm(forms.Form):
         ),
     )
 
+    b_10_liter_wide_nir_grey_classic_x_2800 = forms.IntegerField(
+        label="10 liter wide NIR Grey classic x 2800",
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
+        ),
+    )
+
     b_amalia_white_buckets = forms.IntegerField(
         label="Amalia White Buckets",
         required=False,
@@ -335,6 +344,8 @@ class RpcOrderForm(forms.Form):
             attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
         ),
     )
+
+
 
 
 
