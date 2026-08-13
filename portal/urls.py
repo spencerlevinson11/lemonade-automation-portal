@@ -94,6 +94,12 @@ urlpatterns = [
     ),
     path("automations/orders/clear-jsoncargo-updates/", core_views.order_tracker_clear_jsoncargo_updates_view, name="order_tracker_clear_jsoncargo_updates"),
     path("automations/orders/bulk-update/", core_views.order_tracker_bulk_update_view, name="order_tracker_bulk_update"),
+    path("automations/orders/reset-checks/", core_views.order_tracker_reset_checks_view, name="order_tracker_reset_checks"),
+    path(
+        "automations/orders/<int:container_id>/tracker-check/",
+        core_views.order_container_set_tracker_checked_view,
+        name="order_container_set_tracker_checked",
+    ),
     path(
         "automations/orders/recap.docx",
         core_views.order_tracker_recap_docx_view,
@@ -217,6 +223,82 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
