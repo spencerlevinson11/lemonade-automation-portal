@@ -131,6 +131,16 @@
     .compact-input { min-width: 130px; padding: 7px 8px; font-size: 0.85rem; }
     .eta-cell { min-width: 180px; }
     .jsoncargo-cell { min-width: 170px; font-size: 0.88rem; }
+    .tracker-check-cell { width: 84px; text-align: center; vertical-align: middle; }
+    input.tracker-check {
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+    input.tracker-check:disabled { cursor: wait; opacity: 0.65; }
 
     #vesselMap {
       height: 380px;
@@ -427,7 +437,13 @@
           <div style="font-weight:900;">Active Orders</div>
           <div class="muted tiny">Use “Mark delivered” once an order has arrived — it will move to the Delivered section below. Edit manual ETAs directly here, then save all at once. The Latest JSONCargo ETA column shows the most recent API result, even after you acknowledge an update.</div>
         </div>
-        <button class="btn" type="submit" form="bulkEtaForm">Save all ETA edits</button>
+        <div class="actions">
+          <form method="post" action="{% url 'order_tracker_reset_checks' %}" style="display:inline;">
+            {% csrf_token %}
+            <button class="btn btn-danger" type="submit" onclick="return confirm('Reset all order tracker checkboxes?');">Reset all checkboxes</button>
+          </form>
+          <button class="btn" type="submit" form="bulkEtaForm">Save all ETA edits</button>
+        </div>
       </div>
 
       <form id="bulkEtaForm" method="post" action="{% url 'order_tracker_bulk_update' %}">
@@ -438,6 +454,7 @@
       <table>
         <thead>
           <tr>
+            <th class="tracker-check-cell">Updated?</th>
             <th>
               <a href="?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}&sort=customer&dir={% if sort == 'customer' and dir == 'asc' %}desc{% else %}asc{% endif %}">
                 Customer
@@ -476,13 +493,24 @@
                 Est. Delivery
               </a>
             </th>
-            <th>Updated</th>
+            <th>Last Changed</th>
             <th style="width:140px;">Actions</th>
           </tr>
         </thead>
         <tbody>
           {% for c in containers %}
             <tr>
+              <td class="tracker-check-cell">
+                <form class="tracker-check-form" method="post" action="{% url 'order_container_set_tracker_checked' c.id %}">
+                  {% csrf_token %}
+                  <input
+                    class="tracker-check"
+                    type="checkbox"
+                    aria-label="Mark {{ c.customer_name }}{% if c.location_name %} {{ c.location_name }}{% endif %} as updated"
+                    {% if c.tracker_checked %}checked{% endif %}
+                  />
+                </form>
+              </td>
               <td>
                 <div style="font-weight:800;">
                   <a href="{% url 'order_container_edit' container_id=c.id %}">
@@ -568,7 +596,7 @@
             </tr>
           {% empty %}
             <tr>
-              <td colspan="12" class="muted">No active orders. (Delivered orders show below.)</td>
+              <td colspan="13" class="muted">No active orders. (Delivered orders show below.)</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -592,6 +620,7 @@
         <table>
           <thead>
             <tr>
+              <th class="tracker-check-cell">Updated?</th>
               <th>Customer / Location</th>
               <th>PO#</th>
               <th>Requested</th>
@@ -601,13 +630,24 @@
               <th>ETD</th>
               <th>ETA</th>
               <th>Est. Delivery</th>
-              <th>Updated</th>
+              <th>Last Changed</th>
               <th style="width:140px;">Actions</th>
             </tr>
           </thead>
           <tbody>
             {% for c in delivered_containers %}
               <tr>
+                <td class="tracker-check-cell">
+                  <form class="tracker-check-form" method="post" action="{% url 'order_container_set_tracker_checked' c.id %}">
+                    {% csrf_token %}
+                    <input
+                      class="tracker-check"
+                      type="checkbox"
+                      aria-label="Mark {{ c.customer_name }}{% if c.location_name %} {{ c.location_name }}{% endif %} as updated"
+                      {% if c.tracker_checked %}checked{% endif %}
+                    />
+                  </form>
+                </td>
                 <td>
                   <div style="font-weight:800;">
                     <a href="{% url 'order_container_edit' container_id=c.id %}">
@@ -670,7 +710,7 @@
               </tr>
             {% empty %}
               <tr>
-                <td colspan="11" class="muted">No delivered orders yet.</td>
+                <td colspan="12" class="muted">No delivered orders yet.</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -685,6 +725,41 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
+
+    (function () {
+      const checkForms = document.querySelectorAll('.tracker-check-form');
+      checkForms.forEach(form => {
+        const checkbox = form.querySelector('.tracker-check');
+        if (!checkbox) return;
+
+        checkbox.addEventListener('change', async function () {
+          const desiredState = checkbox.checked;
+          checkbox.disabled = true;
+
+          const csrfInput = form.querySelector('input[name="csrfmiddlewaretoken"]');
+          const body = new URLSearchParams();
+          body.set('checked', desiredState ? '1' : '0');
+          if (csrfInput) body.set('csrfmiddlewaretoken', csrfInput.value);
+
+          try {
+            const response = await fetch(form.action, {
+              method: 'POST',
+              body,
+              headers: { 'X-Requested-With': 'XMLHttpRequest' },
+              credentials: 'same-origin'
+            });
+            if (!response.ok) throw new Error('Unable to save checkbox');
+            const data = await response.json();
+            checkbox.checked = Boolean(data.checked);
+          } catch (error) {
+            checkbox.checked = !desiredState;
+            alert('The checkbox could not be saved. Please try again.');
+          } finally {
+            checkbox.disabled = false;
+          }
+        });
+      });
+    })();
 
     (function () {
       const syncForms = document.querySelectorAll('form[action*="sync-jsoncargo"]');
@@ -756,6 +831,77 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
