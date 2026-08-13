@@ -410,6 +410,10 @@ class OrderContainer(models.Model):
 
     status = models.CharField(max_length=128, blank=True)
 
+    # Manual dashboard checkbox used to track which orders have already been updated.
+    # This is stored in the database so it persists across refreshes and browsers.
+    tracker_checked = models.BooleanField(default=False)
+
     # Archived orders are excluded from JSONCargo syncing + dashboard tracking.
     # Use this to keep historical delivered orders without cluttering the tracker.
     is_archived = models.BooleanField(default=False)
@@ -1056,6 +1060,45 @@ class IndustryRelationshipEdge(models.Model):
 
     def __str__(self) -> str:
         return f"{self.source} {self.label} {self.target}"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
