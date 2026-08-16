@@ -77,6 +77,7 @@ from .models import (
     PlantProfile,
     IndustryRelationshipNode,
     IndustryRelationshipEdge,
+    CustomerInventoryItem,
 )
 
 from .rpc_generation import PER_PALLET, generate_rpc_from_form
@@ -3142,6 +3143,114 @@ def bucket_adjustments_export_view(request):
 
 @login_required
 @require_http_methods(["GET", "POST"])
+def customer_inventory_view(request, pk):
+    """Inventory editor for superusers and read-only inventory for the customer."""
+    automation = get_object_or_404(
+        Automation.objects.select_related("company", "company__owner"),
+        pk=pk,
+    )
+
+    if not (request.user.is_superuser or automation.company.owner_id == request.user.id):
+        return HttpResponseForbidden("You are not allowed to view this inventory.")
+
+    if request.method == "POST":
+        if not request.user.is_superuser:
+            return HttpResponseForbidden("Customer inventory is read-only for this account.")
+
+        action = (request.POST.get("action") or "save").strip().lower()
+
+        if action == "delete":
+            item_id = request.POST.get("item_id")
+            item = get_object_or_404(
+                CustomerInventoryItem,
+                pk=item_id,
+                company=automation.company,
+            )
+            item.delete()
+            messages.success(request, "Inventory item removed.")
+            return redirect("customer_inventory", pk=automation.pk)
+
+        bucket_type = (request.POST.get("bucket_type") or "").strip()
+        quantity_raw = (request.POST.get("quantity_available") or "0").strip()
+        item_id = (request.POST.get("item_id") or "").strip()
+
+        if not bucket_type:
+            messages.error(request, "Bucket type is required.")
+            return redirect("customer_inventory", pk=automation.pk)
+
+        try:
+            quantity_available = int(quantity_raw)
+            if quantity_available < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            messages.error(request, "Available quantity must be a whole number of zero or more.")
+            return redirect("customer_inventory", pk=automation.pk)
+
+        if item_id:
+            item = get_object_or_404(
+                CustomerInventoryItem,
+                pk=item_id,
+                company=automation.company,
+            )
+            duplicate = CustomerInventoryItem.objects.filter(
+                company=automation.company,
+                bucket_type__iexact=bucket_type,
+            ).exclude(pk=item.pk).exists()
+            if duplicate:
+                messages.error(request, f"{bucket_type} is already listed for this customer.")
+                return redirect("customer_inventory", pk=automation.pk)
+            item.bucket_type = bucket_type
+            item.quantity_available = quantity_available
+            item.save(update_fields=["bucket_type", "quantity_available", "updated_at"])
+            messages.success(request, f"Updated {bucket_type} inventory.")
+        else:
+            existing = CustomerInventoryItem.objects.filter(
+                company=automation.company,
+                bucket_type__iexact=bucket_type,
+            ).first()
+            if existing:
+                existing.quantity_available = quantity_available
+                existing.bucket_type = bucket_type
+                existing.save(update_fields=["bucket_type", "quantity_available", "updated_at"])
+                messages.success(request, f"Updated {bucket_type} inventory.")
+            else:
+                next_order = (
+                    CustomerInventoryItem.objects.filter(company=automation.company)
+                    .order_by("-display_order")
+                    .values_list("display_order", flat=True)
+                    .first()
+                    or 0
+                ) + 1
+                CustomerInventoryItem.objects.create(
+                    company=automation.company,
+                    bucket_type=bucket_type,
+                    quantity_available=quantity_available,
+                    display_order=next_order,
+                )
+                messages.success(request, f"Added {bucket_type} inventory.")
+
+        automation.last_run_at = timezone.now()
+        automation.save(update_fields=["last_run_at"])
+        return redirect("customer_inventory", pk=automation.pk)
+
+    inventory_items = CustomerInventoryItem.objects.filter(company=automation.company)
+    total_available = sum(item.quantity_available for item in inventory_items)
+
+    return render(
+        request,
+        "core/customer_inventory.html",
+        {
+            "automation": automation,
+            "inventory_items": inventory_items,
+            "total_available": total_available,
+            "can_edit": request.user.is_superuser,
+            "portal_theme": get_portal_theme(user=request.user, company=automation.company),
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
 def run_automation(request, pk):
     automation = get_object_or_404(Automation.objects.select_related("company"), pk=pk)
 
@@ -3149,6 +3258,16 @@ def run_automation(request, pk):
         return HttpResponseForbidden("You are not allowed to run this automation.")
 
     name_normalized = (automation.name or "").strip().lower()
+
+    # --- Branch: Customer Inventory Availability ---
+    if name_normalized in {
+        "inventory availability",
+        "customer inventory",
+        "inventory",
+        "inventory available",
+        "available inventory",
+    }:
+        return redirect("customer_inventory", pk=automation.pk)
 
     # --- Branch: Tip Tracker ---
     if name_normalized in {"tip tracker", "tips tracker", "tip tracking", "tips"}:
@@ -6695,6 +6814,133 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
