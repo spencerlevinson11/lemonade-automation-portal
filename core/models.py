@@ -40,6 +40,32 @@ class Automation(models.Model):
         return f"{self.name} ({self.company.name})"
 
 
+class CustomerInventoryItem(models.Model):
+    """A customer-visible bucket inventory balance maintained by a superuser."""
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="inventory_items",
+    )
+    bucket_type = models.CharField(max_length=255)
+    quantity_available = models.PositiveIntegerField(default=0)
+    display_order = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("display_order", "bucket_type")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company", "bucket_type"),
+                name="unique_inventory_bucket_per_company",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.bucket_type}: {self.quantity_available} ({self.company.name})"
+
+
 # =========================
 # Pricing Quote Data Models
 # =========================
@@ -1060,6 +1086,86 @@ class IndustryRelationshipEdge(models.Model):
 
     def __str__(self) -> str:
         return f"{self.source} {self.label} {self.target}"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
