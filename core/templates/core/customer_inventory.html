@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{{ automation.company.name }} Inventory</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root {
+            --bg: #020617;
+            --surface: #0b1120;
+            --surface-2: #111827;
+            --border: #243044;
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --accent: #2563eb;
+            --success: #22c55e;
+            --danger: #ef4444;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: var(--text);
+            background: radial-gradient(circle at top, #14213d 0, var(--bg) 52%);
+        }
+        .page { max-width: 1080px; margin: 0 auto; padding: 28px 20px 48px; }
+        .topbar { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 22px; }
+        .back, .logout { color: #93c5fd; text-decoration: none; }
+        .back:hover, .logout:hover { text-decoration: underline; }
+        .user { color: var(--muted); font-size: .85rem; }
+        .hero { display: flex; justify-content: space-between; gap: 18px; align-items: flex-end; margin-bottom: 18px; }
+        h1 { margin: 0 0 6px; font-size: clamp(1.7rem, 4vw, 2.4rem); }
+        .subtitle { margin: 0; color: var(--muted); }
+        .badge { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 8px 12px; font-size: .78rem; color: var(--muted); white-space: nowrap; }
+        .notice { padding: 11px 13px; border-radius: 12px; margin: 12px 0; border: 1px solid #345; background: rgba(37,99,235,.12); font-size: .88rem; }
+        .messages { margin: 12px 0; }
+        .message { padding: 10px 12px; border: 1px solid #355; border-radius: 10px; background: rgba(34,197,94,.1); margin-bottom: 8px; }
+        .card { background: rgba(11,17,32,.96); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: 0 18px 45px rgba(0,0,0,.28); }
+        .card-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+        .card-title { font-weight: 700; }
+        .total { color: var(--muted); font-size: .86rem; }
+        .total strong { color: var(--text); font-size: 1rem; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 620px; }
+        th, td { padding: 13px 16px; border-bottom: 1px solid rgba(36,48,68,.8); text-align: left; }
+        th { color: var(--muted); font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; background: rgba(17,24,39,.82); }
+        tr:last-child td { border-bottom: 0; }
+        .qty { font-size: 1.05rem; font-weight: 700; }
+        .muted { color: var(--muted); font-size: .82rem; }
+        .editor { margin-top: 18px; padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: rgba(11,17,32,.96); }
+        .editor h2 { margin: 0 0 5px; font-size: 1.05rem; }
+        .editor p { margin: 0 0 14px; color: var(--muted); font-size: .84rem; }
+        .add-form { display: grid; grid-template-columns: minmax(220px, 1fr) 180px auto; gap: 10px; }
+        input { width: 100%; border: 1px solid #374151; border-radius: 9px; background: #070d19; color: var(--text); padding: 10px 11px; font: inherit; }
+        button { border: 0; border-radius: 9px; padding: 10px 13px; font: inherit; font-weight: 700; cursor: pointer; }
+        .save { background: var(--accent); color: white; }
+        .delete { background: rgba(239,68,68,.15); color: #fca5a5; border: 1px solid rgba(239,68,68,.4); padding: 7px 9px; }
+        .inline-form { display: grid; grid-template-columns: minmax(180px, 1fr) 130px auto auto; gap: 8px; align-items: center; }
+        .empty { padding: 28px 18px; text-align: center; color: var(--muted); }
+        @media (max-width: 720px) {
+            .hero { align-items: flex-start; flex-direction: column; }
+            .add-form { grid-template-columns: 1fr; }
+            .inline-form { grid-template-columns: 1fr; }
+            table { min-width: 0; }
+            thead { display: none; }
+            tbody, tr, td { display: block; width: 100%; }
+            tr { padding: 12px; border-bottom: 1px solid var(--border); }
+            td { border: 0; padding: 5px 4px; }
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="topbar">
+        <a class="back" href="{% url 'dashboard' %}">← Dashboard</a>
+        <div class="user">{{ request.user.username }} · <a class="logout" href="{% url 'logout' %}">Logout</a></div>
+    </div>
+
+    <div class="hero">
+        <div>
+            <h1>{{ automation.company.name }} Inventory</h1>
+            <p class="subtitle">Current bucket inventory available for ordering.</p>
+        </div>
+        {% if can_edit %}
+            <div class="badge">Superuser · Editing enabled</div>
+        {% else %}
+            <div class="badge">Customer · Read only</div>
+        {% endif %}
+    </div>
+
+    {% if not can_edit %}
+        <div class="notice">This inventory is view-only. Contact Retriever Packaging to request changes or place an order.</div>
+    {% endif %}
+
+    {% if messages %}
+        <div class="messages">
+            {% for message in messages %}<div class="message">{{ message }}</div>{% endfor %}
+        </div>
+    {% endif %}
+
+    <section class="card">
+        <div class="card-head">
+            <div class="card-title">Available inventory</div>
+            <div class="total">Total units: <strong>{{ total_available }}</strong></div>
+        </div>
+        {% if inventory_items %}
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Bucket type</th><th>Available</th><th>Last updated</th>{% if can_edit %}<th>Manage</th>{% endif %}</tr></thead>
+                    <tbody>
+                    {% for item in inventory_items %}
+                        <tr>
+                            {% if can_edit %}
+                                <td colspan="4">
+                                    <form method="post" class="inline-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="save">
+                                        <input type="hidden" name="item_id" value="{{ item.id }}">
+                                        <input name="bucket_type" value="{{ item.bucket_type }}" aria-label="Bucket type">
+                                        <input type="number" min="0" step="1" name="quantity_available" value="{{ item.quantity_available }}" aria-label="Available quantity">
+                                        <button class="save" type="submit">Save</button>
+                                    </form>
+                                    <form method="post" style="margin-top:7px; text-align:right;" onsubmit="return confirm('Remove this bucket from the customer inventory?');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="item_id" value="{{ item.id }}">
+                                        <button class="delete" type="submit">Remove</button>
+                                    </form>
+                                </td>
+                            {% else %}
+                                <td><strong>{{ item.bucket_type }}</strong></td>
+                                <td class="qty">{{ item.quantity_available }}</td>
+                                <td class="muted">{{ item.updated_at|date:"M j, Y g:i A" }}</td>
+                            {% endif %}
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">No inventory has been entered yet.</div>
+        {% endif %}
+    </section>
+
+    {% if can_edit %}
+        <section class="editor">
+            <h2>Add a bucket type</h2>
+            <p>Add a new bucket and its available quantity. Entering an existing bucket name updates its quantity.</p>
+            <form method="post" class="add-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="save">
+                <input name="bucket_type" placeholder="Bucket type (example: 10ltr Wide Classic)" required>
+                <input type="number" min="0" step="1" name="quantity_available" placeholder="Quantity" required>
+                <button class="save" type="submit">Add inventory</button>
+            </form>
+        </section>
+    {% endif %}
+</div>
+</body>
+</html>
