@@ -17,6 +17,7 @@ from .models import (
     ScheduleActivity,
     IndustryRelationshipNode,
     IndustryRelationshipEdge,
+    CustomerInventoryItem,
 )
 
 
@@ -35,6 +36,14 @@ class AutomationAdmin(admin.ModelAdmin):
     search_fields = ("name", "company__name")
     list_filter = ("is_active", "company")
     ordering = ("company__name", "name")
+
+
+@admin.register(CustomerInventoryItem)
+class CustomerInventoryItemAdmin(admin.ModelAdmin):
+    list_display = ("company", "bucket_type", "quantity_available", "display_order", "updated_at")
+    list_filter = ("company",)
+    search_fields = ("bucket_type", "company__name", "company__owner__username")
+    ordering = ("company__name", "display_order", "bucket_type")
 
 
 @admin.register(PricingCustomer)
