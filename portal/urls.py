@@ -30,6 +30,13 @@ urlpatterns = [
         name="run_automation",
     ),
 
+    # Customer Inventory (superuser edit / customer read-only)
+    path(
+        "automations/<int:pk>/inventory/",
+        core_views.customer_inventory_view,
+        name="customer_inventory",
+    ),
+
     # Pricing Quotes
     path("automations/pricing/upload/", core_views.pricing_upload_view, name="pricing_upload"),
     path("automations/pricing/customers/", core_views.pricing_customer_list_view, name="pricing_customer_list"),
@@ -223,6 +230,39 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
