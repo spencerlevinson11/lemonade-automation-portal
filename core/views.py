@@ -5434,6 +5434,25 @@ def _fmt_short_date(d: dt.date | None) -> str:
     return f"{d.month}/{d.day}/{d.year}"
 
 
+def _fmt_requested_date(container) -> str:
+    """Return the requested delivery value exactly as represented in the tracker.
+
+    Priority matches the order tracker UI:
+    1) ASAP
+    2) Free-text requested date/window (e.g. "December")
+    3) Exact requested date
+    4) TBD
+    """
+    if getattr(container, "requested_asap", False):
+        return "ASAP"
+
+    requested_text = (getattr(container, "requested_date_text", "") or "").strip()
+    if requested_text:
+        return requested_text
+
+    return _fmt_long_date(getattr(container, "requested_date", None))
+
+
 def _jsoncargo_sync_status_dir() -> Path:
     """Directory for lightweight JSONCargo sync progress files."""
     root = os.getenv("JSONCARGO_SYNC_STATUS_DIR") or tempfile.gettempdir()
@@ -5799,7 +5818,7 @@ def order_tracker_recap_docx_view(request):
         # Line 1: PO + Requested + Status (with colors)
         p1 = doc.add_paragraph()
         _add_run(p1, f"PO#{po}– ", COLOR_RED, bold=True)
-        _add_run(p1, f"Requested {_fmt_long_date(c.requested_date)} ", COLOR_BROWN)
+        _add_run(p1, f"Requested {_fmt_requested_date(c)} ", COLOR_BROWN)
         # STATUS: orange + bold + highlighted (user requested highlight)
         _add_run(p1, f"***{status_txt}*** ", COLOR_ORANGE, bold=True, highlight=WD_COLOR_INDEX.YELLOW)
 
@@ -6814,6 +6833,93 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
