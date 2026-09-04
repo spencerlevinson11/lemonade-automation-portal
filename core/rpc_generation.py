@@ -26,7 +26,7 @@ PER_PALLET = {
     "10 Wide Standard Classic x 2660": 2660,
     "10 Wide Standard Classic x 2520": 2520,
     "10 liter classic N6+ 2520":    2520,
-    "10 liter wide N6+ x 2800":       2800,
+    "10 liter wide classic + x 2800":   2800,
     "10 ltr conical Next Gen":  4050,
     "10 ltr conical black":     3960,
     "10 ltr wide NG eco":       2842,
@@ -67,7 +67,7 @@ ARTICLE_MAP = {
     "10 Wide Standard Classic x 2520": 500100,
     "10 liter classic hq":       500110,
     "10 liter classic N6+ 2520": 500110,
-    "10 liter wide N6+ x 2800":  500110,
+    "10 liter wide classic + x 2800": 500110,
     "5 liter vase":              500050,
     "7 liter vase #":            500071,
     "5 liter round":             500500,
@@ -93,6 +93,7 @@ ARTICLE_MAP = {
 
 # Aliases + normalization
 ALIASES = {
+    "10 liter wide N6+ x 2800": "10 liter wide classic + x 2800",
     "Maxima White Buckets": "Maxima Buckets White",
     "Maxima White Lids":    "Maxima Lids White",
 }
@@ -110,7 +111,7 @@ BUCKET_FIELD_MAP = {
     "b_10_wide_standard_classic_x_2660": "10 Wide Standard Classic x 2660",
     "b_10_wide_standard_classic_x_2520": "10 Wide Standard Classic x 2520",
     "b_10_liter_classic_n6_plus_2520": "10 liter classic N6+ 2520",
-    "b_10_liter_n6_plus_x_2800": "10 liter wide N6+ x 2800",
+    "b_10_liter_n6_plus_x_2800": "10 liter wide classic + x 2800",
     "b_10_ltr_conical_next_gen": "10 ltr conical Next Gen",
     "b_10_ltr_conical_black": "10 ltr conical black",
     "b_10_ltr_wide_ng_eco": "10 ltr wide NG eco",
@@ -434,6 +435,10 @@ Bensenville, IL, 60106<br>
     email_status = " ".join(status_parts) if status_parts else "No email was sent."
 
     return files, email_status
+
+
+
+
 
 
 
