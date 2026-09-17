@@ -5713,7 +5713,8 @@ def order_tracker_bulk_update_view(request):
 def order_tracker_recap_docx_view(request):
     """Download an Order Recap DOCX for all (filtered) containers.
 
-    Output is ordered by RPC# (requested), with reasonable tie-breakers.
+    Orders are grouped by location. Within each location they are ordered by
+    requested date (soonest first), then PO# when requested dates are the same.
     """
     user = request.user
 
@@ -5745,41 +5746,47 @@ def order_tracker_recap_docx_view(request):
     if assigned_to:
         containers = containers.filter(assigned_to__iexact=assigned_to)
 
-    # Prefetch lines first; we'll do a Python-side sort so we can sort by the
-    # leading numeric portion of RPC# even when rpc_number includes extra text
-    # like "6066 Miami".
+    # Prefetch content lines before the Python-side location/date/PO sort.
     containers = containers.prefetch_related("lines")
 
-    def _rpc_sort_key(raw: str | None) -> tuple[int, str]:
-        """Return (numeric_rpc, raw_rpc) for sorting.
+    def _natural_text_sort_key(raw: str | None):
+        """Case-insensitive natural sort so PO 20 comes before PO 100."""
+        value = (raw or "").strip().lower()
+        return tuple(
+            (0, int(part)) if part.isdigit() else (1, part)
+            for part in re.split(r"(\d+)", value)
+            if part != ""
+        )
 
-        Examples:
-        - "6066 Miami" -> (6066, "6066 Miami")
-        - "6066" -> (6066, "6066")
-        - "TBD"/None/"" -> (10**9, "")  (push to end)
+    def _requested_date_sort_key(c):
+        """Sort ASAP first, exact dates chronologically, then text/TBD values.
+
+        Free-text values cannot be placed reliably on a calendar, so they sort
+        after exact dates while still remaining stable and grouped together.
         """
-        s = (raw or "").strip()
-        if not s:
-            return (10**9, "")
-        first = s.split()[0]
-        digits = "".join(ch for ch in first if ch.isdigit())
-        if digits:
-            try:
-                return (int(digits), s)
-            except Exception:
-                pass
-        return (10**9, s)
+        if getattr(c, "requested_asap", False):
+            return (0, dt.date.min, "")
 
-    # Sort by Customer, then Location, then RPC# (numeric), with tie-breakers for stability.
+        requested_date = getattr(c, "requested_date", None)
+        if requested_date:
+            return (1, requested_date, "")
+
+        requested_text = (getattr(c, "requested_date_text", "") or "").strip().lower()
+        if requested_text:
+            return (2, dt.date.max, requested_text)
+
+        return (3, dt.date.max, "")
+
+    # Location is the outer grouping key. Within each location, requested dates
+    # run soonest-to-latest; ties are ordered by PO#.
     containers = sorted(
         list(containers),
         key=lambda c: (
-            (getattr(c, "customer_name", "") or "").strip().lower(),
             (getattr(c, "location_name", "") or "").strip().lower(),
-            _rpc_sort_key(getattr(c, "rpc_number", None)),
-            getattr(c, "requested_date", None) or dt.date.min,
-            (getattr(c, "po_number", "") or "").strip(),
-            -(getattr(c, "updated_at", None).timestamp() if getattr(c, "updated_at", None) else 0),
+            _requested_date_sort_key(c),
+            _natural_text_sort_key(getattr(c, "po_number", None)),
+            (getattr(c, "customer_name", "") or "").strip().lower(),
+            getattr(c, "id", 0),
         ),
     )
 
@@ -5810,7 +5817,24 @@ def order_tracker_recap_docx_view(request):
     style.font.name = "Calibri"
     style.font.size = Pt(11)
 
+    current_location_key = None
     for idx, c in enumerate(containers):
+        location_label = (c.location_name or "").strip() or "Unspecified Location"
+        location_key = location_label.lower()
+        if location_key != current_location_key:
+            if current_location_key is not None:
+                doc.add_paragraph("")
+
+            header = doc.add_paragraph()
+            header.paragraph_format.keep_with_next = True
+            header.paragraph_format.space_before = Pt(12)
+            header.paragraph_format.space_after = Pt(8)
+            header_run = header.add_run(location_label)
+            header_run.bold = True
+            header_run.font.size = Pt(18)
+            header_run.font.color.rgb = COLOR_BLACK
+            current_location_key = location_key
+
         po = (c.po_number or "TBD").strip() or "TBD"
         rpc = (c.rpc_number or "TBD").strip() or "TBD"
         status_txt = (c.status or "TBD").strip() or "TBD"
@@ -6833,6 +6857,16 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
 
 
 
