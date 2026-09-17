@@ -5759,10 +5759,13 @@ def order_tracker_recap_docx_view(request):
         )
 
     def _requested_date_sort_key(c):
-        """Sort ASAP first, exact dates chronologically, then text/TBD values.
+        """Sort requested delivery values chronologically, including month-only text.
 
-        Free-text values cannot be placed reliably on a calendar, so they sort
-        after exact dates while still remaining stable and grouped together.
+        ASAP sorts first. Exact dates use their actual date. A free-text month such
+        as "October", "November", or "December" is treated as the first day of
+        that month so month-only requests sort chronologically instead of
+        alphabetically/after all exact dates. Other free text remains after dated
+        values, followed by TBD.
         """
         if getattr(c, "requested_asap", False):
             return (0, dt.date.min, "")
@@ -5771,9 +5774,24 @@ def order_tracker_recap_docx_view(request):
         if requested_date:
             return (1, requested_date, "")
 
-        requested_text = (getattr(c, "requested_date_text", "") or "").strip().lower()
+        requested_text = (getattr(c, "requested_date_text", "") or "").strip()
         if requested_text:
-            return (2, dt.date.max, requested_text)
+            month_match = re.fullmatch(
+                r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+                r"(?:\s+(20\d{2}))?",
+                requested_text,
+                flags=re.IGNORECASE,
+            )
+            if month_match:
+                month_number = {
+                    "january": 1, "february": 2, "march": 3, "april": 4,
+                    "may": 5, "june": 6, "july": 7, "august": 8,
+                    "september": 9, "october": 10, "november": 11, "december": 12,
+                }[month_match.group(1).lower()]
+                year = int(month_match.group(2)) if month_match.group(2) else timezone.localdate().year
+                return (1, dt.date(year, month_number, 1), "")
+
+            return (2, dt.date.max, requested_text.lower())
 
         return (3, dt.date.max, "")
 
@@ -6857,6 +6875,10 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
 
 
 
