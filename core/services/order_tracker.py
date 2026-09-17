@@ -13,6 +13,42 @@ CONTACT_TO_OWNER = {
     "jaime": "Jaime",
 }
 
+# Elite and Sunshine use a common description in the Order Tracker / recaps for
+# these five classic bucket variants. The generated RPC workbook keeps the
+# original, more specific bucket type selected by the user.
+CLASSIC_TRACKER_CUSTOMER_BUCKETS = {
+    "10 Wide Standard Classic x 2520",
+    "10 Wide Standard Classic x 2660",
+    "10 Wide Standard Classic x 2800",
+    "10 liter classic N6+ 2520",
+    "10 liter wide classic + x 2800",
+}
+CLASSIC_TRACKER_DESCRIPTION = "10 liter wide classic"
+
+NIR_GREY_RPC_DESCRIPTION = "10 liter wide NIR Grey classic x 2800"
+NIR_GREY_TRACKER_DESCRIPTION = "10 liter wide classic NIR grey x 2800"
+
+
+def order_tracker_bucket_description(bucket_name: str, customer_name: str) -> str:
+    """Return the bucket description that should be stored in Order Tracker.
+
+    RPC generation still uses the canonical RPC bucket name. These aliases are
+    intentionally tracker-only so the RPC workbook remains unchanged.
+    """
+    bucket_name = (bucket_name or "").strip()
+    customer_lower = (customer_name or "").strip().lower()
+
+    if (
+        ("elite" in customer_lower or "sunshine" in customer_lower)
+        and bucket_name in CLASSIC_TRACKER_CUSTOMER_BUCKETS
+    ):
+        return CLASSIC_TRACKER_DESCRIPTION
+
+    if bucket_name == NIR_GREY_RPC_DESCRIPTION:
+        return NIR_GREY_TRACKER_DESCRIPTION
+
+    return bucket_name
+
 
 @transaction.atomic
 def upsert_container_from_rpc_order(
@@ -33,8 +69,7 @@ def upsert_container_from_rpc_order(
     - RPC form `contact_person` -> OrderTracker `assigned_to`
 
     Content lines are inferred from the bucket pallet counts on the RPC form.
-    We upsert only the "known bucket" lines (bucket-name descriptions), leaving
-    any manually-added/custom lines untouched.
+    Tracker-only display aliases are applied here without changing the RPC file.
     """
 
     rpc_number = (rpc_data.get("rpc_info") or "").strip()
@@ -79,42 +114,69 @@ def upsert_container_from_rpc_order(
 
     container.save()
 
-    # Build desired bucket lines from the RPC form.
-    desired: Dict[str, int] = {}
+    # Build desired tracker lines. Use (description, pieces-per-pallet) as the
+    # identity so two classic variants can both display as "10 liter wide classic"
+    # without losing their different 2520/2660/2800 pack sizes.
+    desired: Dict[tuple[str, int], int] = {}
     for field_name, bucket_name in BUCKET_FIELD_MAP.items():
         pallets = rpc_data.get(field_name) or 0
         try:
             pallets_int = int(pallets)
         except Exception:
             pallets_int = 0
-        if pallets_int > 0:
-            desired[bucket_name] = pallets_int
+        if pallets_int <= 0:
+            continue
 
-    known_bucket_names = set(PER_PALLET.keys())
-
-    # Upsert known bucket lines.
-    for bucket_name, pallets in desired.items():
         units = int(PER_PALLET.get(bucket_name, 0) or 0)
-        line = (
-            container.lines.filter(item_description=bucket_name)
-            .order_by("id")
-            .first()
-        )
+        tracker_name = order_tracker_bucket_description(bucket_name, customer_name)
+        key = (tracker_name, units)
+        desired[key] = desired.get(key, 0) + pallets_int
+
+    known_rpc_bucket_names = set(PER_PALLET.keys())
+    known_tracker_descriptions = {
+        order_tracker_bucket_description(name, customer_name)
+        for name in known_rpc_bucket_names
+    }
+
+    existing_lines = list(container.lines.all().order_by("id"))
+    kept_line_ids: set[int] = set()
+
+    for (tracker_name, units), pallets in desired.items():
+        line = None
+        for candidate in existing_lines:
+            if candidate.id in kept_line_ids:
+                continue
+            candidate_name = (candidate.item_description or "").strip()
+            normalized_candidate_name = order_tracker_bucket_description(
+                candidate_name, customer_name
+            )
+            if normalized_candidate_name == tracker_name and int(candidate.units_per_pallet or 0) == units:
+                line = candidate
+                break
+
         if line is None:
-            OrderContainerLine.objects.create(
+            line = OrderContainerLine.objects.create(
                 container=container,
-                item_description=bucket_name,
+                item_description=tracker_name,
                 pallets=pallets,
                 units_per_pallet=units,
             )
+            existing_lines.append(line)
         else:
+            line.item_description = tracker_name
             line.pallets = pallets
             line.units_per_pallet = units
             line.save()
 
-    # Remove bucket lines that were previously imported but are now zero.
-    for line in container.lines.all():
-        if line.item_description in known_bucket_names and line.item_description not in desired:
+        kept_line_ids.add(line.id)
+
+    # Remove previously auto-imported bucket lines that are no longer selected.
+    # Custom/manual lines are left untouched.
+    for line in existing_lines:
+        if line.id in kept_line_ids:
+            continue
+        desc = (line.item_description or "").strip()
+        if desc in known_rpc_bucket_names or desc in known_tracker_descriptions:
             line.delete()
 
     return container
