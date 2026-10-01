@@ -5,8 +5,6 @@
   <title>{{ automation_name }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- Leaflet (map) -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 
   <style>
     :root {
@@ -143,12 +141,71 @@
     input.tracker-check:disabled { cursor: wait; opacity: 0.65; }
 
     #shipmentProgressMap {
-      height: 420px;
+      position: relative;
+      height: 460px;
       width: 100%;
       border-radius: 14px;
       border: 1px solid rgba(148,163,184,0.16);
       overflow: hidden;
-      background: #eaf1f5;
+      background: linear-gradient(180deg, #cce7ff 0%, #dcefff 45%, #ebf5ff 100%);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+    }
+    #shipmentProgressMap svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .map-legend {
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:center;
+      margin-top: 10px;
+      font-size: 0.84rem;
+      color: var(--text-muted);
+    }
+    .legend-item {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+    }
+    .legend-swatch {
+      display:inline-block;
+      width:16px;
+      height:16px;
+      border-radius:999px;
+      flex: 0 0 16px;
+    }
+    .legend-swatch.route {
+      width: 18px;
+      height: 0;
+      border-top: 2px dashed rgba(15, 23, 42, 0.45);
+      border-radius: 0;
+    }
+    .shipment-popup {
+      position: absolute;
+      min-width: 250px;
+      max-width: 300px;
+      z-index: 5;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(15,23,42,0.16);
+      background: rgba(255,255,255,0.96);
+      color: #0f172a;
+      box-shadow: 0 14px 36px rgba(15, 23, 42, 0.20);
+      pointer-events: none;
+      display: none;
+    }
+    .shipment-popup .popup-title {
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .shipment-popup .popup-link {
+      display:inline-block;
+      margin-top:8px;
+      color:#0f172a;
+      font-weight:700;
+      pointer-events:auto;
     }
 
     #jsoncargoLoadingOverlay {
@@ -276,7 +333,14 @@
       </div>
 
       <div style="margin-top:12px;">
-        <div id="shipmentProgressMap"></div>
+        <div id="shipmentProgressMap">
+          <div id="shipmentPopup" class="shipment-popup" aria-hidden="true"></div>
+        </div>
+        <div class="map-legend">
+          <span class="legend-item"><span class="legend-swatch" style="background:#facc15; border: 2px solid rgba(15,23,42,0.45);"></span> Estimated shipment position</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#0f172a; border: 2px solid #94a3b8;"></span> ETA destination</span>
+          <span class="legend-item"><span class="legend-swatch route"></span> Estimated route from the Netherlands</span>
+        </div>
         <div id="shipmentProgressMapHint" class="muted tiny" style="margin-top:8px; display:none;">No shipments have a mappable ETA destination plus both ETD and ETA yet.</div>
         <div class="muted tiny" style="margin-top:8px;">This is a schedule-based estimate, not a live vessel position.</div>
       </div>
@@ -721,7 +785,6 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
 
     (function () {
@@ -777,28 +840,12 @@
       const points = {{ shipment_map_points_json|default:"[]"|safe }};
       const hint = document.getElementById('shipmentProgressMapHint');
       const mapEl = document.getElementById('shipmentProgressMap');
+      const popupEl = document.getElementById('shipmentPopup');
 
       if (!mapEl) return;
 
       const hasPoints = Array.isArray(points) && points.length > 0;
       if (!hasPoints && hint) hint.style.display = 'block';
-
-      // Start from a completely clean map container so no legacy map layer can remain behind this tracker.
-      mapEl.replaceChildren();
-      mapEl.className = '';
-
-      const map = L.map(mapEl, {
-        scrollWheelZoom: false,
-        zoomControl: true,
-        attributionControl: true
-      }).setView([38, -35], 3);
-
-      // Use a fresh, clean basemap rather than the base layer used by the former vessel tracker.
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        subdomains: 'abcd',
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-      }).addTo(map);
 
       const escapeHtml = (value) => String(value ?? '')
         .replaceAll('&', '&amp;')
@@ -807,70 +854,193 @@
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
 
-      if (hasPoints) {
-        const bounds = [];
-        const drawnRoutes = new Set();
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const width = 1100;
+      const height = 460;
+      const bounds = {
+        minLat: 12,
+        maxLat: 62,
+        minLng: -130,
+        maxLng: 18,
+      };
 
+      const project = (lat, lng) => {
+        const x = ((lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * width;
+        const y = ((bounds.maxLat - lat) / (bounds.maxLat - bounds.minLat)) * height;
+        return [x, y];
+      };
+
+      const clearMap = () => {
+        Array.from(mapEl.children).forEach(child => {
+          if (child !== popupEl) child.remove();
+        });
+      };
+      clearMap();
+
+      const svg = document.createElementNS(svgNS, 'svg');
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      svg.setAttribute('role', 'img');
+      svg.setAttribute('aria-label', 'Estimated shipment map between the Netherlands and North America');
+      mapEl.insertBefore(svg, popupEl || null);
+
+      const add = (tag, attrs = {}, parent = svg) => {
+        const el = document.createElementNS(svgNS, tag);
+        Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, String(value)));
+        parent.appendChild(el);
+        return el;
+      };
+
+      // Background ocean
+      add('rect', { x: 0, y: 0, width, height, fill: 'url(#oceanGradient)' });
+      const defs = add('defs');
+      const oceanGradient = add('linearGradient', { id: 'oceanGradient', x1: '0%', y1: '0%', x2: '0%', y2: '100%' }, defs);
+      add('stop', { offset: '0%', 'stop-color': '#cfe8ff' }, oceanGradient);
+      add('stop', { offset: '100%', 'stop-color': '#edf6ff' }, oceanGradient);
+
+      // Very lightweight custom map silhouettes (no API, no tile provider)
+      const landColor = '#d9dfc9';
+      const coastColor = '#a8b196';
+      // North America silhouette
+      add('path', {
+        d: 'M40 120 L70 92 L115 72 L170 58 L240 56 L300 72 L360 102 L390 132 L416 168 L442 192 L454 226 L436 260 L418 292 L388 310 L360 320 L338 350 L310 370 L270 390 L210 408 L154 402 L120 380 L112 350 L130 324 L114 298 L92 278 L72 250 L52 214 L42 176 Z',
+        fill: landColor,
+        stroke: coastColor,
+        'stroke-width': 2
+      });
+      // Central America / Caribbean hint
+      add('path', {
+        d: 'M330 355 L360 365 L388 382 L408 400 L394 410 L364 398 L340 382 L320 366 Z',
+        fill: landColor,
+        stroke: coastColor,
+        'stroke-width': 2
+      });
+      // Greenland hint
+      add('path', {
+        d: 'M350 42 L376 28 L408 30 L430 48 L422 80 L392 94 L360 88 L344 64 Z',
+        fill: landColor,
+        stroke: coastColor,
+        'stroke-width': 2,
+        opacity: 0.9
+      });
+      // Europe silhouette
+      add('path', {
+        d: 'M825 98 L850 84 L886 82 L922 92 L958 90 L992 104 L1012 128 L1035 138 L1052 166 L1044 188 L1015 194 L1000 214 L972 224 L948 246 L914 254 L896 234 L876 214 L848 204 L828 176 L814 152 Z',
+        fill: landColor,
+        stroke: coastColor,
+        'stroke-width': 2
+      });
+      // UK/Ireland hint
+      add('path', {
+        d: 'M788 102 L804 90 L820 96 L822 114 L810 126 L794 122 Z',
+        fill: landColor,
+        stroke: coastColor,
+        'stroke-width': 2
+      });
+      // Northwest Africa hint
+      add('path', {
+        d: 'M900 256 L944 262 L980 280 L994 318 L972 352 L942 372 L918 352 L900 322 L892 288 Z',
+        fill: landColor,
+        stroke: coastColor,
+        'stroke-width': 2,
+        opacity: 0.95
+      });
+
+      // Decorative grid lines.
+      for (let lng = -120; lng <= 0; lng += 20) {
+        const [x] = project(0, lng);
+        add('line', { x1: x, y1: 0, x2: x, y2: height, stroke: 'rgba(15,23,42,0.08)', 'stroke-width': 1 });
+      }
+      for (let lat = 20; lat <= 60; lat += 10) {
+        const [, y] = project(lat, 0);
+        add('line', { x1: 0, y1: y, x2: width, y2: y, stroke: 'rgba(15,23,42,0.08)', 'stroke-width': 1 });
+      }
+
+      // Region labels
+      const addLabel = (text, lat, lng, extra = {}) => {
+        const [x, y] = project(lat, lng);
+        const label = add('text', {
+          x, y,
+          fill: extra.fill || 'rgba(15,23,42,0.72)',
+          'font-size': extra.size || 18,
+          'font-weight': extra.weight || 700,
+          'text-anchor': extra.anchor || 'middle'
+        });
+        label.textContent = text;
+      };
+      addLabel('CANADA / UNITED STATES', 51, -95, { size: 16 });
+      addLabel('Atlantic Ocean', 39, -45, { size: 18, fill: 'rgba(15,23,42,0.45)', weight: 600 });
+      addLabel('Europe', 54, 2, { size: 16 });
+      addLabel('Netherlands', 52.7, 5.0, { size: 14, anchor: 'start' });
+
+      const showPopup = (evt, p) => {
+        if (!popupEl) return;
+        const rect = mapEl.getBoundingClientRect();
+        const offsetX = evt.clientX - rect.left;
+        const offsetY = evt.clientY - rect.top;
+        popupEl.innerHTML = `
+          <div class="popup-title">${p.container_number ? `Container ${escapeHtml(p.container_number)}` : (p.rpc_number ? `RPC ${escapeHtml(p.rpc_number)}` : 'Shipment')}</div>
+          <div>${escapeHtml(p.container_label)}</div>
+          <div style="margin-top:8px;"><strong>${escapeHtml(p.progress_percent)}%</strong> of scheduled transit elapsed</div>
+          <div style="margin-top:4px;">${escapeHtml(p.phase)}</div>
+          <div style="margin-top:6px; font-size:12px;">${escapeHtml(p.origin_label)} → ${escapeHtml(p.destination_label)}</div>
+          <div style="margin-top:2px; font-size:12px;">ETD ${escapeHtml(p.etd)} · ETA ${escapeHtml(p.eta)}</div>
+          ${p.container_url ? `<a class="popup-link" href="${escapeHtml(p.container_url)}">Open container</a>` : ''}
+        `;
+        popupEl.style.display = 'block';
+        popupEl.style.left = `${Math.min(Math.max(offsetX + 16, 12), rect.width - 320)}px`;
+        popupEl.style.top = `${Math.min(Math.max(offsetY + 16, 12), rect.height - 170)}px`;
+        popupEl.setAttribute('aria-hidden', 'false');
+      };
+
+      const hidePopup = () => {
+        if (!popupEl) return;
+        popupEl.style.display = 'none';
+        popupEl.setAttribute('aria-hidden', 'true');
+      };
+      mapEl.addEventListener('mouseleave', hidePopup);
+
+      if (hasPoints) {
+        const routesSeen = new Set();
         points.forEach(p => {
           if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
 
-          const origin = [p.origin_lat, p.origin_lng];
-          const destination = [p.destination_lat, p.destination_lng];
+          const [ox, oy] = project(p.origin_lat, p.origin_lng);
+          const [dx, dy] = project(p.destination_lat, p.destination_lng);
+          const [sx, sy] = project(p.lat, p.lng);
           const routeKey = `${p.origin_lat},${p.origin_lng}|${p.destination_lat},${p.destination_lng}`;
 
-          // Draw each origin/destination route once even if several containers
-          // share it. The line is a visual schedule path, not a claimed vessel track.
-          if (!drawnRoutes.has(routeKey)) {
-            L.polyline([origin, destination], {
-              color: '#64748b',
-              weight: 2,
-              opacity: 0.65,
-              dashArray: '7 7'
-            }).addTo(map);
-            drawnRoutes.add(routeKey);
+          if (!routesSeen.has(routeKey)) {
+            add('line', {
+              x1: ox, y1: oy, x2: dx, y2: dy,
+              stroke: 'rgba(15,23,42,0.45)',
+              'stroke-width': 2,
+              'stroke-dasharray': '7 7'
+            });
+            routesSeen.add(routeKey);
           }
 
-          L.circleMarker(destination, {
-            radius: 5,
-            color: '#94a3b8',
-            weight: 2,
-            fillColor: '#0f172a',
-            fillOpacity: 0.9
-          }).addTo(map).bindTooltip(escapeHtml(p.destination_label || 'ETA destination'));
+          add('circle', {
+            cx: dx, cy: dy, r: 5,
+            fill: '#0f172a',
+            stroke: '#94a3b8',
+            'stroke-width': 2
+          });
 
-          const marker = L.circleMarker([p.lat, p.lng], {
-            radius: 8,
-            color: '#facc15',
-            weight: 2,
-            fillColor: '#facc15',
-            fillOpacity: 0.82
-          }).addTo(map);
-
-          const identifier = p.container_number
-            ? `Container ${escapeHtml(p.container_number)}`
-            : (p.rpc_number ? `RPC ${escapeHtml(p.rpc_number)}` : 'Shipment');
-          const link = p.container_url
-            ? `<div style="margin-top:8px;"><a href="${escapeHtml(p.container_url)}">Open container</a></div>`
-            : '';
-
-          marker.bindPopup(`
-            <div style="min-width:230px;">
-              <div style="font-weight:800;">${identifier}</div>
-              <div style="margin-top:4px;">${escapeHtml(p.container_label)}</div>
-              <div style="margin-top:8px;"><strong>${escapeHtml(p.progress_percent)}%</strong> of scheduled transit elapsed</div>
-              <div style="margin-top:4px;">${escapeHtml(p.phase)}</div>
-              <div style="margin-top:6px; font-size:12px;">${escapeHtml(p.origin_label)} → ${escapeHtml(p.destination_label)}</div>
-              <div style="margin-top:2px; font-size:12px;">ETD ${escapeHtml(p.etd)} · ETA ${escapeHtml(p.eta)}</div>
-              ${link}
-            </div>
-          `);
-
-          bounds.push(origin, destination, [p.lat, p.lng]);
+          const marker = add('circle', {
+            cx: sx, cy: sy, r: 8,
+            fill: '#facc15',
+            stroke: 'rgba(15,23,42,0.55)',
+            'stroke-width': 2,
+            style: 'cursor:pointer;'
+          });
+          marker.addEventListener('mouseenter', (evt) => showPopup(evt, p));
+          marker.addEventListener('mousemove', (evt) => showPopup(evt, p));
+          marker.addEventListener('click', (evt) => showPopup(evt, p));
         });
 
-        if (bounds.length) {
-          map.fitBounds(bounds, { padding: [24, 24], maxZoom: 5 });
-        }
+        // Netherlands origin marker on top of routes.
+        const [nx, ny] = project(52.10, 4.30);
+        add('circle', { cx: nx, cy: ny, r: 6, fill: '#16a34a', stroke: 'white', 'stroke-width': 2 });
       }
     })();
   </script>
@@ -885,6 +1055,52 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
