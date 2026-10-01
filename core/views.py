@@ -85,7 +85,6 @@ from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
 from .services.order_tracker import upsert_container_from_rpc_order
 from .context_processors import get_portal_theme
-from .services.myshiptracking import bulk_vessel_status
 from .services.rpc_master_formatter import parse_rpc_order_xlsx, build_master_format_workbook
 from .services.ms_graph_excel import (
     GraphError,
@@ -5230,50 +5229,139 @@ def order_tracker_view(request):
             c.latest_tracking_update = None
             c.latest_jsoncargo_display_text = ""
 
-    # --- Vessel map data (MyShipTracking) ---
-    vessel_points = []
-    vessel_map_error = None
-    try:
-        mmsi_list = [int(c.vessel_mmsi) for c in active_containers if getattr(c, "vessel_mmsi", None)]
-        imo_list = [int(c.vessel_imo) for c in active_containers if getattr(c, "vessel_imo", None)]
-    except Exception:
-        mmsi_list, imo_list = [], []
+    # --- Schedule-based shipment progress map ---
+    # This intentionally does not depend on live AIS/MMSI data. Instead, each
+    # active shipment is positioned between a Netherlands origin and its ETA
+    # destination according to the fraction of calendar time elapsed from ETD
+    # to ETA. Before ETD it remains in the Netherlands; at/after ETA it is at
+    # the destination.
+    map_today = timezone.localdate()
 
-    if mmsi_list or imo_list:
-        data, err = bulk_vessel_status(mmsi_list=mmsi_list, imo_list=imo_list)
-        vessel_map_error = err
-        if data:
-            # Index returned vessel data by identifiers for quick matching to containers.
-            by_mmsi = {str(v.get("mmsi")): v for v in data if v.get("mmsi") is not None}
-            by_imo = {str(v.get("imo")): v for v in data if v.get("imo") is not None}
+    # Coordinates are intentionally coarse: this is a schedule/progress view,
+    # not a live vessel-position service. Add aliases here as new ETA ports are
+    # used in the tracker.
+    destination_coordinates = {
+        "miami": (25.7617, -80.1918),
+        "port miami": (25.7617, -80.1918),
+        "norfolk": (36.8508, -76.2859),
+        "new york": (40.7128, -74.0060),
+        "newark": (40.7357, -74.1724),
+        "new york/newark": (40.7357, -74.1724),
+        "savannah": (32.0809, -81.0912),
+        "charleston": (32.7765, -79.9311),
+        "baltimore": (39.2904, -76.6122),
+        "houston": (29.7604, -95.3698),
+        "new orleans": (29.9511, -90.0715),
+        "mobile": (30.6954, -88.0399),
+        "los angeles": (33.7405, -118.2775),
+        "long beach": (33.7701, -118.1937),
+        "oakland": (37.8044, -122.2712),
+        "seattle": (47.6062, -122.3321),
+        "tacoma": (47.2529, -122.4443),
+        "vancouver": (49.2827, -123.1207),
+        "montreal": (45.5019, -73.5674),
+        "halifax": (44.6488, -63.5752),
+        "chicago": (41.8781, -87.6298),
+    }
+    dutch_origin_coordinates = {
+        "rotterdam": (51.9244, 4.4777),
+        "amsterdam": (52.3676, 4.9041),
+        "vlissingen": (51.4427, 3.5736),
+        "flushing": (51.4427, 3.5736),
+    }
+    default_netherlands_origin = (52.10, 4.30)
 
-            for c in active_containers:
-                v = None
-                if getattr(c, "vessel_mmsi", None):
-                    v = by_mmsi.get(str(c.vessel_mmsi))
-                if v is None and getattr(c, "vessel_imo", None):
-                    v = by_imo.get(str(c.vessel_imo))
-                if not v:
-                    continue
+    def _normalize_map_place(value):
+        return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
 
-                try:
-                    lat = float(v.get("lat"))
-                    lng = float(v.get("lng"))
-                except Exception:
-                    continue
+    def _lookup_map_coordinate(value, coordinate_map):
+        normalized = _normalize_map_place(value)
+        if not normalized:
+            return None
+        # Exact normalized match first, then substring match for values such as
+        # "Port of Miami, FL" or "Norfolk International Terminal".
+        for name, coords in coordinate_map.items():
+            if normalized == _normalize_map_place(name):
+                return coords
+        for name, coords in coordinate_map.items():
+            needle = _normalize_map_place(name)
+            if needle and needle in normalized:
+                return coords
+        return None
 
-                vessel_points.append(
-                    {
-                        "lat": lat,
-                        "lng": lng,
-                        "vessel_name": (getattr(c, "vessel_name", "") or v.get("vessel_name") or "").strip(),
-                        "mmsi": v.get("mmsi"),
-                        "imo": v.get("imo"),
-                        "received": v.get("received"),
-                        "container_label": f"{c.customer_name}{(' • ' + c.location_name) if c.location_name else ''}",
-                        "container_url": reverse("order_container_edit", kwargs={"container_id": c.id}),
-                    }
-                )
+    def _payload_data(update):
+        payload = getattr(update, "source_payload", None) if update else None
+        if not isinstance(payload, dict):
+            return {}
+        data = payload.get("data")
+        return data if isinstance(data, dict) else payload
+
+    shipment_map_points = []
+    for c in active_containers:
+        latest_update = getattr(c, "latest_pending_tracking_update", None) or getattr(c, "latest_tracking_update", None)
+        payload = _payload_data(latest_update)
+
+        # Prefer the tracker-approved/manual ETA city, then use JSONCargo port
+        # fields as a fallback when available.
+        destination_name = (c.eta_city or "").strip()
+        if not destination_name:
+            for key in ("discharging_port", "final_destination_port", "destination_port", "shipped_to"):
+                raw = payload.get(key)
+                if raw:
+                    destination_name = str(raw).strip()
+                    if destination_name:
+                        break
+
+        destination = _lookup_map_coordinate(destination_name, destination_coordinates)
+        if not destination or not c.etd or not c.eta:
+            continue
+
+        # Use a specific Dutch loading port only when JSONCargo actually gives
+        # us a recognized one. Otherwise, use a neutral Netherlands departure
+        # point rather than assuming Rotterdam.
+        loading_port = str(payload.get("loading_port") or "").strip()
+        origin = _lookup_map_coordinate(loading_port, dutch_origin_coordinates) or default_netherlands_origin
+        origin_label = loading_port if _lookup_map_coordinate(loading_port, dutch_origin_coordinates) else "Netherlands"
+
+        total_days = (c.eta - c.etd).days
+        if map_today < c.etd:
+            progress = 0.0
+            phase = "Awaiting departure"
+        elif total_days <= 0 or map_today >= c.eta:
+            progress = 1.0
+            phase = "Arrived / ETA reached"
+        else:
+            # Use inclusive calendar days so, for example, ETD 10/01, ETA 10/10,
+            # and today 10/05 displays at 50% progress (day 5 of a 10-day window).
+            transit_days_inclusive = total_days + 1
+            elapsed_days_inclusive = (map_today - c.etd).days + 1
+            progress = max(0.0, min(1.0, elapsed_days_inclusive / transit_days_inclusive))
+            phase = "Estimated in transit"
+
+        lat = origin[0] + (destination[0] - origin[0]) * progress
+        lng = origin[1] + (destination[1] - origin[1]) * progress
+
+        shipment_map_points.append(
+            {
+                "lat": round(lat, 6),
+                "lng": round(lng, 6),
+                "origin_lat": origin[0],
+                "origin_lng": origin[1],
+                "destination_lat": destination[0],
+                "destination_lng": destination[1],
+                "origin_label": origin_label,
+                "destination_label": destination_name,
+                "progress": round(progress, 4),
+                "progress_percent": round(progress * 100),
+                "phase": phase,
+                "etd": c.etd.isoformat(),
+                "eta": c.eta.isoformat(),
+                "container_label": f"{c.customer_name}{(' • ' + c.location_name) if c.location_name else ''}",
+                "container_number": (c.container_number or "").strip(),
+                "rpc_number": (c.rpc_number or "").strip(),
+                "container_url": reverse("order_container_edit", kwargs={"container_id": c.id}),
+            }
+        )
 
     return render(
         request,
@@ -5289,8 +5377,8 @@ def order_tracker_view(request):
             "assigned_to": assigned_to,
             "sort": sort,
             "dir": direction,
-            "vessel_points_json": json.dumps(vessel_points),
-            "vessel_map_error": vessel_map_error,
+            "shipment_map_points_json": json.dumps(shipment_map_points),
+            "shipment_map_today": map_today,
             "pending_container_ids": pending_container_ids,
             "jsoncargo_owner_options": jsoncargo_owner_options,
         },
@@ -6875,6 +6963,18 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
