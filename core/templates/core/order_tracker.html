@@ -522,14 +522,14 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
         <div>
           <div style="font-weight:900;">Active Orders</div>
-          <div class="muted tiny">Use “Mark delivered” once an order has arrived — it will move to the Delivered section below. Edit manual ETAs directly here, then save all at once. The Latest JSONCargo ETA column shows the most recent API result, even after you acknowledge an update.</div>
+          <div class="muted tiny">Use “Mark delivered” once an order has arrived — it will move to the Delivered section below. Edit manual ETAs and estimated delivery dates directly here, then save all at once. The Latest JSONCargo ETA column shows the most recent API result, even after you acknowledge an update.</div>
         </div>
         <div class="actions">
           <form method="post" action="{% url 'order_tracker_reset_checks' %}" style="display:inline;">
             {% csrf_token %}
             <button class="btn btn-danger" type="submit" onclick="return confirm('Reset all order tracker checkboxes?');">Reset all checkboxes</button>
           </form>
-          <button class="btn" type="submit" form="bulkEtaForm">Save all ETA edits</button>
+          <button class="btn" type="submit" form="bulkEtaForm">Save ETA / delivery edits</button>
         </div>
       </div>
 
@@ -667,7 +667,7 @@
                   {% endif %}
                 {% endwith %}
               </td>
-              <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td><input class="compact-input" type="date" name="estimated_delivery_date_{{ c.id }}" value="{{ c.estimated_delivery_date|date:'Y-m-d' }}" form="bulkEtaForm" /></td>
               <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
               <td>
                 <a class="btn" href="{% url 'order_container_commercial_invoice' c.id %}" style="margin-bottom:8px;">Invoice</a>
@@ -1108,6 +1108,49 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
