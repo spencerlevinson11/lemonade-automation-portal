@@ -142,8 +142,8 @@
     }
     input.tracker-check:disabled { cursor: wait; opacity: 0.65; }
 
-    #vesselMap {
-      height: 380px;
+    #shipmentProgressMap {
+      height: 420px;
       width: 100%;
       border-radius: 14px;
       border: 1px solid rgba(148,163,184,0.16);
@@ -264,23 +264,20 @@
       </div>
     </div>
 
-    <!-- Vessel map (shows vessels for containers that have MMSI/IMO saved) -->
+    <!-- Schedule-based shipment progress map -->
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
         <div>
-          <div style="font-weight:900;">Vessel Map</div>
-          <div class="muted tiny">Latest terrestrial AIS position for any container with a saved MMSI/IMO.</div>
+          <div style="font-weight:900;">Estimated Shipment Progress</div>
+          <div class="muted tiny">Estimated position from ETD to ETA. Shipments remain in the Netherlands until ETD and move proportionally toward the ETA destination.</div>
         </div>
-        <div class="badge">Live</div>
+        <div class="badge">As of {{ shipment_map_today|date:"M j, Y" }}</div>
       </div>
 
-      {% if vessel_map_error %}
-        <div class="muted" style="margin-top:10px;">{{ vessel_map_error }}</div>
-      {% endif %}
-
       <div style="margin-top:12px;">
-        <div id="vesselMap"></div>
-        <div id="vesselMapHint" class="muted tiny" style="margin-top:8px; display:none;">No vessels to show yet. Add a vessel MMSI (recommended) or IMO to any container.</div>
+        <div id="shipmentProgressMap"></div>
+        <div id="shipmentProgressMapHint" class="muted tiny" style="margin-top:8px; display:none;">No shipments have a mappable ETA destination plus both ETD and ETA yet.</div>
+        <div class="muted tiny" style="margin-top:8px;">This is a schedule-based estimate, not a live vessel position.</div>
       </div>
     </div>
 
@@ -776,46 +773,91 @@
     })();
 
     (function () {
-      const points = {{ vessel_points_json|default:"[]"|safe }};
-      const hint = document.getElementById('vesselMapHint');
-      const mapEl = document.getElementById('vesselMap');
+      const points = {{ shipment_map_points_json|default:"[]"|safe }};
+      const hint = document.getElementById('shipmentProgressMapHint');
+      const mapEl = document.getElementById('shipmentProgressMap');
 
       if (!mapEl) return;
 
-      // If no vessels, still show a world map with a hint.
       const hasPoints = Array.isArray(points) && points.length > 0;
       if (!hasPoints && hint) hint.style.display = 'block';
 
-      // Compute a reasonable center
-      let center = [20, 0];
-      if (hasPoints) {
-        const lats = points.map(p => p.lat).filter(v => typeof v === 'number');
-        const lngs = points.map(p => p.lng).filter(v => typeof v === 'number');
-        if (lats.length && lngs.length) {
-          center = [lats.reduce((a,b)=>a+b,0)/lats.length, lngs.reduce((a,b)=>a+b,0)/lngs.length];
-        }
-      }
-
-      const map = L.map('vesselMap', { scrollWheelZoom: false }).setView(center, hasPoints ? 3 : 2);
+      const map = L.map('shipmentProgressMap', { scrollWheelZoom: false }).setView([38, -35], 3);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 18,
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
+      const escapeHtml = (value) => String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+
       if (hasPoints) {
         const bounds = [];
+        const drawnRoutes = new Set();
+
         points.forEach(p => {
           if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
-          const marker = L.marker([p.lat, p.lng]).addTo(map);
-          const title = (p.vessel_name || 'Vessel') + (p.mmsi ? ` (MMSI ${p.mmsi})` : '');
-          const line2 = p.container_label ? `<div style="margin-top:4px;"><strong>Container:</strong> ${p.container_label}</div>` : '';
-          const line3 = p.received ? `<div class="muted" style="margin-top:4px; font-size:12px;">Received: ${p.received}</div>` : '';
-          const link = p.container_url ? `<div style="margin-top:8px;"><a href="${p.container_url}">Open container</a></div>` : '';
-          marker.bindPopup(`<div style="min-width:220px;"><div style="font-weight:800;">${title}</div>${line2}${line3}${link}</div>`);
-          bounds.push([p.lat, p.lng]);
+
+          const origin = [p.origin_lat, p.origin_lng];
+          const destination = [p.destination_lat, p.destination_lng];
+          const routeKey = `${p.origin_lat},${p.origin_lng}|${p.destination_lat},${p.destination_lng}`;
+
+          // Draw each origin/destination route once even if several containers
+          // share it. The line is a visual schedule path, not a claimed vessel track.
+          if (!drawnRoutes.has(routeKey)) {
+            L.polyline([origin, destination], {
+              color: '#64748b',
+              weight: 2,
+              opacity: 0.65,
+              dashArray: '7 7'
+            }).addTo(map);
+            drawnRoutes.add(routeKey);
+          }
+
+          L.circleMarker(destination, {
+            radius: 5,
+            color: '#94a3b8',
+            weight: 2,
+            fillColor: '#0f172a',
+            fillOpacity: 0.9
+          }).addTo(map).bindTooltip(escapeHtml(p.destination_label || 'ETA destination'));
+
+          const marker = L.circleMarker([p.lat, p.lng], {
+            radius: 8,
+            color: '#facc15',
+            weight: 2,
+            fillColor: '#facc15',
+            fillOpacity: 0.82
+          }).addTo(map);
+
+          const identifier = p.container_number
+            ? `Container ${escapeHtml(p.container_number)}`
+            : (p.rpc_number ? `RPC ${escapeHtml(p.rpc_number)}` : 'Shipment');
+          const link = p.container_url
+            ? `<div style="margin-top:8px;"><a href="${escapeHtml(p.container_url)}">Open container</a></div>`
+            : '';
+
+          marker.bindPopup(`
+            <div style="min-width:230px;">
+              <div style="font-weight:800;">${identifier}</div>
+              <div style="margin-top:4px;">${escapeHtml(p.container_label)}</div>
+              <div style="margin-top:8px;"><strong>${escapeHtml(p.progress_percent)}%</strong> of scheduled transit elapsed</div>
+              <div style="margin-top:4px;">${escapeHtml(p.phase)}</div>
+              <div style="margin-top:6px; font-size:12px;">${escapeHtml(p.origin_label)} → ${escapeHtml(p.destination_label)}</div>
+              <div style="margin-top:2px; font-size:12px;">ETD ${escapeHtml(p.etd)} · ETA ${escapeHtml(p.eta)}</div>
+              ${link}
+            </div>
+          `);
+
+          bounds.push(origin, destination, [p.lat, p.lng]);
         });
+
         if (bounds.length) {
-          map.fitBounds(bounds, { padding: [24, 24] });
+          map.fitBounds(bounds, { padding: [24, 24], maxZoom: 5 });
         }
       }
     })();
@@ -831,6 +873,83 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
