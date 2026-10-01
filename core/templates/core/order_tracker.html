@@ -20,12 +20,12 @@
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0; padding: 24px;
+      margin: 0; padding: 12px;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
       color: var(--text-main);
     }
-    .wrap { max-width: 1200px; margin: 0 auto; }
+    .wrap { width: 100%; max-width: 1920px; margin: 0 auto; }
     .top {
       display:flex; justify-content:space-between; align-items:center; gap:12px;
       margin-bottom: 14px;
@@ -39,7 +39,7 @@
       background: rgba(11,17,32,0.9);
       border: 1px solid rgba(31,41,55,0.9);
       border-radius: 16px;
-      padding: 16px;
+      padding: 12px;
       margin-bottom: 14px;
       box-shadow: 0 22px 60px rgba(0,0,0,0.55);
     }
@@ -79,9 +79,34 @@
     .btn-danger:hover { background: rgba(249,115,115,0.16); }
 
     table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 10px 8px; border-bottom: 1px solid rgba(148,163,184,0.16); vertical-align: top; }
-    th { text-align:left; font-size: 0.85rem; color: var(--text-muted); font-weight: 700; }
-    td { font-size: 0.95rem; }
+    th, td { padding: 8px 6px; border-bottom: 1px solid rgba(148,163,184,0.16); vertical-align: top; }
+    th { text-align:left; font-size: 0.78rem; color: var(--text-muted); font-weight: 700; }
+    td { font-size: 0.86rem; }
+
+    /* Keep the active order grid visible across a normal desktop viewport. */
+    .active-orders-table { overflow-x: visible; margin-top: 12px; }
+    .active-orders-table table { table-layout: fixed; }
+    .active-orders-table th,
+    .active-orders-table td { overflow-wrap: anywhere; }
+    .active-orders-table th:nth-child(1), .active-orders-table td:nth-child(1) { width: 4%; }
+    .active-orders-table th:nth-child(2), .active-orders-table td:nth-child(2) { width: 18%; }
+    .active-orders-table th:nth-child(3), .active-orders-table td:nth-child(3) { width: 6%; }
+    .active-orders-table th:nth-child(4), .active-orders-table td:nth-child(4) { width: 7%; }
+    .active-orders-table th:nth-child(5), .active-orders-table td:nth-child(5) { width: 6%; }
+    .active-orders-table th:nth-child(6), .active-orders-table td:nth-child(6) { width: 7%; }
+    .active-orders-table th:nth-child(7), .active-orders-table td:nth-child(7) { width: 7%; }
+    .active-orders-table th:nth-child(8), .active-orders-table td:nth-child(8) { width: 6%; }
+    .active-orders-table th:nth-child(9), .active-orders-table td:nth-child(9) { width: 10%; }
+    .active-orders-table th:nth-child(10), .active-orders-table td:nth-child(10) { width: 10%; }
+    .active-orders-table th:nth-child(11), .active-orders-table td:nth-child(11) { width: 7%; }
+    .active-orders-table th:nth-child(12), .active-orders-table td:nth-child(12) { width: 6%; }
+    .active-orders-table th:nth-child(13), .active-orders-table td:nth-child(13) { width: 6%; }
+    .active-orders-table .btn { padding: 6px 8px; border-radius: 9px; font-size: 0.76rem; }
+
+    @media (max-width: 1180px) {
+      .active-orders-table { overflow-x: auto; }
+      .active-orders-table table { min-width: 1180px; table-layout: fixed; }
+    }
     .muted { color: var(--text-muted); }
     .badge {
       display:inline-flex; align-items:center;
@@ -126,10 +151,10 @@
     }
 
     .actions { display:flex; gap:10px; flex-wrap:wrap; }
-    .compact-input { min-width: 130px; padding: 7px 8px; font-size: 0.85rem; }
-    .eta-cell { min-width: 180px; }
-    .jsoncargo-cell { min-width: 170px; font-size: 0.88rem; }
-    .tracker-check-cell { width: 84px; text-align: center; vertical-align: middle; }
+    .compact-input { min-width: 0; width: 100%; padding: 6px 6px; font-size: 0.78rem; }
+    .eta-cell { min-width: 0; }
+    .jsoncargo-cell { min-width: 0; font-size: 0.80rem; }
+    .tracker-check-cell { width: 60px; text-align: center; vertical-align: middle; }
     input.tracker-check {
       width: 22px;
       height: 22px;
@@ -512,7 +537,7 @@
         {% csrf_token %}
       </form>
 
-      <div style="overflow-x:auto; margin-top:12px;">
+      <div class="active-orders-table">
       <table>
         <thead>
           <tr>
@@ -1083,6 +1108,45 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
