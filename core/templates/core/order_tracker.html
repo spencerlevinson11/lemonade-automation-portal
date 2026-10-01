@@ -148,6 +148,7 @@
       border-radius: 14px;
       border: 1px solid rgba(148,163,184,0.16);
       overflow: hidden;
+      background: #eaf1f5;
     }
 
     #jsoncargoLoadingOverlay {
@@ -782,10 +783,21 @@
       const hasPoints = Array.isArray(points) && points.length > 0;
       if (!hasPoints && hint) hint.style.display = 'block';
 
-      const map = L.map('shipmentProgressMap', { scrollWheelZoom: false }).setView([38, -35], 3);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '&copy; OpenStreetMap contributors'
+      // Start from a completely clean map container so no legacy map layer can remain behind this tracker.
+      mapEl.replaceChildren();
+      mapEl.className = '';
+
+      const map = L.map(mapEl, {
+        scrollWheelZoom: false,
+        zoomControl: true,
+        attributionControl: true
+      }).setView([38, -35], 3);
+
+      // Use a fresh, clean basemap rather than the base layer used by the former vessel tracker.
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd',
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
       }).addTo(map);
 
       const escapeHtml = (value) => String(value ?? '')
@@ -873,6 +885,100 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
