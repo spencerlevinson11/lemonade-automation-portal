@@ -109,8 +109,7 @@
     }
     .muted { color: var(--text-muted); }
     .badge {
-      display:inline-flex;
-      align-items:center;
+      display:inline-block;
       max-width: 100%;
       padding: 4px 10px;
       border-radius: 999px;
@@ -120,8 +119,9 @@
       line-height: 1.25;
       color: var(--text-main);
       white-space: normal;
-      overflow-wrap: anywhere;
-      word-break: break-word;
+      overflow-wrap: normal;
+      word-break: normal;
+      hyphens: none;
     }
 
     /* Collapsible add form */
@@ -1113,6 +1113,10 @@
 
 </body>
 </html>
+
+
+
+
 
 
 
