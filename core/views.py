@@ -5771,9 +5771,11 @@ def order_tracker_bulk_update_view(request):
     for c in containers:
         raw_eta = (request.POST.get(f"eta_{c.id}") or "").strip()
         raw_city = (request.POST.get(f"eta_city_{c.id}") or "").strip()
+        raw_delivery = (request.POST.get(f"estimated_delivery_date_{c.id}") or "").strip()
 
         try:
             new_eta = datetime.datetime.strptime(raw_eta, "%Y-%m-%d").date() if raw_eta else None
+            new_delivery = datetime.datetime.strptime(raw_delivery, "%Y-%m-%d").date() if raw_delivery else None
         except ValueError:
             error_count += 1
             continue
@@ -5785,6 +5787,9 @@ def order_tracker_bulk_update_view(request):
         if (c.eta_city or "") != raw_city:
             c.eta_city = raw_city
             fields.append("eta_city")
+        if c.estimated_delivery_date != new_delivery:
+            c.estimated_delivery_date = new_delivery
+            fields.append("estimated_delivery_date")
 
         if fields:
             fields.append("updated_at")
@@ -5792,9 +5797,9 @@ def order_tracker_bulk_update_view(request):
             changed_count += 1
 
     if error_count:
-        messages.error(request, f"Saved {changed_count} ETA edit(s). {error_count} row(s) had invalid date format; use YYYY-MM-DD.")
+        messages.error(request, f"Saved {changed_count} ETA/delivery edit(s). {error_count} row(s) had invalid date format; use YYYY-MM-DD.")
     else:
-        messages.success(request, f"Saved {changed_count} ETA edit(s).")
+        messages.success(request, f"Saved {changed_count} ETA/delivery edit(s).")
 
     return redirect(request.META.get("HTTP_REFERER") or "order_tracker")
 
@@ -6963,6 +6968,16 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
 
 
 
