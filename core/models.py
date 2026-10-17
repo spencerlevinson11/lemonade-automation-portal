@@ -446,7 +446,8 @@ class OrderContainer(models.Model):
     archived_at = models.DateTimeField(null=True, blank=True)
 
     # Who owns this order?
-    assigned_to = models.CharField(max_length=32, blank=True)
+    assigned_to = models.CharField(max_length=80, blank=True)
+    origin_country = models.CharField(max_length=100, blank=True, help_text="Country where this shipment originates")
 
     rpc_number = models.CharField(max_length=64, blank=True)  # your internal RPC#
     loading_date = models.DateField(null=True, blank=True)
@@ -1086,6 +1087,12 @@ class IndustryRelationshipEdge(models.Model):
 
     def __str__(self) -> str:
         return f"{self.source} {self.label} {self.target}"
+
+
+
+
+
+
 
 
 
