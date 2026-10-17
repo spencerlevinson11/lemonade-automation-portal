@@ -244,12 +244,16 @@
             {{ form.status.errors }}
           </div>
           <div class="field">
-            <label>Owner (Jaime / Spencer)</label>
+            <label>Owner</label>
             <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; padding:6px 0;">
               {{ form.assigned_to }}
+              {% if not tracker_is_retriever %}<datalist id="company-owner-names">{% for owner in tracker_owner_options %}<option value="{{ owner }}"></option>{% endfor %}</datalist>{% endif %}
             </div>
             {{ form.assigned_to.errors }}
           </div>
+          {% if not tracker_is_retriever %}
+          <div class="field"><label>Shipment origin country</label>{{ form.origin_country }}{{ form.origin_country.errors }}<div class="muted tiny">Set a country for each shipment. The map supports common shipping origins.</div></div>
+          {% else %}{{ form.origin_country }}{% endif %}
           <div class="field">
             <label>RPC#</label>
             {{ form.rpc_number }}
@@ -858,6 +862,10 @@
   </div>
 </body>
 </html>
+
+
+
+
 
 
 
