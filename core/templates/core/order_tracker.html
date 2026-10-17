@@ -305,7 +305,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
         <div>
           <div style="font-weight:900;">JSONCargo Controls</div>
-          <div class="muted tiny">Sync all active containers, sync only Spencer/Jaime orders, or sync one customer/city group.</div>
+          <div class="muted tiny">Sync all active containers, sync by owner, or sync one customer/city group.</div>
         </div>
         <div class="actions">
           <form method="post" action="{% url 'order_tracker_sync_jsoncargo' %}" style="display:inline;">
@@ -357,7 +357,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
         <div>
           <div style="font-weight:900;">Estimated Shipment Progress</div>
-          <div class="muted tiny">Estimated position from ETD to ETA. Shipments remain in the Netherlands until ETD and move proportionally toward the ETA destination.</div>
+          <div class="muted tiny">Estimated position from ETD to ETA. Shipments remain at their selected country of origin until ETD and move proportionally toward the ETA destination.</div>
         </div>
         <div class="badge">As of {{ shipment_map_today|date:"M j, Y" }}</div>
       </div>
@@ -369,7 +369,7 @@
         <div class="map-legend">
           <span class="legend-item"><span class="legend-swatch" style="background:#facc15; border: 2px solid rgba(15,23,42,0.45);"></span> Estimated shipment position</span>
           <span class="legend-item"><span class="legend-swatch" style="background:#0f172a; border: 2px solid #94a3b8;"></span> ETA destination</span>
-          <span class="legend-item"><span class="legend-swatch route"></span> Estimated route from the Netherlands</span>
+          <span class="legend-item"><span class="legend-swatch route"></span> Estimated route from shipment origin</span>
         </div>
         <div id="shipmentProgressMapHint" class="muted tiny" style="margin-top:8px; display:none;">No shipments have a mappable ETA destination plus both ETD and ETA yet.</div>
         <div class="muted tiny" style="margin-top:8px;">This is a schedule-based estimate, not a live vessel position.</div>
@@ -408,11 +408,15 @@
             </div>
             <div class="field" style="max-width:260px;">
               <label>Owner</label>
+              {% if tracker_is_retriever %}
               <select name="assigned_to">
                 <option value="" selected>—</option>
-                <option value="Spencer">Spencer</option>
-                <option value="Jaime">Jaime</option>
+                {% for owner in jsoncargo_owner_options %}<option value="{{ owner }}">{{ owner }}</option>{% endfor %}
               </select>
+              {% else %}
+              <input name="assigned_to" list="quick-owner-options" placeholder="Enter owner name" maxlength="80" />
+              <datalist id="quick-owner-options">{% for owner in jsoncargo_owner_options %}<option value="{{ owner }}"></option>{% endfor %}</datalist>
+              {% endif %}
             </div>
             <div class="field" style="max-width:260px;">
               <label>Status</label>
@@ -511,8 +515,7 @@
             <label>Owner</label>
             <select name="assigned_to">
               <option value="" {% if not assigned_to %}selected{% endif %}>All</option>
-              <option value="Spencer" {% if assigned_to == "Spencer" %}selected{% endif %}>Spencer</option>
-              <option value="Jaime" {% if assigned_to == "Jaime" %}selected{% endif %}>Jaime</option>
+              {% for owner in jsoncargo_owner_options %}<option value="{{ owner }}" {% if assigned_to == owner %}selected{% endif %}>{{ owner }}</option>{% endfor %}
             </select>
           </div>
           <div style="display:flex; gap:10px;">
@@ -910,7 +913,7 @@
       const svg = document.createElementNS(svgNS, 'svg');
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', 'Estimated shipment map between the Netherlands and North America');
+      svg.setAttribute('aria-label', 'Estimated shipment routes between selected origins and destinations');
       mapEl.insertBefore(svg, popupEl || null);
 
       const add = (tag, attrs = {}, parent = svg) => {
@@ -990,7 +993,7 @@
       addLabel('United States', 38, -101, { size: 16 });
       addLabel('Atlantic Ocean', 38, -42, { size: 18, fill: 'rgba(15,23,42,0.42)', weight: 600 });
       addLabel('Europe', 58, 5, { size: 15 });
-      addLabel('Netherlands', 52.8, 5.6, { size: 13, anchor: 'start' });
+      {% if tracker_is_retriever %}addLabel('Netherlands', 52.8, 5.6, { size: 13, anchor: 'start' });{% endif %}
 
       const toRad = degrees => degrees * Math.PI / 180;
       const toDeg = radians => radians * 180 / Math.PI;
@@ -1096,9 +1099,11 @@
           marker.addEventListener('click', (evt) => showPopup(evt, p));
         });
 
-        // Netherlands origin marker on top of routes.
+        // Origin marker for Retriever's existing Netherlands-only map.
+        {% if tracker_is_retriever %}
         const [nx, ny] = project(52.10, 4.30);
         add('circle', { cx: nx, cy: ny, r: 6, fill: '#16a34a', stroke: 'white', 'stroke-width': 2 });
+        {% endif %}
       }
     })();
   </script>
@@ -1113,6 +1118,565 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
