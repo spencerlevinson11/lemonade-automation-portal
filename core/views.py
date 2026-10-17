@@ -5572,9 +5572,12 @@ def order_tracker_sync_jsoncargo_view(request):
     import sys
     import uuid
 
-    api_key = os.getenv("JSONCARGO_API_KEY", "").strip()
-    if not api_key:
-        messages.error(request, "JSONCARGO_API_KEY is not set on the server.")
+    from django.core.exceptions import PermissionDenied
+    from core.services.jsoncargo_accounts import api_key_for_user
+    try:
+        api_key_for_user(request.user)  # Validate entitlement; never hand a key to the subprocess.
+    except PermissionDenied as exc:
+        messages.error(request, str(exc))
         return redirect("order_tracker")
 
     user = request.user
@@ -5616,6 +5619,7 @@ def order_tracker_sync_jsoncargo_view(request):
     status_file.write_text(
         json.dumps({
             "state": "queued",
+            "user_id": user.pk,
             "label": label,
             "message": "JSONCargo sync is queued...",
             "total": 0,
@@ -5642,6 +5646,7 @@ def order_tracker_sync_jsoncargo_view(request):
         "--limit",
         os.getenv("JSONCARGO_WEB_SYNC_LIMIT", "500"),
     ]
+    args.extend(["--user-id", str(user.pk)])
     if company_id is not None:
         args.extend(["--company-id", str(company_id)])
     if owner:
@@ -5674,7 +5679,15 @@ def order_tracker_sync_jsoncargo_view(request):
 def order_tracker_jsoncargo_sync_progress_view(request, job_id: str):
     """Display the JSONCargo sync progress page."""
     # Validate the id/path up front; the status endpoint will return the details.
-    _jsoncargo_sync_status_path(job_id)
+    path = _jsoncargo_sync_status_path(job_id)
+    if not path.exists():
+        raise Http404("Sync job not found")
+    try:
+        job = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        raise Http404("Sync job not found")
+    if job.get("user_id") != request.user.pk:
+        raise Http404("Sync job not found")
     return render(request, "core/order_tracker_jsoncargo_sync_progress.html", {"job_id": job_id})
 
 
@@ -5688,6 +5701,8 @@ def order_tracker_jsoncargo_sync_status_view(request, job_id: str):
         data = json.loads(status_file.read_text(encoding="utf-8"))
     except Exception as exc:
         data = {"state": "error", "message": f"Could not read sync status: {exc}"}
+    if data.get("user_id") != request.user.pk:
+        raise Http404("Sync job not found")
     return JsonResponse(data)
 
 @require_POST
@@ -5729,9 +5744,12 @@ def order_container_sync_jsoncargo_view(request, container_id: int):
         messages.error(request, "This order is archived. Unarchive it before syncing.")
         return redirect("order_container_edit", container_id=container.id)
 
-    api_key = os.getenv("JSONCARGO_API_KEY", "").strip()
-    if not api_key:
-        messages.error(request, "JSONCARGO_API_KEY is not set on the server.")
+    from django.core.exceptions import PermissionDenied
+    from core.services.jsoncargo_accounts import api_key_for_user
+    try:
+        api_key = api_key_for_user(user)
+    except PermissionDenied as exc:
+        messages.error(request, str(exc))
         return redirect("order_container_edit", container_id=container.id)
 
     print(f"Starting JSONCargo sync for container {container.container_number}...")
@@ -6968,315 +6986,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
