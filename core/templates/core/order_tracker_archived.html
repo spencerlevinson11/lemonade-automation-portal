@@ -125,8 +125,7 @@
             <label>Owner</label>
             <select name="assigned_to">
               <option value="" {% if not assigned_to %}selected{% endif %}>—</option>
-              <option value="Spencer" {% if assigned_to == 'Spencer' %}selected{% endif %}>Spencer</option>
-              <option value="Jaime" {% if assigned_to == 'Jaime' %}selected{% endif %}>Jaime</option>
+              {% for owner in archive_owner_options %}<option value="{{ owner }}" {% if assigned_to == owner %}selected{% endif %}>{{ owner }}</option>{% endfor %}
             </select>
           </div>
           <div style="display:flex; gap:10px;">
