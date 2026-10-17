@@ -5186,10 +5186,11 @@ def order_tracker_view(request):
         for owner in sorted({(c.assigned_to or "").strip() for c in active_containers}, key=lambda x: x.lower())
         if owner
     ]
-    # Keep Spencer/Jaime visible even if one of them currently has no active containers.
-    for default_owner in ["Spencer", "Jaime"]:
-        if default_owner not in jsoncargo_owner_options:
-            jsoncargo_owner_options.append(default_owner)
+    from .services.tracker_customer_options import owner_names, is_retriever_company, country_for_container
+    if company:
+        jsoncargo_owner_options = owner_names(company)
+    else:
+        jsoncargo_owner_options = sorted(set(jsoncargo_owner_options), key=str.casefold)
 
     # Attach JSONCargo updates to each row so the master tracker can show the
     # latest API ETA next to the manually maintained ETA. We keep both values:
@@ -5270,6 +5271,27 @@ def order_tracker_view(request):
         "flushing": (51.4427, 3.5736),
     }
     default_netherlands_origin = (52.10, 4.30)
+    # Approximate country centroids for schematic routes; not actual loading ports.
+    country_origin_coordinates = {
+        "netherlands": (52.10, 4.30), "china": (31.23, 121.47),
+        "germany": (53.55, 9.99), "belgium": (51.22, 4.40),
+        "france": (49.49, 0.11), "united kingdom": (51.51, -0.13),
+        "uk": (51.51, -0.13), "spain": (36.72, -4.42),
+        "italy": (44.41, 8.93), "portugal": (38.72, -9.14),
+        "turkey": (40.97, 28.68), "india": (18.94, 72.84),
+        "vietnam": (10.82, 106.63), "thailand": (13.75, 100.50),
+        "south korea": (35.18, 129.07), "japan": (35.44, 139.64),
+        "taiwan": (25.03, 121.56), "indonesia": (-6.21, 106.85),
+        "malaysia": (3.14, 101.69), "singapore": (1.29, 103.85),
+        "mexico": (19.43, -99.13), "canada": (49.29, -123.12),
+        "united states": (40.71, -74.01), "usa": (40.71, -74.01),
+        "brazil": (-23.55, -46.63), "colombia": (10.97, -74.78),
+        "poland": (54.35, 18.65), "denmark": (55.68, 12.57),
+        "sweden": (57.71, 11.97), "norway": (59.91, 10.75),
+        "egypt": (31.20, 29.92), "united arab emirates": (25.20, 55.27),
+        "uae": (25.20, 55.27), "south africa": (-33.92, 18.42),
+        "australia": (-33.87, 151.21), "new zealand": (-36.85, 174.76),
+    }
 
     def _normalize_map_place(value):
         return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
@@ -5320,8 +5342,15 @@ def order_tracker_view(request):
         # us a recognized one. Otherwise, use a neutral Netherlands departure
         # point rather than assuming Rotterdam.
         loading_port = str(payload.get("loading_port") or "").strip()
-        origin = _lookup_map_coordinate(loading_port, dutch_origin_coordinates) or default_netherlands_origin
-        origin_label = loading_port if _lookup_map_coordinate(loading_port, dutch_origin_coordinates) else "Netherlands"
+        origin_country = country_for_container(c)
+        if is_retriever_company(c.company):
+            origin = _lookup_map_coordinate(loading_port, dutch_origin_coordinates) or default_netherlands_origin
+            origin_label = loading_port if _lookup_map_coordinate(loading_port, dutch_origin_coordinates) else "Netherlands"
+        else:
+            origin = country_origin_coordinates.get(origin_country.casefold())
+            if origin is None:
+                continue  # No misleading Netherlands route for an unset/unknown origin.
+            origin_label = origin_country
 
         total_days = (c.eta - c.etd).days
         if map_today < c.etd:
@@ -5381,6 +5410,7 @@ def order_tracker_view(request):
             "shipment_map_today": map_today,
             "pending_container_ids": pending_container_ids,
             "jsoncargo_owner_options": jsoncargo_owner_options,
+            "tracker_is_retriever": is_retriever_company(company) if company else False,
         },
     )
 
@@ -5481,6 +5511,7 @@ def order_tracker_archived_view(request):
     else:
         containers = containers.order_by("-updated_at", "-created_at")
 
+    from .services.tracker_customer_options import owner_names
     return render(
         request,
         "core/order_tracker_archived.html",
@@ -5489,6 +5520,7 @@ def order_tracker_archived_view(request):
             "company": company,
             "company_display": (company.name if company else "All Companies"),
             "containers": containers,
+            "archive_owner_options": owner_names(company) if company else sorted(set(OrderContainer.objects.exclude(assigned_to="").values_list("assigned_to", flat=True)), key=str.casefold),
             "q": q,
             "status": status,
             "assigned_to": assigned_to,
@@ -6462,7 +6494,7 @@ def order_container_edit_view(request, container_id: int | None = None):
     if request.method == "POST":
         if _is_quick_add_post(request):
             # Quick add: create container without formsets, then redirect to full editor.
-            form = OrderContainerForm(request.POST, instance=container)
+            form = OrderContainerForm(request.POST, instance=container, company=company)
             if form.is_valid():
                 obj: OrderContainer = form.save(commit=False)
                 obj.company = company
@@ -6477,7 +6509,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             tag_formset = TagFormSet(instance=container, prefix="tags")
             messages.error(request, "Please fix the errors below and try again.")
         else:
-            form = OrderContainerForm(request.POST, instance=container)
+            form = OrderContainerForm(request.POST, instance=container, company=company)
             formset = LineFormSet(request.POST, instance=container, prefix="lines")
             doc_formset = DocumentFormSet(
                 request.POST,
@@ -6533,7 +6565,7 @@ def order_container_edit_view(request, container_id: int | None = None):
             else:
                 messages.error(request, "Please fix the errors below and try again.")
     else:
-        form = OrderContainerForm(instance=container)
+        form = OrderContainerForm(instance=container, company=company)
         formset = LineFormSet(instance=container, prefix="lines")
         doc_formset = DocumentFormSet(instance=container, prefix="docs")
         tag_formset = TagFormSet(instance=container, prefix="tags")
@@ -6593,6 +6625,7 @@ def order_container_edit_view(request, container_id: int | None = None):
                 jsoncargo_next_destination = candidate
                 break
 
+    from .services.tracker_customer_options import owner_names, is_retriever_company
     return render(
         request,
         "core/order_container_edit.html",
@@ -6601,6 +6634,8 @@ def order_container_edit_view(request, container_id: int | None = None):
             "company": company,
             "container": container,
             "form": form,
+            "tracker_is_retriever": is_retriever_company(company),
+            "tracker_owner_options": owner_names(company),
             "formset": formset,
             "doc_formset": doc_formset,
             "tag_formset": tag_formset,
@@ -6986,6 +7021,8 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
 
 
 
