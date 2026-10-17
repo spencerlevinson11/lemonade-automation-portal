@@ -454,15 +454,13 @@ def sync_all_containers(
 
     Notes
     -----
-    * If api_key is not provided, this reads JSONCARGO_API_KEY from the
-      environment (Render env vars).
+    * An explicit, account-authorized api_key is required. Never use the global
+      environment key implicitly.
     * This function does NOT auto-apply pending updates; it only creates/updates
       OrderContainerTrackingUpdate pending records (same as sync_one_container).
     """
-    if api_key is None:
-        api_key = os.getenv("JSONCARGO_API_KEY", "").strip()
     if not api_key:
-        raise RuntimeError("JSONCARGO_API_KEY is not set")
+        raise RuntimeError("An account-specific JSONCargo API key is required")
 
     qs = queryset if queryset is not None else OrderContainer.objects.all()
 
