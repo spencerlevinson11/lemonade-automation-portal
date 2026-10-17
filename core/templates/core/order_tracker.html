@@ -1005,122 +1005,46 @@
       addLabel('Indian Ocean', -20, 81, { size: 15, fill: 'rgba(15,23,42,0.42)', weight: 600 });
       {% if tracker_is_retriever %}addLabel('Netherlands', 52.8, 5.6, { size: 12, anchor: 'start' });{% endif %}
 
-      const toRad = degrees => degrees * Math.PI / 180;
-      const toDeg = radians => radians * 180 / Math.PI;
-      const greatCirclePoint = (lat1, lng1, lat2, lng2, t) => {
-        const aLat = toRad(lat1), aLng = toRad(lng1);
-        const bLat = toRad(lat2), bLng = toRad(lng2);
-        const a = [Math.cos(aLat) * Math.cos(aLng), Math.cos(aLat) * Math.sin(aLng), Math.sin(aLat)];
-        const b = [Math.cos(bLat) * Math.cos(bLng), Math.cos(bLat) * Math.sin(bLng), Math.sin(bLat)];
-        const dot = Math.max(-1, Math.min(1, a[0]*b[0] + a[1]*b[1] + a[2]*b[2]));
-        const omega = Math.acos(dot);
-        if (omega < 1e-9) return [lat1, lng1];
-        const sinOmega = Math.sin(omega);
-        const w1 = Math.sin((1 - t) * omega) / sinOmega;
-        const w2 = Math.sin(t * omega) / sinOmega;
-        const x = w1*a[0] + w2*b[0];
-        const y = w1*a[1] + w2*b[1];
-        const z = w1*a[2] + w2*b[2];
-        const mag = Math.sqrt(x*x + y*y + z*z) || 1;
-        return [toDeg(Math.asin(z / mag)), toDeg(Math.atan2(y, x))];
-      };
-
-      // Schematic shipping corridors, not live vessel positions. The map is
-      // equirectangular, so normal longitude interpolation must be split at
-      // the +/-180 degree seam. Do not use polar great-circle arcs for ships.
-      const estimatedSeaWaypoints = (originLat, originLng, destLat, destLng) => {
-        const origin = [originLat, originLng];
-        const destination = [destLat, destLng];
-        const asianPacific = originLng >= 95 && originLng <= 155 && originLat >= -12 && originLat <= 55;
-        const americas = destLng >= -170 && destLng <= -60 && destLat >= -55 && destLat <= 65;
-        if (asianPacific && americas) {
-          // Depart southeast / eastern Asia into the western Pacific. Vietnam
-          // and Thailand use a South China Sea approach; Japan uses the open
-          // Pacific. No line is intended to run across mainland China.
-          const departure = originLng < 120
-            ? [[Math.max(8, Math.min(17, originLat)), 111], [18, 124], [21, 145]]
-            : [[Math.max(20, Math.min(34, originLat)), Math.max(135, originLng + 5)], [29, 157]];
-          if (destLng <= -105) {
-            // Pacific-facing ports: the line remains offshore the entire way.
-            return [origin, ...departure, [27, 175], [30, -165],
-              [32, -150], [32, -138], destination];
-          }
-          // Atlantic/Gulf ports: follow the tropical Pacific toward Panama,
-          // approach the canal from the WEST, then exit into the Caribbean.
-          // Never jump diagonally across Mexico or Central America.
-          return [origin, ...departure, [21, 172], [18, -168],
-            [15, -150], [12, -128], [10, -108], [9, -94],
-            [8.4, -84], [8.9, -79.6], [11, -79],
-            [16, -80], destination];
-        }
-        const northWestEurope = originLng >= -12 && originLng <= 22 && originLat >= 42 && originLat <= 62;
-        if (northWestEurope && americas && destLng > -105) {
-          // Netherlands / North Sea to East Coast and Gulf ports via Atlantic.
-          return [origin, [51, 2], [49, -8], [44, -22],
-            [37, -40], [31, -58], [25, -72], destination];
-        }
-        return [origin, destination];
-      };
-
-      const maritimeRoute = (lat1, lng1, lat2, lng2) => {
-        const stops = estimatedSeaWaypoints(lat1, lng1, lat2, lng2);
-        const pointsOnRoute = [];
-        for (let leg = 0; leg < stops.length - 1; leg++) {
-          const [aLat, aLng] = stops[leg];
-          const [bLat, bLng] = stops[leg + 1];
-          const deltaLng = wrapLongitude(bLng - aLng);
-          const count = Math.max(6, Math.ceil(Math.hypot(bLat - aLat, deltaLng) / 1.5));
-          for (let i = leg === 0 ? 0 : 1; i <= count; i++) {
-            const t = i / count;
-            pointsOnRoute.push([aLat + (bLat - aLat) * t, wrapLongitude(aLng + deltaLng * t)]);
-          }
-        }
-        const distances = [0];
-        let total = 0;
-        for (let i = 1; i < pointsOnRoute.length; i++) {
-          const a = pointsOnRoute[i - 1], b = pointsOnRoute[i];
-          const dLat = toRad(b[0] - a[0]);
-          const dLng = toRad(wrapLongitude(b[1] - a[1]));
-          const hav = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[0])) *
-            Math.cos(toRad(b[0])) * Math.sin(dLng / 2) ** 2;
-          total += 2 * Math.asin(Math.min(1, Math.sqrt(hav)));
-          distances.push(total);
-        }
-        const locationAt = fraction => {
-          if (!pointsOnRoute.length) return [lat1, lng1];
-          if (pointsOnRoute.length === 1 || total === 0) return pointsOnRoute[0];
-          const target = Math.max(0, Math.min(1, fraction)) * total;
-          let i = 1;
-          while (i < distances.length - 1 && distances[i] < target) i++;
-          const range = distances[i] - distances[i - 1];
-          const t = range ? (target - distances[i - 1]) / range : 0;
-          const a = pointsOnRoute[i - 1], b = pointsOnRoute[i];
-          return [a[0] + (b[0] - a[0]) * t,
-            wrapLongitude(a[1] + wrapLongitude(b[1] - a[1]) * t)];
+      // A simplified, presentation-style curved route. This is NOT a vessel's
+      // actual path: it intentionally avoids detailed sea-lane/canal waypoints.
+      // Interpolate along the shortest wrapped longitude span so routes across
+      // the Pacific cross the map boundary without jumping through Eurasia.
+      const curvedRoute = (lat1, lng1, lat2, lng2) => {
+        const deltaLng = wrapLongitude(lng2 - lng1);
+        const isLongRoute = Math.abs(deltaLng) >= 60;
+        // Gentle upward arc, like the original Netherlands-origin tracker.
+        // Keep it low enough that Asia-to-Americas routes never reach the Arctic.
+        const arcHeight = isLongRoute ? Math.min(8, Math.max(3, Math.abs(deltaLng) * 0.045)) : 3;
+        const position = fraction => {
+          const t = Math.max(0, Math.min(1, Number(fraction) || 0));
+          const lat = lat1 + (lat2 - lat1) * t + arcHeight * 4 * t * (1 - t);
+          const lng = lng1 + deltaLng * t;
+          return [lat, wrapLongitude(lng)];
         };
+
+        // Draw as short connected segments for a smooth arc, splitting cleanly
+        // at +/-180 longitude rather than connecting opposite map edges.
+        const segments = 90;
         let path = '';
-        pointsOnRoute.forEach((point, i) => {
-          const [lat, lng] = point;
+        let previous = null;
+        for (let i = 0; i <= segments; i++) {
+          const t = i / segments;
+          const lat = lat1 + (lat2 - lat1) * t + arcHeight * 4 * t * (1 - t);
+          const unwrappedLng = lng1 + deltaLng * t;
+          const lng = wrapLongitude(unwrappedLng);
+          if (previous && Math.abs(lng - previous.lng) > 180) {
+            const seam = deltaLng >= 0 ? 180 : -180;
+            const seamT = (seam - lng1) / deltaLng;
+            const seamLat = lat1 + (lat2 - lat1) * seamT + arcHeight * 4 * seamT * (1 - seamT);
+            const [exitX, exitY] = project(seamLat, seam);
+            const [entryX, entryY] = project(seamLat, -seam);
+            path += `L${exitX.toFixed(2)} ${exitY.toFixed(2)} M${entryX.toFixed(2)} ${entryY.toFixed(2)} `;
+          }
           const [x, y] = project(lat, lng);
-          if (i === 0) {
-            path += `M${x.toFixed(2)} ${y.toFixed(2)} `;
-            return;
-          }
-          const prev = pointsOnRoute[i - 1];
-          if (Math.abs(lng - prev[1]) > 180) {
-            // At the date line, end the first stroke on the correct edge,
-            // begin a NEW stroke on the opposite edge, then continue.
-            const unwrapped = prev[1] + wrapLongitude(lng - prev[1]);
-            const seam = unwrapped > 180 ? 180 : -180;
-            const t = (seam - prev[1]) / (unwrapped - prev[1]);
-            const seamLat = prev[0] + (lat - prev[0]) * t;
-            const [ex, ey] = project(seamLat, seam);
-            const [sx, sy] = project(seamLat, -seam);
-            path += `L${ex.toFixed(2)} ${ey.toFixed(2)} M${sx.toFixed(2)} ${sy.toFixed(2)} `;
-          }
-          path += `L${x.toFixed(2)} ${y.toFixed(2)} `;
-        });
-        return {path, locationAt};
+          path += `${i === 0 ? 'M' : 'L'}${x.toFixed(2)} ${y.toFixed(2)} `;
+          previous = {lng};
+        }
+        return {path, locationAt: position};
       };
 
       const showPopup = (evt, p) => {
@@ -1156,7 +1080,7 @@
           if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
 
           const [dx, dy] = project(p.destination_lat, p.destination_lng);
-          const route = maritimeRoute(p.origin_lat, p.origin_lng, p.destination_lat, p.destination_lng);
+          const route = curvedRoute(p.origin_lat, p.origin_lng, p.destination_lat, p.destination_lng);
           const [shipmentLat, shipmentLng] = route.locationAt(Number(p.progress) || 0);
           const [sx, sy] = project(shipmentLat, wrapLongitude(shipmentLng));
           const routeKey = `${p.origin_lat},${p.origin_lng}|${p.destination_lat},${p.destination_lng}`;
@@ -1211,6 +1135,52 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
