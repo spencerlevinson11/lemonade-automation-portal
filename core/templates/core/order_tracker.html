@@ -1006,45 +1006,36 @@
       {% if tracker_is_retriever %}addLabel('Netherlands', 52.8, 5.6, { size: 12, anchor: 'start' });{% endif %}
 
       // A simplified, presentation-style curved route. This is NOT a vessel's
-      // actual path: it intentionally avoids detailed sea-lane/canal waypoints.
-      // Interpolate along the shortest wrapped longitude span so routes across
-      // the Pacific cross the map boundary without jumping through Eurasia.
+      // actual path: it is intentionally drawn as a single clean on-screen arc,
+      // similar to the original Retriever Packaging tracker. For Pacific routes,
+      // keep the route fully visible on the map instead of splitting it at the
+      // left/right screen edges.
       const curvedRoute = (lat1, lng1, lat2, lng2) => {
-        const deltaLng = wrapLongitude(lng2 - lng1);
-        const isLongRoute = Math.abs(deltaLng) >= 60;
-        // Gentle upward arc, like the original Netherlands-origin tracker.
-        // Keep it low enough that Asia-to-Americas routes never reach the Arctic.
-        const arcHeight = isLongRoute ? Math.min(8, Math.max(3, Math.abs(deltaLng) * 0.045)) : 3;
-        const position = fraction => {
+        const [x1, y1] = project(lat1, lng1);
+        const [x2, y2] = project(lat2, lng2);
+
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const distance = Math.hypot(dx, dy);
+        const horizontalSpan = Math.abs(dx);
+
+        // Gentle upward arc that scales with distance, while staying visually
+        // clean for both Atlantic and Asia-to-Americas routes.
+        const arcHeight = Math.max(34, Math.min(120, distance * 0.18 + horizontalSpan * 0.04));
+        const controlX = (x1 + x2) / 2;
+        const controlY = Math.max(18, Math.min(y1, y2) - arcHeight);
+
+        const path = `M${x1.toFixed(2)} ${y1.toFixed(2)} Q${controlX.toFixed(2)} ${controlY.toFixed(2)} ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+
+        const locationAt = (fraction) => {
           const t = Math.max(0, Math.min(1, Number(fraction) || 0));
-          const lat = lat1 + (lat2 - lat1) * t + arcHeight * 4 * t * (1 - t);
-          const lng = lng1 + deltaLng * t;
-          return [lat, wrapLongitude(lng)];
+          const oneMinusT = 1 - t;
+          const x = oneMinusT * oneMinusT * x1 + 2 * oneMinusT * t * controlX + t * t * x2;
+          const y = oneMinusT * oneMinusT * y1 + 2 * oneMinusT * t * controlY + t * t * y2;
+          return [x, y];
         };
 
-        // Draw as short connected segments for a smooth arc, splitting cleanly
-        // at +/-180 longitude rather than connecting opposite map edges.
-        const segments = 90;
-        let path = '';
-        let previous = null;
-        for (let i = 0; i <= segments; i++) {
-          const t = i / segments;
-          const lat = lat1 + (lat2 - lat1) * t + arcHeight * 4 * t * (1 - t);
-          const unwrappedLng = lng1 + deltaLng * t;
-          const lng = wrapLongitude(unwrappedLng);
-          if (previous && Math.abs(lng - previous.lng) > 180) {
-            const seam = deltaLng >= 0 ? 180 : -180;
-            const seamT = (seam - lng1) / deltaLng;
-            const seamLat = lat1 + (lat2 - lat1) * seamT + arcHeight * 4 * seamT * (1 - seamT);
-            const [exitX, exitY] = project(seamLat, seam);
-            const [entryX, entryY] = project(seamLat, -seam);
-            path += `L${exitX.toFixed(2)} ${exitY.toFixed(2)} M${entryX.toFixed(2)} ${entryY.toFixed(2)} `;
-          }
-          const [x, y] = project(lat, lng);
-          path += `${i === 0 ? 'M' : 'L'}${x.toFixed(2)} ${y.toFixed(2)} `;
-          previous = {lng};
-        }
-        return {path, locationAt: position};
+        return {path, locationAt};
       };
 
       const showPopup = (evt, p) => {
@@ -1081,8 +1072,7 @@
 
           const [dx, dy] = project(p.destination_lat, p.destination_lng);
           const route = curvedRoute(p.origin_lat, p.origin_lng, p.destination_lat, p.destination_lng);
-          const [shipmentLat, shipmentLng] = route.locationAt(Number(p.progress) || 0);
-          const [sx, sy] = project(shipmentLat, wrapLongitude(shipmentLng));
+          const [sx, sy] = route.locationAt(Number(p.progress) || 0);
           const routeKey = `${p.origin_lat},${p.origin_lng}|${p.destination_lat},${p.destination_lng}`;
 
           if (!routesSeen.has(routeKey)) {
@@ -1135,6 +1125,152 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
