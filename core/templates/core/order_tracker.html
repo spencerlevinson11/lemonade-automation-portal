@@ -888,15 +888,16 @@
         .replaceAll("'", '&#039;');
 
       const svgNS = 'http://www.w3.org/2000/svg';
-      const width = 1100;
-      const height = 460;
+      const width = 1200;
+      const height = 550;
       const bounds = {
-        minLat: 5,
-        maxLat: 72,
-        minLng: -140,
-        maxLng: 25,
+        minLat: -70,
+        maxLat: 85,
+        minLng: -180,
+        maxLng: 180,
       };
 
+      const wrapLongitude = (lng) => ((lng + 180) % 360 + 360) % 360 - 180;
       const project = (lat, lng) => {
         const x = ((lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * width;
         const y = ((bounds.maxLat - lat) / (bounds.maxLat - bounds.minLat)) * height;
@@ -968,11 +969,11 @@
       });
 
       // Decorative grid lines.
-      for (let lng = -120; lng <= 0; lng += 20) {
+      for (let lng = -180; lng <= 180; lng += 30) {
         const [x] = project(0, lng);
         add('line', { x1: x, y1: 0, x2: x, y2: height, stroke: 'rgba(15,23,42,0.08)', 'stroke-width': 1 });
       }
-      for (let lat = 20; lat <= 60; lat += 10) {
+      for (let lat = -60; lat <= 80; lat += 20) {
         const [, y] = project(lat, 0);
         add('line', { x1: 0, y1: y, x2: width, y2: y, stroke: 'rgba(15,23,42,0.08)', 'stroke-width': 1 });
       }
@@ -989,11 +990,17 @@
         });
         label.textContent = text;
       };
-      addLabel('Canada', 58, -102, { size: 15 });
-      addLabel('United States', 38, -101, { size: 16 });
-      addLabel('Atlantic Ocean', 38, -42, { size: 18, fill: 'rgba(15,23,42,0.42)', weight: 600 });
-      addLabel('Europe', 58, 5, { size: 15 });
-      {% if tracker_is_retriever %}addLabel('Netherlands', 52.8, 5.6, { size: 13, anchor: 'start' });{% endif %}
+      addLabel('North America', 45, -106, { size: 15 });
+      addLabel('South America', -20, -61, { size: 15 });
+      addLabel('Atlantic Ocean', 10, -32, { size: 16, fill: 'rgba(15,23,42,0.42)', weight: 600 });
+      addLabel('Pacific Ocean', 2, -152, { size: 14, fill: 'rgba(15,23,42,0.42)', weight: 600 });
+      addLabel('Pacific Ocean', 2, 165, { size: 14, fill: 'rgba(15,23,42,0.42)', weight: 600 });
+      addLabel('Europe', 55, 17, { size: 14 });
+      addLabel('Africa', 0, 20, { size: 15 });
+      addLabel('Asia', 47, 97, { size: 16 });
+      addLabel('Australia', -27, 135, { size: 14 });
+      addLabel('Indian Ocean', -20, 81, { size: 15, fill: 'rgba(15,23,42,0.42)', weight: 600 });
+      {% if tracker_is_retriever %}addLabel('Netherlands', 52.8, 5.6, { size: 12, anchor: 'start' });{% endif %}
 
       const toRad = degrees => degrees * Math.PI / 180;
       const toDeg = radians => radians * 180 / Math.PI;
@@ -1015,12 +1022,35 @@
         return [toDeg(Math.asin(z / mag)), toDeg(Math.atan2(y, x))];
       };
 
-      const greatCirclePath = (lat1, lng1, lat2, lng2, steps = 48) => {
+      // Split great-circle lines at the antimeridian instead of drawing an
+      // erroneous horizontal line from one side of the world to the other.
+      // The interpolation still follows the same shortest great-circle arc.
+      const greatCirclePath = (lat1, lng1, lat2, lng2, steps = 96) => {
         const parts = [];
+        let previous = null;
         for (let i = 0; i <= steps; i++) {
-          const [lat, lng] = greatCirclePoint(lat1, lng1, lat2, lng2, i / steps);
+          const [lat, rawLng] = greatCirclePoint(lat1, lng1, lat2, lng2, i / steps);
+          const lng = wrapLongitude(rawLng);
+          if (previous && Math.abs(lng - previous.lng) > 180) {
+            // Find the actual latitude where the path crosses +180/-180.
+            let lo = previous.t, hi = i / steps;
+            const eastward = previous.lng > 0;
+            for (let j = 0; j < 25; j++) {
+              const mid = (lo + hi) / 2;
+              const candidate = wrapLongitude(greatCirclePoint(lat1, lng1, lat2, lng2, mid)[1]);
+              if ((candidate > 0) === eastward) lo = mid;
+              else hi = mid;
+            }
+            const seamLat = greatCirclePoint(lat1, lng1, lat2, lng2, (lo + hi) / 2)[0];
+            const firstEdge = previous.lng > 0 ? 180 : -180;
+            const [endX, endY] = project(seamLat, firstEdge);
+            parts.push(`L${endX.toFixed(2)} ${endY.toFixed(2)}`);
+            const [startX, startY] = project(seamLat, -firstEdge);
+            parts.push(`M${startX.toFixed(2)} ${startY.toFixed(2)}`);
+          }
           const [x, y] = project(lat, lng);
           parts.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(2)} ${y.toFixed(2)}`);
+          previous = {lng, t: i / steps};
         }
         return parts.join(' ');
       };
@@ -1065,7 +1095,7 @@
             p.destination_lng,
             Math.max(0, Math.min(1, Number(p.progress) || 0))
           );
-          const [sx, sy] = project(shipmentLat, shipmentLng);
+          const [sx, sy] = project(shipmentLat, wrapLongitude(shipmentLng));
           const routeKey = `${p.origin_lat},${p.origin_lng}|${p.destination_lat},${p.destination_lng}`;
 
           if (!routesSeen.has(routeKey)) {
@@ -1118,6 +1148,7 @@
 
 </body>
 </html>
+
 
 
 
