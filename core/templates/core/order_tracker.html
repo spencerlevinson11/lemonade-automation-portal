@@ -1,39 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>{{ automation_name }}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-
-
-  <style>
-    :root {
-      --bg-main: #020617;
-      --bg-card: #0b1120;
-      --accent: #facc15;
-      --text-main: #e5e7eb;
-      --text-muted: #9ca3af;
-      --border-subtle: #1f2937;
-      --success: #4ade80;
-      --danger: #f97373;
-      --input: rgba(2, 6, 23, 0.6);
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; padding: 12px;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 55%) var(--bg-main);
-      color: var(--text-main);
-    }
-    .wrap { width: 100%; max-width: 1920px; margin: 0 auto; }
-    .top {
-      display:flex; justify-content:space-between; align-items:center; gap:12px;
-      margin-bottom: 14px;
-    }
-    .title h1 { margin:0; font-size: 1.25rem; }
-    .title p { margin:4px 0 0; color: var(--text-muted); font-size: 0.9rem; }
-    a { color: var(--accent); text-decoration:none; }
-    a:hover { text-decoration: underline; }
+ne; }
 
     .card {
       background: rgba(11,17,32,0.9);
@@ -1025,37 +990,85 @@
         return [toDeg(Math.asin(z / mag)), toDeg(Math.atan2(y, x))];
       };
 
-      // Split great-circle lines at the antimeridian instead of drawing an
-      // erroneous horizontal line from one side of the world to the other.
-      // The interpolation still follows the same shortest great-circle arc.
-      const greatCirclePath = (lat1, lng1, lat2, lng2, steps = 96) => {
-        const parts = [];
-        let previous = null;
-        for (let i = 0; i <= steps; i++) {
-          const [lat, rawLng] = greatCirclePoint(lat1, lng1, lat2, lng2, i / steps);
-          const lng = wrapLongitude(rawLng);
-          if (previous && Math.abs(lng - previous.lng) > 180) {
-            // Find the actual latitude where the path crosses +180/-180.
-            let lo = previous.t, hi = i / steps;
-            const eastward = previous.lng > 0;
-            for (let j = 0; j < 25; j++) {
-              const mid = (lo + hi) / 2;
-              const candidate = wrapLongitude(greatCirclePoint(lat1, lng1, lat2, lng2, mid)[1]);
-              if ((candidate > 0) === eastward) lo = mid;
-              else hi = mid;
-            }
-            const seamLat = greatCirclePoint(lat1, lng1, lat2, lng2, (lo + hi) / 2)[0];
-            const firstEdge = previous.lng > 0 ? 180 : -180;
-            const [endX, endY] = project(seamLat, firstEdge);
-            parts.push(`L${endX.toFixed(2)} ${endY.toFixed(2)}`);
-            const [startX, startY] = project(seamLat, -firstEdge);
-            parts.push(`M${startX.toFixed(2)} ${startY.toFixed(2)}`);
+      // These are illustrative maritime corridors, not vessel positions or
+      // navigational tracks. In particular, ocean freight from eastern and
+      // southeastern Asia should not be shown using polar great-circle arcs.
+      const estimatedSeaWaypoints = (originLat, originLng, destLat, destLng) => {
+        const origin = [originLat, originLng];
+        const destination = [destLat, destLng];
+        const asiaPacific = originLng >= 95 && originLng <= 155 && originLat >= -12 && originLat <= 55;
+        const americas = destLng <= -60 && destLng >= -170 && destLat >= -55 && destLat <= 65;
+        if (asiaPacific && americas) {
+          const eastCoast = destLng > -100;
+          // Panama Canal corridor for eastern / Gulf US ports. The two
+          // canal approaches are deliberately close to the actual canal.
+          if (eastCoast) return [origin,
+            [Math.min(25, Math.max(10, originLat)), 135], [20, 165],
+            [17, -165], [13, -125], [8.4, -83.5],
+            [8.9, -79.6], [9.4, -79.9], [15, -81], destination];
+          // Trans-Pacific corridor for western US / Canadian ports.
+          return [origin, [Math.min(35, Math.max(15, originLat)), 145],
+            [Math.min(38, Math.max(20, originLat + 7)), 175],
+            [Math.min(43, Math.max(25, destLat)), -155],
+            [Math.min(43, Math.max(25, destLat)), -130], destination];
+        }
+        return [origin, destination];
+      };
+
+      // A continuously interpolated path keeps the map's date-line wrapping
+      // and the estimated shipment marker aligned with the same corridor.
+      const maritimeRoute = (lat1, lng1, lat2, lng2) => {
+        const stops = estimatedSeaWaypoints(lat1, lng1, lat2, lng2);
+        const pointsOnRoute = [];
+        for (let leg = 0; leg < stops.length - 1; leg++) {
+          const [startLat, startLng] = stops[leg];
+          const [endLat, endLng] = stops[leg + 1];
+          const lngDiff = wrapLongitude(endLng - startLng);
+          const count = Math.max(8, Math.ceil(Math.hypot(endLat - startLat, lngDiff) / 2));
+          for (let i = leg === 0 ? 0 : 1; i <= count; i++) {
+            const t = i / count;
+            pointsOnRoute.push([startLat + (endLat - startLat) * t,
+              wrapLongitude(startLng + lngDiff * t)]);
+          }
+        }
+        let total = 0;
+        const distances = [0];
+        for (let i = 1; i < pointsOnRoute.length; i++) {
+          const a = pointsOnRoute[i - 1], b = pointsOnRoute[i];
+          const dLat = toRad(b[0] - a[0]);
+          const dLng = toRad(wrapLongitude(b[1] - a[1]));
+          const hav = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[0])) *
+            Math.cos(toRad(b[0])) * Math.sin(dLng / 2) ** 2;
+          total += 2 * Math.asin(Math.min(1, Math.sqrt(hav)));
+          distances.push(total);
+        }
+        const locationAt = fraction => {
+          const target = Math.max(0, Math.min(1, fraction)) * total;
+          let i = 1;
+          while (i < distances.length - 1 && distances[i] < target) i++;
+          const d = distances[i] - distances[i - 1];
+          const t = d > 0 ? (target - distances[i - 1]) / d : 0;
+          const a = pointsOnRoute[i - 1], b = pointsOnRoute[i];
+          return [a[0] + (b[0] - a[0]) * t,
+            wrapLongitude(a[1] + wrapLongitude(b[1] - a[1]) * t)];
+        };
+        let path = '';
+        pointsOnRoute.forEach((point, i) => {
+          const [lat, lng] = point;
+          if (i > 0 && Math.abs(lng - pointsOnRoute[i - 1][1]) > 180) {
+            const prev = pointsOnRoute[i - 1];
+            const unwrapped = prev[1] + wrapLongitude(lng - prev[1]);
+            const edge = unwrapped > 180 ? 180 : -180;
+            const t = (edge - prev[1]) / (unwrapped - prev[1]);
+            const seamLat = prev[0] + (lat - prev[0]) * t;
+            const [ex, ey] = project(seamLat, edge);
+            const [sx, sy] = project(seamLat, -edge);
+            path += `L${ex.toFixed(2)} ${ey.toFixed(2)} M${sx.toFixed(2)} ${sy.toFixed(2)} `;
           }
           const [x, y] = project(lat, lng);
-          parts.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(2)} ${y.toFixed(2)}`);
-          previous = {lng, t: i / steps};
-        }
-        return parts.join(' ');
+          path += `${i === 0 ? 'M' : 'L'}${x.toFixed(2)} ${y.toFixed(2)} `;
+        });
+        return {path, locationAt};
       };
 
       const showPopup = (evt, p) => {
@@ -1091,19 +1104,14 @@
           if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
 
           const [dx, dy] = project(p.destination_lat, p.destination_lng);
-          const [shipmentLat, shipmentLng] = greatCirclePoint(
-            p.origin_lat,
-            p.origin_lng,
-            p.destination_lat,
-            p.destination_lng,
-            Math.max(0, Math.min(1, Number(p.progress) || 0))
-          );
+          const route = maritimeRoute(p.origin_lat, p.origin_lng, p.destination_lat, p.destination_lng);
+          const [shipmentLat, shipmentLng] = route.locationAt(Number(p.progress) || 0);
           const [sx, sy] = project(shipmentLat, wrapLongitude(shipmentLng));
           const routeKey = `${p.origin_lat},${p.origin_lng}|${p.destination_lat},${p.destination_lng}`;
 
           if (!routesSeen.has(routeKey)) {
             add('path', {
-              d: greatCirclePath(p.origin_lat, p.origin_lng, p.destination_lat, p.destination_lng),
+              d: route.path,
               fill: 'none',
               stroke: 'rgba(15,23,42,0.45)',
               'stroke-width': 2,
@@ -1151,6 +1159,67 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
