@@ -389,11 +389,22 @@ class ScheduleGlobalNoteForm(forms.ModelForm):
 
 
 class OrderContainerForm(forms.ModelForm):
-    assigned_to = forms.ChoiceField(
-        required=False,
-        choices=[("", "—"), ("Spencer", "Spencer"), ("Jaime", "Jaime")],
-        widget=forms.RadioSelect,
-    )
+    assigned_to = forms.CharField(required=False, max_length=80)
+
+    def __init__(self, *args, company=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .services.tracker_customer_options import is_retriever_company
+        self.retriever_company = is_retriever_company(company)
+        if self.retriever_company:
+            self.fields["assigned_to"] = forms.ChoiceField(
+                required=False, choices=[("", "—"), ("Spencer", "Spencer"), ("Jaime", "Jaime")],
+                widget=forms.RadioSelect,
+            )
+            self.fields["origin_country"].widget = forms.HiddenInput()
+        else:
+            self.fields["assigned_to"].widget.attrs.update({"placeholder": "Type an owner name", "list": "company-owner-names"})
+            self.fields["origin_country"].widget.attrs.update({"placeholder": "e.g., China, Germany, Netherlands"})
+
 
     class Meta:
         model = OrderContainer
@@ -406,6 +417,7 @@ class OrderContainerForm(forms.ModelForm):
             "requested_asap",
             "status",
             "assigned_to",
+            "origin_country",
             "rpc_number",
             "loading_date",
             "etd",
@@ -438,6 +450,12 @@ class OrderContainerForm(forms.ModelForm):
             "vessel_mmsi": forms.NumberInput(attrs={"placeholder": "9-digit MMSI (recommended)", "inputmode": "numeric"}),
             "vessel_imo": forms.NumberInput(attrs={"placeholder": "7-digit IMO (optional)", "inputmode": "numeric"}),
         }
+
+    def clean_origin_country(self):
+        country = (self.cleaned_data.get("origin_country") or "").strip()
+        if self.retriever_company:
+            return ""  # Retriever continues to use its Netherlands-only map default.
+        return country
 
     def clean(self):
         """Enforce mutual exclusivity for requested date fields.
@@ -541,6 +559,8 @@ class IndustryRelationshipEdgeForm(forms.ModelForm):
         if source and target and source == target:
             raise forms.ValidationError("Source and target must be different nodes.")
         return cleaned
+
+
 
 
 
