@@ -9,7 +9,10 @@ from pathlib import Path
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from core.models import OrderContainer
+from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied
+from core.services.jsoncargo_accounts import api_key_for_user
+from core.models import Company, OrderContainer
 from core.services.jsoncargo_order_tracker import sync_one_container
 
 
@@ -36,6 +39,7 @@ class Command(BaseCommand):
     )
 
     def add_arguments(self, parser):
+        parser.add_argument("--user-id", type=int, required=True, help="User whose dedicated API credential will be used.")
         parser.add_argument("--company-id", type=int, default=None, help="Only sync containers for this company id.")
         parser.add_argument("--container-id", type=int, default=None, help="Only sync a single OrderContainer id.")
         parser.add_argument("--limit", type=int, default=500, help="Max number of containers to sync.")
@@ -58,11 +62,22 @@ class Command(BaseCommand):
         tmp_path.replace(path)
 
     def handle(self, *args, **options):
-        api_key = os.getenv("JSONCARGO_API_KEY", "").strip()
+        user = get_user_model().objects.filter(pk=options["user_id"]).first()
+        try:
+            api_key = api_key_for_user(user)
+        except PermissionDenied as exc:
+            raise ValueError(str(exc)) from exc
+        company = Company.objects.filter(owner=user).first()
+        if company is None:
+            raise ValueError("The selected user has no company assigned.")
+        requested_company = options.get("company_id")
+        if requested_company is not None and requested_company != company.pk:
+            raise ValueError("The requested company does not belong to the selected user.")
         status_file = options.get("status_file") or ""
         label = options.get("label") or "JSONCargo sync"
         state = {
             "state": "running",
+            "user_id": user.pk,
             "label": label,
             "message": "Starting JSONCargo sync...",
             "total": 0,
@@ -75,18 +90,8 @@ class Command(BaseCommand):
         }
         self._write_status(status_file, state)
 
-        if not api_key:
-            state.update({"state": "error", "message": "JSONCARGO_API_KEY is not set on the server."})
-            self._write_status(status_file, state)
-            self.stderr.write(state["message"])
-            return
-
         try:
-            qs = OrderContainer.objects.all()
-
-            company_id = options.get("company_id")
-            if company_id:
-                qs = qs.filter(company_id=company_id)
+            qs = OrderContainer.objects.filter(company=company)
 
             container_id = options.get("container_id")
             if container_id:
@@ -117,7 +122,7 @@ class Command(BaseCommand):
 
             limit = int(options.get("limit") or 500)
             containers = list(qs.order_by("-updated_at", "-created_at")[:limit])
-            state.update({"total": len(containers), "message": f"Found {len(containers)} container(s) to check."})
+            state.update({"user_id": user.pk, "total": len(containers), "message": f"Found {len(containers)} container(s) to check."})
             self._write_status(status_file, state)
 
             for container in containers:
