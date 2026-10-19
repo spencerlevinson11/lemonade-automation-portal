@@ -5417,6 +5417,28 @@ def order_tracker_view(request):
 
 @require_POST
 @login_required
+def order_tracker_archive_all_delivered_view(request):
+    """Archive delivered orders for the logged-in user's company only."""
+    # Superuser dashboards span companies; never bulk archive across them.
+    if request.user.is_superuser:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied("Bulk archive requires a company account.")
+
+    company = get_object_or_404(Company, owner=request.user)
+    containers = OrderContainer.objects.filter(
+        company=company, is_archived=False, status__iexact="Delivered"
+    )
+
+    archived_count = containers.update(is_archived=True, archived_at=timezone.now(), updated_at=timezone.now())
+    if archived_count:
+        messages.success(request, f"Archived {archived_count} delivered order{'s' if archived_count != 1 else ''}. They will no longer appear in active tracking or sync.")
+    else:
+        messages.info(request, "No delivered orders to archive.")
+    return redirect("order_tracker")
+
+
+@require_POST
+@login_required
 def order_container_archive_view(request, container_id: int):
     """Archive an order so it no longer appears in the tracker or JSONCargo syncing."""
     user = request.user
@@ -7021,6 +7043,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
