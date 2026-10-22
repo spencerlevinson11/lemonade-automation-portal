@@ -5209,6 +5209,17 @@ def order_tracker_view(request):
         active_containers, delivered_containers = make_demo_containers(
             request, active_containers, delivered_containers
         )
+        # Session-only Quick Add containers are never inserted into the database.
+        from core.demo_tracker import _session_created, _demo_container
+        for demo_pk in _session_created(request):
+            demo_row = _demo_container(request, int(demo_pk), company)
+            demo_row.latest_tracking_update = None
+            demo_row.latest_pending_tracking_update = None
+            demo_row.latest_jsoncargo_display_text = ''
+            if (demo_row.status or '').casefold() == 'delivered':
+                delivered_containers.append(demo_row)
+            else:
+                active_containers.append(demo_row)
 
     # JSONCargo targeted sync options. These are built from the same visible,
     # non-archived tracker rows so the dropdowns match what the user can see.
@@ -7120,6 +7131,12 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
 
 
 
