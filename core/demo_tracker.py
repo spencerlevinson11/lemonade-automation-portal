@@ -158,7 +158,9 @@ def make_demo_containers(request, active, delivered):
             except ValueError: pass
         if 'checked' in changes: r.tracker_checked = changes['checked']
         # API messages may include references or shipment identifiers; show only status.
-        r.latest_jsoncargo_display_text = 'Tracking information available' if r.latest_tracking_update else ''
+        # Tracking annotations are attached later by the dashboard view, not model fields.
+        # Never access a non-existent annotation here, and never expose raw API text.
+        r.latest_jsoncargo_display_text = ''
         r.latest_tracking_update = None
         r.latest_pending_tracking_update = None
         return r
@@ -224,3 +226,4 @@ def demo_action(request):
     if action == 'checked' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'checked': change.get('checked', False)})
     return redirect('order_tracker')
+
