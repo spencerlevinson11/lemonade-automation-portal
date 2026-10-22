@@ -116,3 +116,111 @@ def reset(request):
     request.session.pop(SESSION_KEY, None)
     request.session.modified = True
     return redirect('order_tracker')
+
+
+def make_demo_containers(request, active, delivered):
+    """Presentation copies only. Anonymize *before* template rendering."""
+    from copy import copy
+    from datetime import date
+    originals = list(active) + list(delivered)
+    names = sorted({(c.customer_name or '').strip() for c in originals})
+    aliases = {name: f'Customer {i:02d}' for i, name in enumerate(names, 1)}
+    overrides = request.session.get(SESSION_KEY, {})
+
+    def clone(c):
+        r = copy(c)
+        r.customer_name = aliases.get((c.customer_name or '').strip(), 'Customer')
+        # Do not expose proprietary client sites, shipment references, or IDs.
+        r.location_name = 'Distribution center'
+        r.po_number = ''
+        r.rpc_number = ''
+        r.container_number = ''
+        r.carrier = ''
+        r.booking_number = ''
+        r.bill_of_lading_number = ''
+        r.notes = ''
+        r.requested_date_text = ''
+        r.eta_city = 'Destination port'
+        r.assigned_to = 'Demo owner'
+        r.origin_country = 'Netherlands'
+        # Prevent rendering tags whose labels might contain client information.
+        # Tag relations are suppressed in the shared dashboard template.
+        changes = overrides.get(str(c.pk), {})
+        if 'owner' in changes: r.assigned_to = changes['owner']
+        if 'origin' in changes: r.origin_country = changes['origin']
+        if 'status' in changes: r.status = changes['status']
+        if 'eta' in changes:
+            try: r.eta = date.fromisoformat(changes['eta']) if changes['eta'] else None
+            except ValueError: pass
+        if 'eta_city' in changes: r.eta_city = changes['eta_city']
+        if 'estimated_delivery_date' in changes:
+            try: r.estimated_delivery_date = date.fromisoformat(changes['estimated_delivery_date']) if changes['estimated_delivery_date'] else None
+            except ValueError: pass
+        if 'checked' in changes: r.tracker_checked = changes['checked']
+        # API messages may include references or shipment identifiers; show only status.
+        r.latest_jsoncargo_display_text = 'Tracking information available' if r.latest_tracking_update else ''
+        r.latest_tracking_update = None
+        r.latest_pending_tracking_update = None
+        return r
+    clones = [clone(c) for c in originals]
+    return ([r for r in clones if (r.status or '').casefold() != 'delivered'],
+            [r for r in clones if (r.status or '').casefold() == 'delivered'])
+
+
+class _EmptyDemoTags:
+    def all(self):
+        return []
+
+
+@login_required
+@require_http_methods(['POST'])
+def demo_action(request):
+    """Allow on-screen demo edits without database writes or API calls."""
+    from django.http import JsonResponse
+    if not is_demo_user(request.user):
+        raise Http404
+    source = _source_company()
+    if source is None:
+        raise Http404
+    action = request.POST.get('action', '')
+    overlays = request.session.get(SESSION_KEY, {})
+    ids = request.POST.getlist('container_ids')
+    if action in ('refresh', 'reset'):
+        if action == 'reset': overlays = {}
+        request.session[SESSION_KEY] = overlays
+        request.session.modified = True
+        return redirect('order_tracker')
+    if action == 'bulk_eta':
+        ids = ids[:500]
+    else:
+        ids = [request.POST.get('container_id', '')]
+    for raw in ids:
+        try: pk = int(raw)
+        except (TypeError, ValueError): continue
+        if not OrderContainer.objects.filter(pk=pk, company=source).exists():
+            continue
+        change = dict(overlays.get(str(pk), {}))
+        if action == 'bulk_eta':
+            for field in ('eta', 'eta_city', 'estimated_delivery_date'):
+                key = f'{field}_{pk}'
+                if key in request.POST:
+                    value = request.POST[key][:100]
+                    if field != 'eta_city' and value:
+                        try: date.fromisoformat(value)
+                        except ValueError: continue
+                    change[field] = value
+        elif action == 'checked':
+            change['checked'] = request.POST.get('checked') == '1'
+        elif action == 'delivered':
+            current = OrderContainer.objects.get(pk=pk, company=source)
+            change['status'] = 'Delivered' if change.get('status', current.status).casefold() != 'delivered' else 'In Transit'
+        elif action == 'edit':
+            for field in ('owner','origin','status','eta'):
+                if field in request.POST:
+                    change[field] = request.POST[field][:100]
+        overlays[str(pk)] = change
+    request.session[SESSION_KEY] = overlays
+    request.session.modified = True
+    if action == 'checked' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'checked': change.get('checked', False)})
+    return redirect('order_tracker')
