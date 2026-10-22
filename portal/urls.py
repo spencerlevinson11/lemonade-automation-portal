@@ -14,7 +14,10 @@ def demo_tracker_reset(request):
     return reset(request)
 
 
+from core.demo_tracker import demo_action
+
 urlpatterns = [
+    path('automations/orders/demo/action/', demo_action, name='order_tracker_demo_action'),
     path("admin/", admin.site.urls),
 
     # Auth routes
@@ -242,12 +245,6 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
-
-
-
-
-
-
 
 
 
