@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.contrib import adminfrom django.contrib import admin
 from django.urls import path
 from django.contrib.auth import views as auth_views
 
@@ -18,6 +18,7 @@ from core.demo_tracker import demo_action, demo_order_detail
 
 urlpatterns = [
     path('automations/orders/demo/action/', demo_action, name='order_tracker_demo_action'),
+    path('automations/orders/demo/create/', __import__('core.demo_tracker', fromlist=['demo_create_container']).demo_create_container, name='order_tracker_demo_create'),
     path('automations/orders/demo/track/<int:pk>/', __import__('core.demo_tracker', fromlist=['demo_sync_container']).demo_sync_container, name='order_tracker_demo_track'),
     path('automations/orders/demo/sync/', __import__('core.demo_tracker', fromlist=['demo_sync_bulk']).demo_sync_bulk, name='order_tracker_demo_sync'),
     path("admin/", admin.site.urls),
