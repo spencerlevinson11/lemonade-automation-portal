@@ -15,6 +15,7 @@ class DemoTrackerIsolationMiddleware:
             if path.startswith('/automations/orders/'):
                 if path != '/automations/orders/' and not (
                     path.startswith('/automations/orders/demo/edit/') or
+                    path == '/automations/orders/demo/action/' or
                     path == '/automations/orders/demo/reset/'
                 ):
                     return HttpResponseForbidden('Not available in the demonstration account.')
