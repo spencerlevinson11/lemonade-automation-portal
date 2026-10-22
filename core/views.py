@@ -5139,7 +5139,29 @@ def order_tracker_view(request):
     sort = (request.GET.get("sort") or "").strip()
     direction = (request.GET.get("dir") or "desc").strip().lower()
 
-    if q:
+    if q and demo_mode:
+        # Resolve the visible pseudonym before searching the source queryset.
+        # The mapping includes the same unarchived orders as the dashboard and
+        # uses the same stable sorted names as make_demo_containers().
+        from core.demo_tracker import _safe_name_map
+        from types import SimpleNamespace
+        visible_names = containers.values_list('customer_name', flat=True).distinct()
+        aliases = _safe_name_map([SimpleNamespace(customer_name=name or '') for name in visible_names])
+        alias_matches = [real for real, alias in aliases.items() if q.casefold() in alias.casefold()]
+        # Exact/partial demo labels work, while location, PO and container
+        # searches remain available without exposing source customer names.
+        alias_q = Q(customer_name__in=alias_matches) if alias_matches else Q(pk__in=[])
+        containers = containers.filter(
+            alias_q
+            | Q(location_name__icontains=q)
+            | Q(po_number__icontains=q)
+            | Q(rpc_number__icontains=q)
+            | Q(container_number__icontains=q)
+            | Q(carrier__icontains=q)
+            | Q(booking_number__icontains=q)
+            | Q(bill_of_lading_number__icontains=q)
+        )
+    elif q:
         containers = containers.filter(
             Q(customer_name__icontains=q)
             | Q(location_name__icontains=q)
@@ -5246,11 +5268,26 @@ def order_tracker_view(request):
             c.latest_jsoncargo_display_text = ""
 
     if demo_mode:
-        # Tracking update objects may contain customer-specific text or ports.
+        # Display the real saved ETA and ETA city without exposing untrusted
+        # tracking notes, provider payloads or original customer names.
+        # Use detached display copies: never modify tracking-update records.
+        from copy import copy
         for row in active_containers + delivered_containers:
-            row.latest_pending_tracking_update = None
-            row.latest_tracking_update = None
-            row.latest_jsoncargo_display_text = 'Saved tracking available'
+            for field in ('latest_pending_tracking_update', 'latest_tracking_update'):
+                original = getattr(row, field, None)
+                if original is not None:
+                    safe = copy(original)
+                    safe.note = ''
+                    setattr(row, field, safe)
+            upd = row.latest_pending_tracking_update or row.latest_tracking_update
+            if upd is None:
+                row.latest_jsoncargo_display_text = ''
+            elif upd.kind == 'error':
+                row.latest_jsoncargo_display_text = ''
+            else:
+                eta = getattr(upd, 'proposed_eta', None)
+                city = (getattr(upd, 'proposed_eta_city', '') or '').strip()
+                row.latest_jsoncargo_display_text = ' '.join(x for x in (str(eta) if eta else '', city) if x) or 'No ETA returned'
 
     # --- Schedule-based shipment progress map ---
     # This intentionally does not depend on live AIS/MMSI data. Instead, each
@@ -7078,6 +7115,9 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
 
 
 
