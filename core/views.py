@@ -5409,7 +5409,7 @@ def order_tracker_view(request):
                 "container_label": f"{c.customer_name}{(' • ' + c.location_name) if c.location_name else ''}",
                 "container_number": (c.container_number or "").strip(),
                 "rpc_number": (c.rpc_number or "").strip(),
-                "container_url": ("" if demo_mode else reverse("order_container_edit", kwargs={"container_id": c.id})),
+                "container_url": (reverse("order_tracker_demo_detail", kwargs={"pk": c.id}) if demo_mode else reverse("order_container_edit", kwargs={"container_id": c.id})),
             }
         )
 
@@ -7065,6 +7065,10 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
 
 
 
