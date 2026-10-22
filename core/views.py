@@ -5289,6 +5289,13 @@ def order_tracker_view(request):
                 city = (getattr(upd, 'proposed_eta_city', '') or '').strip()
                 row.latest_jsoncargo_display_text = ' '.join(x for x in (str(eta) if eta else '', city) if x) or 'No ETA returned'
 
+    if demo_mode:
+        # Sorting and filtering reload the source queryset. Keep a sanitized
+        # session-level snapshot so the last demonstrated tracking result stays
+        # visible throughout the login session.
+        from core.demo_tracker import preserve_demo_tracking_results
+        preserve_demo_tracking_results(request, active_containers + delivered_containers)
+
     # --- Schedule-based shipment progress map ---
     # This intentionally does not depend on live AIS/MMSI data. Instead, each
     # active shipment is positioned between a Netherlands origin and its ETA
@@ -7115,6 +7122,11 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
 
 
 
