@@ -99,8 +99,22 @@ def _source_company():
 
 def _safe_name_map(containers):
     # Stable pseudonyms within each snapshot; customer names never enter HTML.
-    names = sorted({c.customer_name.strip() for c in containers})
+    names = sorted({(c.customer_name or '').strip() for c in containers})
     return {name: f'Customer {index:02d}' for index, name in enumerate(names, 1)}
+
+
+def demo_customer_aliases(source):
+    """Single customer-alias mapping for dashboard, search, and demo syncing.
+
+    Exclude archived orders in all three locations. Otherwise archived clients
+    silently shift the visible Customer 01 / Customer 02 assignments used by
+    the Sync by Customer form.
+    """
+    if source is None:
+        return {}
+    names = (OrderContainer.objects.filter(company=source, is_archived=False)
+             .values_list('customer_name', flat=True).distinct())
+    return _safe_name_map([type('NameOnly', (), {'customer_name': name})() for name in names])
 
 
 def _snapshot(request):
@@ -197,9 +211,7 @@ def make_demo_containers(request, active, delivered):
     # Use one stable set of aliases for the entire source company, including
     # orders excluded by dashboard filters, so Customer 12 never changes identity.
     source = _source_company()
-    names = (OrderContainer.objects.filter(company=source, is_archived=False)
-             .values_list('customer_name', flat=True).distinct()) if source else []
-    aliases = _safe_name_map([type('NameOnly', (), {'customer_name': name or ''})() for name in names])
+    aliases = demo_customer_aliases(source)
     overrides = request.session.get(SESSION_KEY, {})
 
     def clone(c):
@@ -476,8 +488,7 @@ def demo_sync_bulk(request):
         messages.error(request, 'Enter a customer placeholder or city first.')
         return redirect('order_tracker')
     if customer:
-        all_names = list(OrderContainer.objects.filter(company=source).values_list('customer_name', flat=True))
-        alias_map = _safe_name_map([type('Row', (), {'customer_name': n or ''})() for n in all_names])
+        alias_map = demo_customer_aliases(source)
         reverse = {alias.casefold(): real for real, alias in alias_map.items()}
         customer = reverse.get(customer.casefold(), '')
         if not customer:
@@ -516,6 +527,8 @@ def demo_sync_bulk(request):
     jobs.append(job_id)
     request.session['demo_sync_jobs_v1'] = jobs
     return redirect('order_tracker_jsoncargo_sync_progress', job_id=job_id)
+
+
 
 
 
