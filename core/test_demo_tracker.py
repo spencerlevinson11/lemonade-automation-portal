@@ -58,3 +58,28 @@ class DemoTrackerSecurityTests(TestCase):
             self.client.post(reverse('order_tracker_demo_action'), {'action': 'refresh'})
             get_api.assert_not_called()
             post_api.assert_not_called()
+
+    def test_demo_track_uses_source_key_exactly_once_and_keeps_edits_temporary(self):
+        self.client.post(reverse('order_tracker_demo_edit', args=[self.order.pk]), {
+            'status': 'Delivered', 'owner': 'Demo Owner', 'origin': 'Vietnam', 'eta': '2026-11-01'
+        })
+        with patch('core.services.jsoncargo_accounts.api_key_for_user', return_value='test-source-key') as key, \
+             patch('core.services.jsoncargo_order_tracker.sync_one_container', return_value=('no_change_created', None)) as tracking:
+            response = self.client.post(reverse('order_tracker_demo_track', args=[self.order.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(key.call_args.args[0].pk, self.source.pk)
+        tracking.assert_called_once()
+        self.assertEqual(tracking.call_args.args[0].pk, self.order.pk)
+        self.assertEqual(tracking.call_args.kwargs['api_key'], 'test-source-key')
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'In Transit')
+        self.assertNotEqual(self.order.assigned_to, 'Demo Owner')
+
+    def test_demo_cannot_track_other_company_container(self):
+        other = get_user_model().objects.create_user(username='OtherUser', password='testpass')
+        other_company = Company.objects.create(owner=other, name='Other')
+        other_order = OrderContainer.objects.create(company=other_company, customer_name='Other')
+        with patch('core.services.jsoncargo_order_tracker.sync_one_container') as tracking:
+            result = self.client.post(reverse('order_tracker_demo_track', args=[other_order.pk]))
+        self.assertEqual(result.status_code, 404)
+        tracking.assert_not_called()
