@@ -37,3 +37,24 @@ class DemoTrackerSecurityTests(TestCase):
         self.assertEqual(self.client.post(reverse('order_tracker_jsoncargo_sync')).status_code, 403)
         self.assertEqual(self.client.post(reverse('order_container_sync_jsoncargo', args=[self.order.pk])).status_code, 403)
         self.assertEqual(self.client.get(reverse('order_tracker_recap_docx')).status_code, 403)
+
+    def test_matching_dashboard_and_demo_edits_are_isolated(self):
+        response = self.client.get(reverse('order_tracker'))
+        self.assertContains(response, 'Estimated Shipment Progress')
+        self.assertContains(response, 'Active Orders')
+        self.assertContains(response, 'Customer 01')
+        self.assertNotContains(response, 'Private Customer')
+        self.client.post(reverse('order_tracker_demo_action'), {
+            'action': 'edit', 'container_id': self.order.pk,
+            'owner': 'Demo Owner', 'origin': 'Vietnam', 'status': 'On water'
+        })
+        self.assertContains(self.client.get(reverse('order_tracker')), 'Demo Owner')
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'In Transit')
+        self.assertEqual(self.order.assigned_to, '')
+
+    def test_demo_updates_do_not_call_tracking(self):
+        with patch('requests.get') as get_api, patch('requests.post') as post_api:
+            self.client.post(reverse('order_tracker_demo_action'), {'action': 'refresh'})
+            get_api.assert_not_called()
+            post_api.assert_not_called()
