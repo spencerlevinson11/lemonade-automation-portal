@@ -395,7 +395,6 @@
       </div>
     </div>
 
-    {% if not demo_mode %}
     <!-- NEW: Inline "Add container" form (collapsible) -->
     <div class="card">
       <details {% if request.method == "POST" %}open{% endif %}>
@@ -414,7 +413,7 @@
           Posts to your existing "new container" view.
           This assumes that URL exists and accepts POST for creation.
         -->
-        <form method="post" action="{% url 'order_container_new' %}">
+        <form method="post" action="{% if demo_mode %}{% url 'order_tracker_demo_create' %}{% else %}{% url 'order_container_new' %}{% endif %}">
           {% csrf_token %}
 
           <div class="row">
@@ -520,7 +519,6 @@
       </details>
     </div>
 
-    {% endif %}
     <div class="card">
       <form method="get">
         <div class="row">
@@ -1150,6 +1148,7 @@
 
 </body>
 </html>
+
 
 
 
