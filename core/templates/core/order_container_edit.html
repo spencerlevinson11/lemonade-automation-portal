@@ -149,21 +149,21 @@
         <a class="btn2" href="{% url 'order_tracker' %}">← Back</a>
 
         {% if container %}
-          <a class="btn" href="{% url 'order_container_commercial_invoice' container.id %}">Commercial invoice</a>
+          {% if not demo_mode %}<a class="btn" href="{% url 'order_container_commercial_invoice' container.id %}">Commercial invoice</a>{% endif %}
 
-          <form method="post" action="{% url 'order_container_sync_jsoncargo' container.id %}"
+          <form method="post" action="{% if demo_mode %}{% url 'order_tracker_demo_track' container.id %}{% else %}{% url 'order_container_sync_jsoncargo' container.id %}{% endif %}"
                 onsubmit="return confirm('Track only this container with JSONCargo?');"
                 style="display:inline;">
             {% csrf_token %}
             <button class="btn" type="submit">Track this container</button>
           </form>
 
-          <form method="post" action="{% url 'order_container_delete' container.id %}"
+          {% if not demo_mode %}<form method="post" action="{% url 'order_container_delete' container.id %}"
                 onsubmit="return confirm('Delete this order? This cannot be undone.');"
                 style="display:inline;">
             {% csrf_token %}
             <button class="btn danger" type="submit">Delete</button>
-          </form>
+          </form>{% endif %}
         {% endif %}
 
         <!-- Keep a visible Save button in the header, but make sure it always submits the main form -->
@@ -179,7 +179,7 @@
     <form id="mainForm"
           method="post"
           enctype="multipart/form-data"
-          action="{% if container %}{% url 'order_container_edit' container.id %}{% else %}{% url 'order_container_new' %}{% endif %}">
+          action="{% if demo_mode %}{% url 'order_tracker_demo_detail' container.id %}{% elif container %}{% url 'order_container_edit' container.id %}{% else %}{% url 'order_container_new' %}{% endif %}">
       {% csrf_token %}
       <input type="hidden" name="ack_tracking_update_id" id="ackTrackingUpdateId" value="" />
 
@@ -356,7 +356,7 @@
                       <div class="muted tiny" style="margin-top:8px;">JSONCargo last updated {{ pending_tracking_update.source_last_updated|date:"Y-m-d H:i" }}</div>
                     {% endif %}
                   </div>
-                  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                  {% if not demo_mode %}<div style="display:flex; gap:10px; flex-wrap:wrap;">
                     <button
                       class="btn"
                       type="button"
@@ -373,6 +373,7 @@
                     >Reject</button>
                   </div>
 
+                  {% endif %}
                   <details style="margin-top:12px;">
                     <summary class="tiny" style="cursor:pointer; font-weight:900; color: var(--accent);">View JSONCargo fields</summary>
                     <div style="margin-top:10px;">
@@ -862,12 +863,6 @@
   </div>
 </body>
 </html>
-
-
-
-
-
-
 
 
 
