@@ -619,9 +619,9 @@
               </td>
               <td>
                 <div style="font-weight:800;">
-                  {% if demo_mode %}<span style="color:var(--accent);font-weight:700;">{% else %}<a href="{% url 'order_container_edit' container_id=c.id %}">{% endif %}
+                  <a href="{% if demo_mode %}{% url 'order_tracker_demo_detail' pk=c.id %}{% else %}{% url 'order_container_edit' container_id=c.id %}{% endif %}">
                     {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
-                  {% if demo_mode %}</span>{% else %}</a>{% endif %}
+                  </a>
                   {% if c.id in pending_container_ids %}
                     <span class="badge" style="margin-left:8px; border-color: rgba(250,204,21,0.45); background: rgba(250,204,21,0.10);">Update pending</span>
                   {% endif %}
@@ -758,9 +758,9 @@
                 </td>
                 <td>
                   <div style="font-weight:800;">
-                    {% if demo_mode %}<span style="color:var(--accent);font-weight:700;">{% else %}<a href="{% url 'order_container_edit' container_id=c.id %}">{% endif %}
+                    <a href="{% if demo_mode %}{% url 'order_tracker_demo_detail' pk=c.id %}{% else %}{% url 'order_container_edit' container_id=c.id %}{% endif %}">
                       {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
-                    {% if demo_mode %}</span>{% else %}</a>{% endif %}
+                    </a>
                     {% if demo_mode %}<form method="post" action="{% url 'order_tracker_demo_action' %}" style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;">{% csrf_token %}<input type="hidden" name="action" value="edit"><input type="hidden" name="container_id" value="{{ c.id }}"><input name="owner" value="{{ c.assigned_to }}" list="demo-owners" placeholder="Owner" style="max-width:125px;"><input name="origin" value="{{ c.origin_country }}" placeholder="Origin country" style="max-width:125px;"><input name="status" value="{{ c.status }}" placeholder="Status" style="max-width:125px;"><button class="btn" type="submit">Apply demo edits</button></form>{% endif %}
                   {% if c.id in pending_container_ids %}
                     <span class="badge" style="margin-left:8px; border-color: rgba(250,204,21,0.45); background: rgba(250,204,21,0.10);">Update pending</span>
@@ -1140,6 +1140,11 @@
 
 </body>
 </html>
+
+
+
+
+
 
 
 
