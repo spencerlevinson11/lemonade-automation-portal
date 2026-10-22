@@ -17,7 +17,11 @@ class DemoTrackerIsolationMiddleware:
                     path.startswith('/automations/orders/demo/edit/') or
                     path.startswith('/automations/orders/demo/order/') or
                     path == '/automations/orders/demo/action/' or
-                    path == '/automations/orders/demo/reset/'
+                    path == '/automations/orders/demo/reset/' or
+                    path == '/automations/orders/demo/sync/' or
+                    path.startswith('/automations/orders/demo/track/') or
+                    (path.startswith('/automations/orders/sync-jsoncargo/') and
+                     path.split('/')[4] in request.session.get('demo_sync_jobs_v1', []))
                 ):
                     return HttpResponseForbidden('Not available in the demonstration account.')
         return self.get_response(request)
