@@ -5200,7 +5200,8 @@ def order_tracker_view(request):
     from .services.tracker_customer_options import owner_names, is_retriever_company, country_for_container
     if demo_mode:
         demo_company = Company.objects.filter(owner=user).first()
-        jsoncargo_owner_options = owner_names(demo_company) if demo_company else []
+        # Sync targets belong to the source company; demo editor's owner suggestions remain separate.
+        jsoncargo_owner_options = owner_names(company) if company else []
     elif company:
         jsoncargo_owner_options = owner_names(company)
     else:
@@ -5762,7 +5763,13 @@ def order_tracker_jsoncargo_sync_progress_view(request, job_id: str):
         job = json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError):
         raise Http404("Sync job not found")
-    if job.get("user_id") != request.user.pk:
+    from core.demo_tracker import is_demo_user, _source_company
+    if is_demo_user(request.user):
+        source = _source_company()
+        allowed = job_id in request.session.get('demo_sync_jobs_v1', []) and source and job.get('user_id') == source.owner_id
+    else:
+        allowed = job.get('user_id') == request.user.pk
+    if not allowed:
         raise Http404("Sync job not found")
     return render(request, "core/order_tracker_jsoncargo_sync_progress.html", {"job_id": job_id})
 
@@ -5777,7 +5784,13 @@ def order_tracker_jsoncargo_sync_status_view(request, job_id: str):
         data = json.loads(status_file.read_text(encoding="utf-8"))
     except Exception as exc:
         data = {"state": "error", "message": f"Could not read sync status: {exc}"}
-    if data.get("user_id") != request.user.pk:
+    from core.demo_tracker import is_demo_user, _source_company
+    if is_demo_user(request.user):
+        source = _source_company()
+        allowed = job_id in request.session.get('demo_sync_jobs_v1', []) and source and data.get('user_id') == source.owner_id
+    else:
+        allowed = data.get('user_id') == request.user.pk
+    if not allowed:
         raise Http404("Sync job not found")
     return JsonResponse(data)
 
@@ -7065,9 +7078,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
-
 
 
 
