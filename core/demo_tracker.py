@@ -15,6 +15,16 @@ from .services.tracker_customer_options import owner_names
 DEMO_USERNAME = 'lemonadestandex'
 SOURCE_USERNAME = 'retrieverpackaging'
 SESSION_KEY = 'demo_order_tracker_overrides_v1'
+DEMO_EDITABLE_FIELDS = ('customer_name','location_name','po_number','requested_date','requested_date_text','requested_asap','status','assigned_to','origin_country','rpc_number','loading_date','etd','eta','eta_city','estimated_delivery_date','booking_number','bill_of_lading_number','container_number','shipping_line_id','vessel_name','vessel_mmsi','vessel_imo','notes')
+DATE_FIELDS = ('requested_date','loading_date','etd','eta','estimated_delivery_date')
+
+def _field_value(field, value):
+    if field in DATE_FIELDS:
+        try: return date.fromisoformat(value) if value else None
+        except (ValueError, TypeError): return None
+    if field == 'requested_asap': return value == 'True'
+    return value
+
 
 
 def is_demo_user(user):
@@ -131,22 +141,25 @@ def make_demo_containers(request, active, delivered):
         r = copy(c)
         r.customer_name = aliases.get((c.customer_name or '').strip(), 'Customer')
         # Do not expose proprietary client sites, shipment references, or IDs.
-        r.location_name = 'Distribution center'
-        r.po_number = ''
-        r.rpc_number = ''
-        r.container_number = ''
-        r.carrier = ''
-        r.booking_number = ''
-        r.bill_of_lading_number = ''
+        r.location_name = c.location_name
+        r.po_number = c.po_number
+        r.rpc_number = c.rpc_number
+        r.container_number = c.container_number
+        r.carrier = c.carrier
+        r.booking_number = c.booking_number
+        r.bill_of_lading_number = c.bill_of_lading_number
         r.notes = ''
-        r.requested_date_text = ''
-        r.eta_city = 'Destination port'
-        r.assigned_to = 'Demo owner'
-        r.origin_country = 'Netherlands'
+        r.requested_date_text = c.requested_date_text
+        r.eta_city = c.eta_city
+        r.assigned_to = c.assigned_to
+        r.origin_country = c.origin_country or 'Netherlands'
         # Prevent rendering tags whose labels might contain client information.
         # Tag relations are suppressed in the shared dashboard template.
         changes = overrides.get(str(c.pk), {})
         if 'owner' in changes: r.assigned_to = changes['owner']
+        for field, value in changes.get('fields', {}).items():
+            if field in DEMO_EDITABLE_FIELDS:
+                setattr(r, field, _field_value(field, value))
         if 'origin' in changes: r.origin_country = changes['origin']
         if 'status' in changes: r.status = changes['status']
         if 'eta' in changes:
@@ -226,4 +239,98 @@ def demo_action(request):
     if action == 'checked' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'checked': change.get('checked', False)})
     return redirect('order_tracker')
+
+
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def demo_order_detail(request, pk):
+    """Render the actual order editor with session-only values; never save models."""
+    from copy import copy
+    from django.forms import inlineformset_factory
+    from .forms import OrderContainerForm, OrderContainerLineForm, OrderContainerTagForm, OrderContainerDocumentForm
+    from .models import OrderContainerLine, OrderContainerTag, OrderContainerDocument
+    if not is_demo_user(request.user):
+        raise Http404
+    source = _source_company()
+    if source is None:
+        raise Http404
+    original = get_object_or_404(OrderContainer, pk=pk, company=source)
+    originals = list(OrderContainer.objects.filter(company=source))
+    alias = _safe_name_map(originals).get((original.customer_name or '').strip(), 'Customer')
+    overlay = request.session.get(SESSION_KEY, {})
+    change = dict(overlay.get(str(pk), {}))
+    demo_company = Company.objects.filter(owner=request.user).first()
+    # Model instance is only a shallow presentation copy. All writes are diverted
+    # into the authenticated demo session.
+    container = copy(original)
+    container.customer_name = alias
+    container.notes = '' # Freeform notes may mention real customers.
+    for field, value in change.get('fields', {}).items():
+        if field in DEMO_EDITABLE_FIELDS:
+            setattr(container, field, _field_value(field, value))
+    for field, attr in [('owner','assigned_to'), ('origin','origin_country'), ('eta_city','eta_city')]:
+        if field in change: setattr(container, attr, change[field])
+    if 'status' in change: container.status = change['status']
+    if 'eta' in change: container.eta = _field_value('eta', change['eta'])
+    if 'estimated_delivery_date' in change: container.estimated_delivery_date = _field_value('estimated_delivery_date', change['estimated_delivery_date'])
+
+    LineFormSet = inlineformset_factory(OrderContainer, OrderContainerLine, form=OrderContainerLineForm, extra=3, can_delete=True)
+    TagFormSet = inlineformset_factory(OrderContainer, OrderContainerTag, form=OrderContainerTagForm, extra=2, can_delete=True)
+    DocFormSet = inlineformset_factory(OrderContainer, OrderContainerDocument, form=OrderContainerDocumentForm, extra=1, can_delete=True)
+
+    if request.method == 'POST':
+        # Never call ModelForm.save(), formset.save() or any tracking API.
+        form = OrderContainerForm(request.POST, instance=container, company=demo_company)
+        lines = LineFormSet(request.POST, instance=original, prefix='lines')
+        # Tags and documents are disabled in demo to avoid identifying information.
+        if form.is_valid() and lines.is_valid():
+            stored = {}
+            for key in DEMO_EDITABLE_FIELDS:
+                if key not in form.cleaned_data: continue
+                value = form.cleaned_data[key]
+                stored[key] = value.isoformat() if isinstance(value, date) else str(value) if value is not None else ''
+            stored['customer_name'] = alias # never store real or user-supplied customer name
+            # New editor values take precedence over older dashboard-level overrides.
+            for key in ('owner','origin','status','eta','eta_city','estimated_delivery_date'):
+                change.pop(key, None)
+            change['fields'] = stored
+            # Store only the order line fields as harmless JSON-compatible values.
+            change['lines'] = [
+                {'item_description': f.cleaned_data.get('item_description',''),
+                 'pallets': f.cleaned_data.get('pallets') or 0,
+                 'units_per_pallet': f.cleaned_data.get('units_per_pallet') or 0}
+                for f in lines.forms if f.cleaned_data and not f.cleaned_data.get('DELETE')
+            ]
+            overlay[str(pk)] = change
+            request.session[SESSION_KEY] = overlay
+            request.session.modified = True
+            messages.success(request, 'Demo changes applied temporarily. Retriever Packaging was not modified.')
+            return redirect('order_tracker_demo_detail', pk=pk)
+        messages.error(request, 'Please correct the highlighted fields.')
+    else:
+        form = OrderContainerForm(instance=container, company=demo_company)
+        lines = LineFormSet(instance=original, prefix='lines')
+        if 'lines' in change:
+            # Display session-modified lines via an unbound formset's initial values.
+            initial_lines = change['lines']
+            for index, line_form in enumerate(lines.forms):
+                if index < len(initial_lines):
+                    for field, value in initial_lines[index].items():
+                        if field in line_form.fields:
+                            line_form.initial[field] = value
+
+    # Never expose raw tags, uploaded documents, or customer-specific API payloads.
+    tags = TagFormSet(instance=original, prefix='tags', queryset=OrderContainerTag.objects.none())
+    docs = DocFormSet(instance=original, prefix='docs', queryset=OrderContainerDocument.objects.none())
+    return render(request, 'core/order_container_edit.html', {
+        'automation_name': 'Order Tracker', 'company': demo_company or source,
+        'container': container, 'form': form, 'formset': lines,
+        'doc_formset': docs, 'tag_formset': tags, 'demo_mode': True,
+        'tracker_is_retriever': False,
+        'tracker_owner_options': owner_names(demo_company) if demo_company else [],
+        'pending_tracking_update': None, 'jsoncargo_data': {},
+        'jsoncargo_display_eta': '', 'jsoncargo_next_destination': '',
+        'jsoncargo_display_message': '',
+    })
 
