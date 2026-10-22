@@ -5143,10 +5143,8 @@ def order_tracker_view(request):
         # Resolve the visible pseudonym before searching the source queryset.
         # The mapping includes the same unarchived orders as the dashboard and
         # uses the same stable sorted names as make_demo_containers().
-        from core.demo_tracker import _safe_name_map
-        from types import SimpleNamespace
-        visible_names = containers.values_list('customer_name', flat=True).distinct()
-        aliases = _safe_name_map([SimpleNamespace(customer_name=name or '') for name in visible_names])
+        from core.demo_tracker import demo_customer_aliases, _source_company
+        aliases = demo_customer_aliases(_source_company())
         alias_matches = [real for real, alias in aliases.items() if q.casefold() in alias.casefold()]
         # Exact/partial demo labels work, while location, PO and container
         # searches remain available without exposing source customer names.
@@ -7122,6 +7120,7 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
 
 
 
