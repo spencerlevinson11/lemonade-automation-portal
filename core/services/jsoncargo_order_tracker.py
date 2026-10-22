@@ -1,4 +1,5 @@
 from __future__ import annotations
+from __future__ import annotations
 
 import datetime as dt
 import os
@@ -783,7 +784,7 @@ def _attempt_booking_lookup_then_container(
 
 
 @transaction.atomic
-def sync_one_container(
+def _sync_one_container_unlocked(
     container: OrderContainer,
     *,
     api_key: str,
@@ -1172,6 +1173,29 @@ def sync_one_container(
 
 
 
+
+
+
+
+
+
+
+
+@transaction.atomic
+def sync_one_container(container: OrderContainer, *, api_key: str) -> Tuple[str, Optional[OrderContainerTrackingUpdate]]:
+    """Single-flight tracking for the same source container across users/workers.
+
+    A PostgreSQL transaction-level advisory lock prevents simultaneous calls from
+    Retriever and its demo mirror. It does not suppress a later intentional click.
+    """
+    from django.db import connection
+    if connection.vendor == "postgresql":
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_try_advisory_xact_lock(%s, %s)", [81427, int(container.pk)])
+            acquired = cursor.fetchone()[0]
+        if not acquired:
+            return "skipped_in_progress", None
+    return _sync_one_container_unlocked(container, api_key=api_key)
 
 
 
