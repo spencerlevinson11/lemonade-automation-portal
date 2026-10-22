@@ -14,7 +14,7 @@ def demo_tracker_reset(request):
     return reset(request)
 
 
-from core.demo_tracker import demo_action
+from core.demo_tracker import demo_action, demo_order_detail
 
 urlpatterns = [
     path('automations/orders/demo/action/', demo_action, name='order_tracker_demo_action'),
@@ -99,6 +99,7 @@ urlpatterns = [
 
     # Order Tracker
     path('automations/orders/demo/edit/<int:pk>/', demo_tracker_edit, name='order_tracker_demo_edit'),
+    path('automations/orders/demo/order/<int:pk>/', demo_order_detail, name='order_tracker_demo_detail'),
     path('automations/orders/demo/reset/', demo_tracker_reset, name='order_tracker_demo_reset'),
     path("automations/orders/", core_views.order_tracker_view, name="order_tracker"),
     path("automations/orders/archived/", core_views.order_tracker_archived_view, name="order_tracker_archived"),
@@ -245,6 +246,13 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
+
+
+
+
+
+
+
 
 
 
