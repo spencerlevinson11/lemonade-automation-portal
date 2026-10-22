@@ -359,7 +359,17 @@
       </div>
     </div>
 
-    {% else %}<div class="card"><strong>Demonstration mode</strong> — Uses stored tracking data; refresh does not call JSONCargo. Changes are temporary and reset at logout. <form method="post" action="{% url 'order_tracker_demo_action' %}" style="display:inline;">{% csrf_token %}<input type="hidden" name="action" value="refresh"><button class="btn" type="submit">Refresh mirrored data</button></form> <form method="post" action="{% url 'order_tracker_demo_action' %}" style="display:inline;">{% csrf_token %}<input type="hidden" name="action" value="reset"><button class="btn" type="submit">Reset demo edits</button></form></div>{% endif %}
+    {% else %}<div class="card" style="border-color: rgba(250,204,21,0.34);">
+      <strong>JSONCargo Controls — Demonstration</strong>
+      <div class="muted tiny">Uses the Retriever Packaging source key and live source tracking results. Only tracking updates are shared; manual demo edits remain temporary. Every requested tracking operation can consume API usage.</div>
+      <div class="row" style="margin-top:12px;">
+        <form method="post" action="{% url 'order_tracker_demo_sync' %}">{% csrf_token %}<input type="hidden" name="sync_scope" value="all"><button class="btn" type="submit" onclick="return confirm('Track all active source containers using JSONCargo? This consumes API usage.');">Sync all</button></form>
+        <form method="post" action="{% url 'order_tracker_demo_sync' %}">{% csrf_token %}<input type="hidden" name="sync_scope" value="owner"><select name="owner" required><option value="">Select owner...</option>{% for owner in jsoncargo_owner_options %}<option value="{{ owner }}">{{ owner }}</option>{% endfor %}</select><button class="btn" type="submit">Sync owner</button></form>
+        <form method="post" action="{% url 'order_tracker_demo_sync' %}">{% csrf_token %}<input type="hidden" name="sync_scope" value="customer_city"><input name="customer" placeholder="Customer 01 (optional)"><input name="city" placeholder="City (optional)"><button class="btn" type="submit">Sync customer/city</button></form>
+        <form method="post" action="{% url 'order_tracker_demo_action' %}">{% csrf_token %}<input type="hidden" name="action" value="refresh"><button class="btn" type="submit">Refresh displayed data</button></form>
+        <form method="post" action="{% url 'order_tracker_demo_action' %}">{% csrf_token %}<input type="hidden" name="action" value="reset"><button class="btn" type="submit">Reset demo edits</button></form>
+      </div>
+    </div>{% endif %}
 
     <!-- Schedule-based shipment progress map -->
     <div class="card">
@@ -689,7 +699,7 @@
               <td><input class="compact-input" type="date" name="estimated_delivery_date_{{ c.id }}" value="{{ c.estimated_delivery_date|date:'Y-m-d' }}" form="bulkEtaForm" /></td>
               <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
               <td>
-                {% if demo_mode %}<form method="post" action="{% url 'order_tracker_demo_action' %}">{% csrf_token %}<input type="hidden" name="action" value="delivered"><input type="hidden" name="container_id" value="{{ c.id }}"><button class="btn" type="submit">Toggle delivered (demo)</button></form>{% else %}
+                {% if demo_mode %}<form method="post" action="{% url 'order_tracker_demo_action' %}">{% csrf_token %}<input type="hidden" name="action" value="delivered"><input type="hidden" name="container_id" value="{{ c.id }}"><button class="btn" type="submit">Toggle delivered (demo)</button></form><form method="post" action="{% url 'order_tracker_demo_track' c.id %}">{% csrf_token %}<button class="btn" type="submit" onclick="return confirm('Run one JSONCargo tracking operation for this source container?');">Track</button></form>{% else %}
                 <a class="btn" href="{% url 'order_container_commercial_invoice' c.id %}" style="margin-bottom:8px;">Invoice</a>
                 <form method="post" action="{% url 'order_container_sync_jsoncargo' c.id %}" style="display:inline;">
                   {% csrf_token %}
@@ -1140,6 +1150,13 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
 
 
 
