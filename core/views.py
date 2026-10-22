@@ -5115,6 +5115,9 @@ def order_tracker_view(request):
     Shows containers scoped to the user's company (owner) and allows create/edit.
     """
     user = request.user
+    from core.demo_tracker import is_demo_user, dashboard as demo_dashboard
+    if is_demo_user(user):
+        return demo_dashboard(request)
 
     # Superusers see ALL containers across companies.
     if user.is_superuser:
@@ -7043,6 +7046,11 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
 
 
 
