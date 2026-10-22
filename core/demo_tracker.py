@@ -133,8 +133,12 @@ def make_demo_containers(request, active, delivered):
     from copy import copy
     from datetime import date
     originals = list(active) + list(delivered)
-    names = sorted({(c.customer_name or '').strip() for c in originals})
-    aliases = {name: f'Customer {i:02d}' for i, name in enumerate(names, 1)}
+    # Use one stable set of aliases for the entire source company, including
+    # orders excluded by dashboard filters, so Customer 12 never changes identity.
+    source = _source_company()
+    names = (OrderContainer.objects.filter(company=source, is_archived=False)
+             .values_list('customer_name', flat=True).distinct()) if source else []
+    aliases = _safe_name_map([type('NameOnly', (), {'customer_name': name or ''})() for name in names])
     overrides = request.session.get(SESSION_KEY, {})
 
     def clone(c):
@@ -451,4 +455,5 @@ def demo_sync_bulk(request):
     jobs.append(job_id)
     request.session['demo_sync_jobs_v1'] = jobs
     return redirect('order_tracker_jsoncargo_sync_progress', job_id=job_id)
+
 
