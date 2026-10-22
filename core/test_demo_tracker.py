@@ -83,3 +83,37 @@ class DemoTrackerSecurityTests(TestCase):
             result = self.client.post(reverse('order_tracker_demo_track', args=[other_order.pk]))
         self.assertEqual(result.status_code, 404)
         tracking.assert_not_called()
+
+    def test_customer_alias_mapping_excludes_archived_customers(self):
+        from core.demo_tracker import demo_customer_aliases
+        OrderContainer.objects.create(
+            company=self.source_company, customer_name='A Historic Customer',
+            is_archived=True, status='Delivered', container_number='ABCD1234567',
+        )
+        self.order.container_number = 'WXYZ1234567'
+        self.order.save(update_fields=['container_number'])
+        aliases = demo_customer_aliases(self.source_company)
+        self.assertEqual(aliases['Private Customer'], 'Customer 01')
+        self.assertNotIn('A Historic Customer', aliases)
+        self.assertContains(self.client.get(reverse('order_tracker')), 'Customer 01')
+
+    def test_customer_alias_resolves_consistently_in_demo_bulk_sync(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        OrderContainer.objects.create(
+            company=self.source_company, customer_name='A Historic Customer',
+            is_archived=True, status='Delivered', container_number='ABCD1234567',
+        )
+        self.order.container_number = 'WXYZ1234567'
+        self.order.save(update_fields=['container_number'])
+        with TemporaryDirectory() as tmp, \
+             patch('core.services.jsoncargo_accounts.api_key_for_user', return_value='test-key'), \
+             patch('core.views._jsoncargo_sync_status_path', return_value=Path(tmp) / 'sync.json'), \
+             patch('subprocess.Popen') as process:
+            response = self.client.post(reverse('order_tracker_demo_sync'), {
+                'sync_scope': 'customer_city', 'customer': 'Customer 01', 'city': ''
+            })
+            self.assertEqual(response.status_code, 302)
+            args = process.call_args.args[0]
+            self.assertEqual(args[args.index('--customer') + 1], 'Private Customer')
+            self.assertEqual(args[args.index('--sync-scope') + 1], 'customer_city')
