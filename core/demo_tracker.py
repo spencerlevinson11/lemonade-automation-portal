@@ -334,3 +334,109 @@ def demo_order_detail(request, pk):
         'jsoncargo_display_message': '',
     })
 
+
+
+@login_required
+@require_http_methods(['POST'])
+def demo_sync_container(request, pk):
+    """One real JSONCargo tracking operation on Retriever's original container.
+
+    The only shared writes are JSONCargo tracking updates made by the existing
+    tracker service. Demo form/session overlays are never saved to the source.
+    """
+    from django.core.exceptions import PermissionDenied
+    from .services.jsoncargo_accounts import api_key_for_user
+    from .services.jsoncargo_order_tracker import sync_one_container
+    if not is_demo_user(request.user):
+        raise Http404
+    source = _source_company()
+    if source is None:
+        raise Http404
+    container = get_object_or_404(OrderContainer, pk=pk, company=source)
+    if container.is_archived:
+        messages.error(request, 'Archived containers cannot be tracked.')
+        return redirect('order_tracker_demo_detail', pk=pk)
+    try:
+        key = api_key_for_user(source.owner)
+    except PermissionDenied:
+        messages.error(request, 'Source tracking is currently unavailable.')
+        return redirect('order_tracker_demo_detail', pk=pk)
+    try:
+        outcome, _pending = sync_one_container(container, api_key=key)
+        if outcome == 'skipped_in_progress':
+            messages.info(request, 'Tracking is already running for this container; no second request was sent.')
+        else:
+            messages.success(request, 'Tracking completed using the shared source account.')
+    except Exception:
+        messages.error(request, 'Tracking could not be completed.')
+    return redirect('order_tracker_demo_detail', pk=pk)
+
+
+@login_required
+@require_http_methods(['POST'])
+def demo_sync_bulk(request):
+    """Launch standard source-company JSONCargo sync under the source key.
+
+    The job is recorded in the demo's session, not as a second customer/key.
+    """
+    import os
+    import subprocess
+    import sys
+    import uuid
+    from django.conf import settings
+    from django.core.exceptions import PermissionDenied
+    from .services.jsoncargo_accounts import api_key_for_user
+    from .views import _jsoncargo_sync_status_path
+    if not is_demo_user(request.user):
+        raise Http404
+    source = _source_company()
+    if source is None:
+        raise Http404
+    try:
+        api_key_for_user(source.owner)
+    except PermissionDenied:
+        messages.error(request, 'Source tracking is currently unavailable.')
+        return redirect('order_tracker')
+    scope = request.POST.get('sync_scope', 'all')
+    if scope not in ('all', 'owner', 'customer_city'):
+        raise Http404
+    owner = request.POST.get('owner', '').strip()[:80]
+    customer = request.POST.get('customer', '').strip()[:160]
+    city = request.POST.get('city', '').strip()[:160]
+    if scope == 'owner' and not owner:
+        messages.error(request, 'Choose an owner first.')
+        return redirect('order_tracker')
+    if scope == 'customer_city' and not (customer or city):
+        messages.error(request, 'Enter a customer placeholder or city first.')
+        return redirect('order_tracker')
+    if customer:
+        all_names = list(OrderContainer.objects.filter(company=source).values_list('customer_name', flat=True))
+        alias_map = _safe_name_map([type('Row', (), {'customer_name': n or ''})() for n in all_names])
+        reverse = {alias.casefold(): real for real, alias in alias_map.items()}
+        customer = reverse.get(customer.casefold(), '')
+        if not customer:
+            messages.error(request, 'Choose an available demo customer placeholder.')
+            return redirect('order_tracker')
+    job_id = uuid.uuid4().hex
+    file = _jsoncargo_sync_status_path(job_id)
+    file.parent.mkdir(parents=True, exist_ok=True)
+    args = [sys.executable, 'manage.py', 'jsoncargo_sync_order_tracker',
+            '--user-id', str(source.owner_id), '--company-id', str(source.pk),
+            '--status-file', str(file), '--sync-scope', scope,
+            '--label', 'Demo requested sync', '--limit', os.getenv('JSONCARGO_WEB_SYNC_LIMIT', '500')]
+    if owner: args += ['--owner', owner]
+    if customer: args += ['--customer', customer]
+    if city: args += ['--city', city]
+    try:
+        with open(file.with_suffix('.log'), 'ab') as log_file:
+            subprocess.Popen(args, cwd=str(settings.BASE_DIR), stdout=log_file,
+                             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                             close_fds=True, start_new_session=True)
+    except OSError:
+        messages.error(request, 'Could not start tracking.')
+        return redirect('order_tracker')
+    jobs = request.session.get('demo_sync_jobs_v1', [])[-9:]
+    jobs.append(job_id)
+    request.session['demo_sync_jobs_v1'] = jobs
+    return redirect('order_tracker_jsoncargo_sync_progress', job_id=job_id)
+
