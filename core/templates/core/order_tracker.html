@@ -280,6 +280,7 @@
         <p class="muted">{{ company_display }} • Track sea containers by customer + location</p>
       </div>
       <div class="actions">
+        {% if not demo_mode %}
         <!-- Keep your existing "full edit page" flow available -->
         <a class="btn" href="{% url 'order_container_new' %}">Open full editor</a>
 
@@ -294,7 +295,7 @@
           <button class="btn btn-danger" type="submit" onclick="return confirm('Archive all delivered orders belonging to your company?');">Archive all delivered</button>
         </form>
         {% endif %}
-</div>
+{% endif %}</div>
     </div>
 
     {% if messages %}
@@ -307,7 +308,7 @@
       </div>
     {% endif %}
 
-    <div class="card" style="border-color: rgba(250,204,21,0.34);">
+    {% if not demo_mode %}<div class="card" style="border-color: rgba(250,204,21,0.34);">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
         <div>
           <div style="font-weight:900;">JSONCargo Controls</div>
@@ -358,6 +359,8 @@
       </div>
     </div>
 
+    {% else %}<div class="card"><strong>Demonstration mode</strong> — Uses stored tracking data; refresh does not call JSONCargo. Changes are temporary and reset at logout. <form method="post" action="{% url 'order_tracker_demo_action' %}" style="display:inline;">{% csrf_token %}<input type="hidden" name="action" value="refresh"><button class="btn" type="submit">Refresh mirrored data</button></form> <form method="post" action="{% url 'order_tracker_demo_action' %}" style="display:inline;">{% csrf_token %}<input type="hidden" name="action" value="reset"><button class="btn" type="submit">Reset demo edits</button></form></div>{% endif %}
+
     <!-- Schedule-based shipment progress map -->
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
@@ -382,6 +385,7 @@
       </div>
     </div>
 
+    {% if not demo_mode %}
     <!-- NEW: Inline "Add container" form (collapsible) -->
     <div class="card">
       <details {% if request.method == "POST" %}open{% endif %}>
@@ -506,12 +510,13 @@
       </details>
     </div>
 
+    {% endif %}
     <div class="card">
       <form method="get">
         <div class="row">
           <div class="field">
             <label>Search</label>
-            <input name="q" value="{{ q }}" placeholder="Customer, location, PO#, RPC#, container, booking, BOL..." />
+            <input name="q" value="{{ q }}" placeholder="Search shipment status or owner" />
           </div>
           <div class="field" style="max-width:260px;">
             <label>Status (type anything)</label>
@@ -539,15 +544,15 @@
           <div class="muted tiny">Use “Mark delivered” once an order has arrived — it will move to the Delivered section below. Edit manual ETAs and estimated delivery dates directly here, then save all at once. The Latest JSONCargo ETA column shows the most recent API result, even after you acknowledge an update.</div>
         </div>
         <div class="actions">
-          <form method="post" action="{% url 'order_tracker_reset_checks' %}" style="display:inline;">
+          {% if not demo_mode %}<form method="post" action="{% url 'order_tracker_reset_checks' %}" style="display:inline;">
             {% csrf_token %}
             <button class="btn btn-danger" type="submit" onclick="return confirm('Reset all order tracker checkboxes?');">Reset all checkboxes</button>
-          </form>
+          </form>{% endif %}
           <button class="btn" type="submit" form="bulkEtaForm">Save ETA / delivery edits</button>
         </div>
       </div>
 
-      <form id="bulkEtaForm" method="post" action="{% url 'order_tracker_bulk_update' %}">
+      <form id="bulkEtaForm" method="post" action="{% if demo_mode %}{% url 'order_tracker_demo_action' %}{% else %}{% url 'order_tracker_bulk_update' %}{% endif %}">{% if demo_mode %}<input type="hidden" name="action" value="bulk_eta">{% endif %}
         {% csrf_token %}
       </form>
 
@@ -602,8 +607,8 @@
           {% for c in containers %}
             <tr>
               <td class="tracker-check-cell">
-                <form class="tracker-check-form" method="post" action="{% url 'order_container_set_tracker_checked' c.id %}">
-                  {% csrf_token %}
+                <form class="tracker-check-form" method="post" action="{% if demo_mode %}{% url 'order_tracker_demo_action' %}{% else %}{% url 'order_container_set_tracker_checked' c.id %}{% endif %}">
+                  {% csrf_token %}{% if demo_mode %}<input type="hidden" name="action" value="checked"><input type="hidden" name="container_id" value="{{ c.id }}">{% endif %}
                   <input
                     class="tracker-check"
                     type="checkbox"
@@ -614,14 +619,14 @@
               </td>
               <td>
                 <div style="font-weight:800;">
-                  <a href="{% url 'order_container_edit' container_id=c.id %}">
+                  {% if demo_mode %}<span style="color:var(--accent);font-weight:700;">{% else %}<a href="{% url 'order_container_edit' container_id=c.id %}">{% endif %}
                     {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
-                  </a>
+                  {% if demo_mode %}</span>{% else %}</a>{% endif %}
                   {% if c.id in pending_container_ids %}
                     <span class="badge" style="margin-left:8px; border-color: rgba(250,204,21,0.45); background: rgba(250,204,21,0.10);">Update pending</span>
                   {% endif %}
                 </div>
-                {% if c.tags.all %}
+                {% if not demo_mode and c.tags.all %}
                   <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
                     {% for tag in c.tags.all %}
                       <span class="badge" style="background: {{ tag.color }}; border-color: {{ tag.color }}; color: #fff;">{{ tag.name }}</span>
@@ -684,6 +689,7 @@
               <td><input class="compact-input" type="date" name="estimated_delivery_date_{{ c.id }}" value="{{ c.estimated_delivery_date|date:'Y-m-d' }}" form="bulkEtaForm" /></td>
               <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
               <td>
+                {% if demo_mode %}<form method="post" action="{% url 'order_tracker_demo_action' %}">{% csrf_token %}<input type="hidden" name="action" value="delivered"><input type="hidden" name="container_id" value="{{ c.id }}"><button class="btn" type="submit">Toggle delivered (demo)</button></form>{% else %}
                 <a class="btn" href="{% url 'order_container_commercial_invoice' c.id %}" style="margin-bottom:8px;">Invoice</a>
                 <form method="post" action="{% url 'order_container_sync_jsoncargo' c.id %}" style="display:inline;">
                   {% csrf_token %}
@@ -693,6 +699,7 @@
                   {% csrf_token %}
                   <button class="btn" type="submit" onclick="return confirm('Mark this order as Delivered?');">Mark delivered</button>
                 </form>
+                {% endif %}
               </td>
             </tr>
           {% empty %}
@@ -739,8 +746,8 @@
             {% for c in delivered_containers %}
               <tr>
                 <td class="tracker-check-cell">
-                  <form class="tracker-check-form" method="post" action="{% url 'order_container_set_tracker_checked' c.id %}">
-                    {% csrf_token %}
+                  <form class="tracker-check-form" method="post" action="{% if demo_mode %}{% url 'order_tracker_demo_action' %}{% else %}{% url 'order_container_set_tracker_checked' c.id %}{% endif %}">
+                    {% csrf_token %}{% if demo_mode %}<input type="hidden" name="action" value="checked"><input type="hidden" name="container_id" value="{{ c.id }}">{% endif %}
                     <input
                       class="tracker-check"
                       type="checkbox"
@@ -751,14 +758,15 @@
                 </td>
                 <td>
                   <div style="font-weight:800;">
-                    <a href="{% url 'order_container_edit' container_id=c.id %}">
+                    {% if demo_mode %}<span style="color:var(--accent);font-weight:700;">{% else %}<a href="{% url 'order_container_edit' container_id=c.id %}">{% endif %}
                       {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
-                    </a>
+                    {% if demo_mode %}</span>{% else %}</a>{% endif %}
+                    {% if demo_mode %}<form method="post" action="{% url 'order_tracker_demo_action' %}" style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;">{% csrf_token %}<input type="hidden" name="action" value="edit"><input type="hidden" name="container_id" value="{{ c.id }}"><input name="owner" value="{{ c.assigned_to }}" list="demo-owners" placeholder="Owner" style="max-width:125px;"><input name="origin" value="{{ c.origin_country }}" placeholder="Origin country" style="max-width:125px;"><input name="status" value="{{ c.status }}" placeholder="Status" style="max-width:125px;"><button class="btn" type="submit">Apply demo edits</button></form>{% endif %}
                   {% if c.id in pending_container_ids %}
                     <span class="badge" style="margin-left:8px; border-color: rgba(250,204,21,0.45); background: rgba(250,204,21,0.10);">Update pending</span>
                   {% endif %}
                   </div>
-                  {% if c.tags.all %}
+                  {% if not demo_mode and c.tags.all %}
                   <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
                     {% for tag in c.tags.all %}
                       <span class="badge" style="background: {{ tag.color }}; border-color: {{ tag.color }}; color: #fff;">{{ tag.name }}</span>
@@ -798,6 +806,7 @@
                 <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
                 <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
                 <td>
+                  {% if demo_mode %}<form method="post" action="{% url 'order_tracker_demo_action' %}">{% csrf_token %}<input type="hidden" name="action" value="delivered"><input type="hidden" name="container_id" value="{{ c.id }}"><button class="btn" type="submit">Reopen (demo)</button></form>{% else %}
                   <a class="btn" href="{% url 'order_container_commercial_invoice' c.id %}" style="margin-bottom:8px;">Invoice</a>
                   <form method="post" action="{% url 'order_container_toggle_delivered' c.id %}" style="display:inline;">
                     {% csrf_token %}
@@ -806,7 +815,7 @@
                   <form method="post" action="{% url 'order_container_archive' c.id %}" style="display:inline; margin-left:8px;">
                     {% csrf_token %}
                     <button class="btn btn-danger" type="submit" onclick="return confirm('Archive this delivered order? It will stop syncing and move to Archived.');">Archive</button>
-                  </form>
+                  </form>{% endif %}
                 </td>
               </tr>
             {% empty %}
@@ -1131,6 +1140,215 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
