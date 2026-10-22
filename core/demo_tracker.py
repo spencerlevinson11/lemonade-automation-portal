@@ -379,6 +379,7 @@ def demo_sync_bulk(request):
 
     The job is recorded in the demo's session, not as a second customer/key.
     """
+    import json
     import os
     import subprocess
     import sys
@@ -420,6 +421,16 @@ def demo_sync_bulk(request):
     job_id = uuid.uuid4().hex
     file = _jsoncargo_sync_status_path(job_id)
     file.parent.mkdir(parents=True, exist_ok=True)
+    # Initialize progress before launching the subprocess. Otherwise the
+    # redirect may reach the progress view before its first status write.
+    file.write_text(json.dumps({
+        'state': 'queued',
+        'user_id': source.owner_id,
+        'label': 'Demo requested sync',
+        'message': 'JSONCargo sync is queued...',
+        'total': 0, 'checked': 0, 'created': 0,
+        'updated': 0, 'skipped': 0, 'errors': 0, 'current': '',
+    }), encoding='utf-8')
     args = [sys.executable, 'manage.py', 'jsoncargo_sync_order_tracker',
             '--user-id', str(source.owner_id), '--company-id', str(source.pk),
             '--status-file', str(file), '--sync-scope', scope,
@@ -433,6 +444,7 @@ def demo_sync_bulk(request):
                              stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                              close_fds=True, start_new_session=True)
     except OSError:
+        file.unlink(missing_ok=True)
         messages.error(request, 'Could not start tracking.')
         return redirect('order_tracker')
     jobs = request.session.get('demo_sync_jobs_v1', [])[-9:]
