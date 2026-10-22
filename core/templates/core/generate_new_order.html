@@ -1,0 +1,30 @@
+<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Generate New Order</title></head><body style='background:#f3f6fa;font:15px Arial,sans-serif;color:#17354e'>
+<style>.order-page{max-width:1000px;margin:24px auto;padding:26px;background:#fff;border:1px solid #dde5ed;border-radius:14px}.order-page input,.order-page textarea{width:100%;padding:9px;border:1px solid #c8d3df;border-radius:6px;box-sizing:border-box}.order-page label{display:block;font-weight:600;margin-bottom:6px}.order-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}.order-page table{width:100%;border-collapse:collapse}.order-page th,.order-page td{padding:5px;text-align:left}.order-page button{cursor:pointer;padding:10px 16px;border:0;border-radius:7px;background:#124a75;color:#fff}.order-page .secondary{background:#657688}.errors{color:#9c2626}</style>
+<div class="order-page"><h1>Generate New Order</h1><p>Create a generic purchase order PDF and add its container to your Order Tracker. {% if demo_mode %}<strong>Demo mode: orders remain temporary until logout.</strong>{% endif %}</p>
+{% if errors %}<div class="errors"><strong>Check the following:</strong><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+<form method="post" action="{% url 'generate_new_order' %}">{% csrf_token %}
+<div class="order-grid">
+<label>Customer *<input name="customer_name" required maxlength="255" value="{{ values.customer_name|default:'' }}"></label>
+<label>Destination / Location<input name="location_name" value="{{ values.location_name|default:'' }}"></label>
+<label>PO number<input name="po_number" value="{{ values.po_number|default:'' }}"></label>
+<label>Order reference / RPC number<input name="rpc_number" value="{{ values.rpc_number|default:'' }}"></label>
+<label>Container number<input name="container_number" value="{{ values.container_number|default:'' }}"></label>
+<label>Booking number<input name="booking_number" value="{{ values.booking_number|default:'' }}"></label>
+<label>Bill of lading<input name="bill_of_lading_number" value="{{ values.bill_of_lading_number|default:'' }}"></label>
+<label>Assigned owner<input name="assigned_to" value="{{ values.assigned_to|default:'' }}"></label>
+<label>Origin country<input name="origin_country" value="{{ values.origin_country|default:'' }}"></label>
+<label>Status<input name="status" value="{{ values.status|default:'Booked' }}"></label>
+<label>Requested date<input type="date" name="requested_date" value="{{ values.requested_date|default:'' }}"></label>
+<label>Loading date<input type="date" name="loading_date" value="{{ values.loading_date|default:'' }}"></label>
+<label>ETD<input type="date" name="etd" value="{{ values.etd|default:'' }}"></label>
+<label>ETA<input type="date" name="eta" value="{{ values.eta|default:'' }}"></label>
+<label>Estimated delivery<input type="date" name="estimated_delivery_date" value="{{ values.estimated_delivery_date|default:'' }}"></label>
+</div>
+<h2>Order contents</h2><p>Enter any product or service description. Quantities are generic, not bucket-specific.</p>
+<div style="overflow-x:auto"><table id="items"><thead><tr><th>Description *</th><th>Quantity</th><th>Unit</th><th>Pallets</th><th>Units / pallet</th><th></th></tr></thead><tbody>{% if items %}{% for item in items %}<tr><td><input name="item_description" value="{{ item.description }}" required></td><td><input type="number" min="0" name="item_quantity" value="{{ item.quantity }}"></td><td><input name="item_unit" value="{{ item.unit }}"></td><td><input type="number" min="0" name="item_pallets" value="{{ item.pallets }}"></td><td><input type="number" min="0" name="item_units_per_pallet" value="{{ item.units_per_pallet }}"></td><td><button type="button" class="secondary" onclick="this.closest('tr').remove()">Remove</button></td></tr>{% endfor %}{% else %}<tr><td><input name="item_description" required></td><td><input name="item_quantity" type="number" min="0"></td><td><input name="item_unit" value="units"></td><td><input name="item_pallets" type="number" min="0"></td><td><input name="item_units_per_pallet" type="number" min="0"></td><td><button type="button" class="secondary" onclick="this.closest('tr').remove()">Remove</button></td></tr>{% endif %}</tbody></table></div>
+<button type="button" class="secondary" onclick="addItem()">+ Add item</button>
+<p><label>Notes<textarea name="notes" rows="3" maxlength="2000">{{ values.notes|default:'' }}</textarea></label></p>
+<button type="submit">Generate PDF and add to Order Tracker</button> <a href="{% url 'order_tracker' %}">Open Order Tracker</a>
+</form></div>
+<script>function addItem(){let body=document.querySelector('#items tbody');if(body.rows.length>=40)return;let row=body.rows[0]?.cloneNode(true);if(!row){return;}row.querySelectorAll('input').forEach(e=>{e.value=e.name==='item_unit'?'units':''});body.appendChild(row);}</script>
+</body></html>
