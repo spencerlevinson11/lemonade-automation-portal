@@ -1,8 +1,10 @@
 from django.contrib import admin
+from django.urls import pathfrom django.contrib import admin
 from django.urls import path
 from django.contrib.auth import views as auth_views
 
 from core import views as core_views
+from core import demo_tracker
 
 
 urlpatterns = [
@@ -86,6 +88,8 @@ urlpatterns = [
 
 
     # Order Tracker
+    path('automations/orders/demo/edit/<int:pk>/', demo_tracker.edit, name='order_tracker_demo_edit'),
+    path('automations/orders/demo/reset/', demo_tracker.reset, name='order_tracker_demo_reset'),
     path("automations/orders/", core_views.order_tracker_view, name="order_tracker"),
     path("automations/orders/archived/", core_views.order_tracker_archived_view, name="order_tracker_archived"),
     path("automations/orders/archive-all-delivered/", core_views.order_tracker_archive_all_delivered_view, name="order_tracker_archive_all_delivered"),
@@ -231,6 +235,12 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
+
+
+
+
+
+
 
 
 
