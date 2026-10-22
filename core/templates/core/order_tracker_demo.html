@@ -1,0 +1,30 @@
+{% load static %}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order Tracker | Demonstration</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#0a1220;color:#e7edf7}
+*{box-sizing:border-box}body{margin:0;padding:32px 24px}main{max-width:1340px;margin:auto}
+a{color:#b7d7ff}header{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:24px}
+h1{font-size:30px;margin:6px 0}.subtitle{color:#a9b6cc}.pill{background:#183c58;padding:7px 12px;color:#b8e1ff;border-radius:25px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.card{background:#111e32;border:1px solid #2a3950;border-radius:15px;padding:18px 20px;margin:14px 0}
+.metrics{display:flex;gap:12px;flex-wrap:wrap}.metric{min-width:145px}.metric strong{display:block;font-size:25px}
+button,.btn{background:#facc15;color:#172237;border:0;border-radius:9px;padding:10px 14px;cursor:pointer;font-weight:800;font-size:13px;text-decoration:none}
+button.secondary,.btn.secondary{background:#26374d;color:#f2f6fd}.actions{display:flex;gap:10px;flex-wrap:wrap}
+.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th{font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:#aabbd1}th,td{padding:14px 12px;border-bottom:1px solid #27364a}td{font-size:13px}small{color:#9caec7}details{margin:7px 0}summary{cursor:pointer;color:#fde68a}
+.editgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin-top:12px}
+input,select{width:100%;background:#0b182b;border:1px solid #485c73;color:#f0f4fa;padding:9px;border-radius:7px}label{display:block;font-size:12px;color:#a9b9d2;margin-bottom:5px}.hint{font-size:12px;color:#abb9cf;line-height:1.6}
+@media(max-width:650px){body{padding:16px 10px}h1{font-size:24px}}
+</style></head><body><main>
+<header><div><span class="pill">Safe demonstration</span><h1>Order Tracker</h1><div class="subtitle">Live mirrored shipment statuses · anonymized customer records</div></div>
+<div class="actions"><a class="btn secondary" href="{% url 'dashboard' %}">Automation Portal</a><a class="btn secondary" href="{% url 'order_tracker' %}">Refresh mirrored data</a><form method="post" action="{% url 'order_tracker_demo_reset' %}">{% csrf_token %}<button class="secondary" type="submit">Reset demo edits</button></form></div></header>
+{% for message in messages %}<div class="card">{{ message }}</div>{% endfor %}
+<div class="card"><div class="metrics"><div class="metric"><small>Visible orders</small><strong>{{ count }}</strong></div><div class="metric"><small>API calls from this demo</small><strong>0</strong></div></div>
+<p class="hint">This account reads the latest stored Retriever Packaging order and tracking information. Refreshing this page does not contact JSONCargo. Changes made below are temporary and disappear when you sign out. Names and identifying order references are hidden for privacy.</p></div>
+{% if not source_available %}<div class="card">The source account is not configured. Check the Retriever Packaging company account.</div>{% else %}
+<div class="card tablewrap"><table><thead><tr><th>Demo order</th><th>Customer</th><th>Status</th><th>Owner</th><th>Origin</th><th>ETD</th><th>ETA</th><th>Latest API ETA</th><th>Demo actions</th></tr></thead><tbody>
+{% for item in rows %}<tr><td>{{ item.order_label }}{% if item.demo_modified %} <small>(edited)</small>{% endif %}</td><td>{{ item.alias }}</td><td>{{ item.status }}{% if item.archived %} <small>(archived)</small>{% endif %}</td><td>{{ item.owner|default:'—' }}</td><td>{{ item.origin }}</td><td>{{ item.etd|date:'M d, Y'|default:'—' }}</td><td>{{ item.eta|default:'—' }}</td><td>{{ item.api_eta|date:'M d, Y'|default:'—' }}{% if item.api_checked_at %}<div><small>Checked {{ item.api_checked_at|date:'M d, Y' }}</small></div>{% endif %}</td><td><details><summary>Try an edit</summary><form method="post" action="{% url 'order_tracker_demo_edit' item.pk %}">{% csrf_token %}<div class="editgrid"><div><label>Status</label><input name="status" value="{{ item.status }}" maxlength="128"></div><div><label>Owner</label><input name="owner" list="demo-owner-names" value="{{ item.owner }}" maxlength="80"></div><div><label>Origin country</label><input name="origin" value="{{ item.origin }}" maxlength="100"></div><div><label>ETA</label><input name="eta" type="date" value="{{ item.eta }}"></div></div><p><button type="submit">Apply temporary change</button></p></form></details></td></tr>{% empty %}<tr><td colspan="9">No active orders are available for demonstration.</td></tr>{% endfor %}
+</tbody></table></div><datalist id="demo-owner-names">{% for owner in owners %}<option value="{{ owner }}">{% endfor %}</datalist>
+{% endif %}
+<div class="hint">Demonstration mode intentionally disables real API tracking, document downloads, invoice generation, archiving, and production database edits. The production Retriever Packaging account is unchanged.</div>
+</main></body></html>
