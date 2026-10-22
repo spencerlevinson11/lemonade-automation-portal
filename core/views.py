@@ -5115,12 +5115,14 @@ def order_tracker_view(request):
     Shows containers scoped to the user's company (owner) and allows create/edit.
     """
     user = request.user
-    from core.demo_tracker import is_demo_user, dashboard as demo_dashboard
-    if is_demo_user(user):
-        return demo_dashboard(request)
+    from core.demo_tracker import is_demo_user, _source_company, make_demo_containers, SESSION_KEY
+    demo_mode = is_demo_user(user)
 
     # Superusers see ALL containers across companies.
-    if user.is_superuser:
+    if demo_mode:
+        company = _source_company()
+        containers = OrderContainer.objects.filter(company=company).prefetch_related("tags") if company else OrderContainer.objects.none()
+    elif user.is_superuser:
         company = None
         containers = OrderContainer.objects.all().prefetch_related("tags")
     else:
@@ -5182,6 +5184,12 @@ def order_tracker_view(request):
     delivered_containers = list(containers.filter(delivered_q))
     active_containers = list(containers.exclude(delivered_q))
 
+    if demo_mode:
+        # Work only on copies. Never mutate source OrderContainer instances.
+        active_containers, delivered_containers = make_demo_containers(
+            request, active_containers, delivered_containers
+        )
+
     # JSONCargo targeted sync options. These are built from the same visible,
     # non-archived tracker rows so the dropdowns match what the user can see.
     jsoncargo_owner_options = [
@@ -5190,7 +5198,10 @@ def order_tracker_view(request):
         if owner
     ]
     from .services.tracker_customer_options import owner_names, is_retriever_company, country_for_container
-    if company:
+    if demo_mode:
+        demo_company = Company.objects.filter(owner=user).first()
+        jsoncargo_owner_options = owner_names(demo_company) if demo_company else []
+    elif company:
         jsoncargo_owner_options = owner_names(company)
     else:
         jsoncargo_owner_options = sorted(set(jsoncargo_owner_options), key=str.casefold)
@@ -5232,6 +5243,13 @@ def order_tracker_view(request):
             c.latest_pending_tracking_update = None
             c.latest_tracking_update = None
             c.latest_jsoncargo_display_text = ""
+
+    if demo_mode:
+        # Tracking update objects may contain customer-specific text or ports.
+        for row in active_containers + delivered_containers:
+            row.latest_pending_tracking_update = None
+            row.latest_tracking_update = None
+            row.latest_jsoncargo_display_text = 'Saved tracking available'
 
     # --- Schedule-based shipment progress map ---
     # This intentionally does not depend on live AIS/MMSI data. Instead, each
@@ -5391,7 +5409,7 @@ def order_tracker_view(request):
                 "container_label": f"{c.customer_name}{(' • ' + c.location_name) if c.location_name else ''}",
                 "container_number": (c.container_number or "").strip(),
                 "rpc_number": (c.rpc_number or "").strip(),
-                "container_url": reverse("order_container_edit", kwargs={"container_id": c.id}),
+                "container_url": ("" if demo_mode else reverse("order_container_edit", kwargs={"container_id": c.id})),
             }
         )
 
@@ -5401,7 +5419,7 @@ def order_tracker_view(request):
         {
             "automation_name": "Order Tracker",
             "company": company,
-            "company_display": (company.name if company else "All Companies"),
+            "company_display": ("Demo Workspace" if demo_mode else (company.name if company else "All Companies")),
             "containers": active_containers,
             "delivered_containers": delivered_containers,
             "q": q,
@@ -5413,7 +5431,8 @@ def order_tracker_view(request):
             "shipment_map_today": map_today,
             "pending_container_ids": pending_container_ids,
             "jsoncargo_owner_options": jsoncargo_owner_options,
-            "tracker_is_retriever": is_retriever_company(company) if company else False,
+            "tracker_is_retriever": is_retriever_company(company) if company and not demo_mode else False,
+            "demo_mode": demo_mode,
         },
     )
 
@@ -7046,7 +7065,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
 
 
 
