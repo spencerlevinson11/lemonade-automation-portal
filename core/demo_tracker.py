@@ -15,8 +15,69 @@ from .services.tracker_customer_options import owner_names
 DEMO_USERNAME = 'lemonadestandex'
 SOURCE_USERNAME = 'retrieverpackaging'
 SESSION_KEY = 'demo_order_tracker_overrides_v1'
+DEMO_TRACKING_SNAPSHOT_KEY = 'demo_tracker_tracking_snapshot_v1'
+
 DEMO_EDITABLE_FIELDS = ('customer_name','location_name','po_number','requested_date','requested_date_text','requested_asap','status','assigned_to','origin_country','rpc_number','loading_date','etd','eta','eta_city','estimated_delivery_date','booking_number','bill_of_lading_number','container_number','shipping_line_id','vessel_name','vessel_mmsi','vessel_imo','notes')
 DATE_FIELDS = ('requested_date','loading_date','etd','eta','estimated_delivery_date')
+
+class DemoTrackingDisplay:
+    """Template-compatible view of a JSONCargo result; never a database object."""
+    def __init__(self, values):
+        self.kind = values.get('kind', '')
+        self.status = values.get('status', '')
+        self.proposed_eta = values.get('eta') or None
+        self.proposed_eta_city = values.get('city', '')
+        self.note = ''
+
+    def get_kind_display(self):
+        return self.kind.replace('_', ' ').title()
+
+    def get_status_display(self):
+        return self.status.replace('_', ' ').title()
+
+
+def preserve_demo_tracking_results(request, containers):
+    """Keep sanitized results while users sort/filter during one login session.
+
+    Source records remain authoritative when they contain a newer result.
+    The snapshot contains no real customer names or raw provider payloads.
+    """
+    if not is_demo_user(request.user):
+        return
+    snapshots = dict(request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}))
+    changed = False
+    for container in containers:
+        key = str(container.pk)
+        latest = getattr(container, 'latest_tracking_update', None)
+        if latest is not None:
+            values = {
+                'kind': str(getattr(latest, 'kind', '') or ''),
+                'status': str(getattr(latest, 'status', '') or ''),
+                'eta': str(getattr(latest, 'proposed_eta', '') or ''),
+                'city': str(getattr(latest, 'proposed_eta_city', '') or '')[:160],
+                'record_id': int(getattr(latest, 'pk', 0) or 0),
+            }
+            old = snapshots.get(key, {})
+            if values['record_id'] >= int(old.get('record_id', 0)):
+                if old != values:
+                    snapshots[key] = values
+                    changed = True
+        saved = snapshots.get(key)
+        if saved:
+            # Never modify actual OrderContainerTrackingUpdate rows.
+            # Expose the same last result on all subsequent dashboard views.
+            display = DemoTrackingDisplay(saved)
+            container.latest_tracking_update = display
+            if getattr(container, 'latest_pending_tracking_update', None) is None:
+                container.latest_pending_tracking_update = display if display.status == 'pending' else None
+            container.latest_jsoncargo_display_text = (
+                ' '.join(v for v in (saved.get('eta', ''), saved.get('city', '')) if v)
+                or ('No ETA returned' if display.kind != 'error' else '')
+            )
+    if changed:
+        request.session[DEMO_TRACKING_SNAPSHOT_KEY] = snapshots
+        request.session.modified = True
+
 
 def _field_value(field, value):
     if field in DATE_FIELDS:
@@ -455,5 +516,6 @@ def demo_sync_bulk(request):
     jobs.append(job_id)
     request.session['demo_sync_jobs_v1'] = jobs
     return redirect('order_tracker_jsoncargo_sync_progress', job_id=job_id)
+
 
 
