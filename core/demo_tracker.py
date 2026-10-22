@@ -16,6 +16,8 @@ DEMO_USERNAME = 'lemonadestandex'
 SOURCE_USERNAME = 'retrieverpackaging'
 SESSION_KEY = 'demo_order_tracker_overrides_v1'
 DEMO_TRACKING_SNAPSHOT_KEY = 'demo_tracker_tracking_snapshot_v1'
+DEMO_CREATED_KEY = 'demo_created_containers_v1'
+DEMO_ID_START = 2000000000
 
 DEMO_EDITABLE_FIELDS = ('customer_name','location_name','po_number','requested_date','requested_date_text','requested_asap','status','assigned_to','origin_country','rpc_number','loading_date','etd','eta','eta_city','estimated_delivery_date','booking_number','bill_of_lading_number','container_number','shipping_line_id','vessel_name','vessel_mmsi','vessel_imo','notes')
 DATE_FIELDS = ('requested_date','loading_date','etd','eta','estimated_delivery_date')
@@ -28,6 +30,9 @@ class DemoTrackingDisplay:
         self.proposed_eta = values.get('eta') or None
         self.proposed_eta_city = values.get('city', '')
         self.note = ''
+        self.id = 0
+        self.pk = 0
+        self.source_last_updated = None
 
     def get_kind_display(self):
         return self.kind.replace('_', ' ').title()
@@ -58,7 +63,7 @@ def preserve_demo_tracking_results(request, containers):
                 'record_id': int(getattr(latest, 'pk', 0) or 0),
             }
             old = snapshots.get(key, {})
-            if values['record_id'] >= int(old.get('record_id', 0)):
+            if not old.get('demo_only') and values['record_id'] >= int(old.get('record_id', 0)):
                 if old != values:
                     snapshots[key] = values
                     changed = True
@@ -68,7 +73,7 @@ def preserve_demo_tracking_results(request, containers):
             # Expose the same last result on all subsequent dashboard views.
             display = DemoTrackingDisplay(saved)
             container.latest_tracking_update = display
-            if getattr(container, 'latest_pending_tracking_update', None) is None:
+            if saved.get('demo_only') or getattr(container, 'latest_pending_tracking_update', None) is None:
                 container.latest_pending_tracking_update = display if display.status == 'pending' else None
             container.latest_jsoncargo_display_text = (
                 ' '.join(v for v in (saved.get('eta', ''), saved.get('city', '')) if v)
@@ -199,6 +204,8 @@ def reset(request):
     if not is_demo_user(request.user):
         raise Http404
     request.session.pop(SESSION_KEY, None)
+    request.session.pop(DEMO_CREATED_KEY, None)
+    request.session.pop(DEMO_TRACKING_SNAPSHOT_KEY, None)
     request.session.modified = True
     return redirect('order_tracker')
 
@@ -257,6 +264,89 @@ def make_demo_containers(request, active, delivered):
     clones = [clone(c) for c in originals]
     return ([r for r in clones if (r.status or '').casefold() != 'delivered'],
             [r for r in clones if (r.status or '').casefold() == 'delivered'])
+
+
+
+def _session_created(request):
+    return request.session.get(DEMO_CREATED_KEY, {})
+
+
+def _demo_container(request, pk, source):
+    """Return a detached source record or a session-only demo-created container."""
+    from copy import copy
+    created = _session_created(request).get(str(pk))
+    if created is not None:
+        obj = OrderContainer(pk=pk, company=source)
+        for field in DEMO_EDITABLE_FIELDS + ('carrier',):
+            if field in created:
+                setattr(obj, field, _field_value(field, created[field]))
+        return obj
+    return copy(get_object_or_404(OrderContainer, pk=pk, company=source))
+
+
+@login_required
+@require_http_methods(['POST'])
+def demo_create_container(request):
+    """Quick Add: no OrderContainer is inserted into the database."""
+    if not is_demo_user(request.user):
+        raise Http404
+    customer = (request.POST.get('customer_name') or '').strip()[:160]
+    if not customer:
+        messages.error(request, 'Enter a demo customer name.')
+        return redirect('order_tracker')
+    created = dict(_session_created(request))
+    if len(created) >= 100:
+        messages.error(request, 'This demo session has reached its 100-container limit.')
+        return redirect('order_tracker')
+    next_id = max([DEMO_ID_START - 1] + [int(x) for x in created]) + 1
+    fields = {key: (request.POST.get(key) or '')[:200] for key in DEMO_EDITABLE_FIELDS + ('carrier',)}
+    fields['customer_name'] = customer
+    fields['status'] = fields.get('status') or 'Booked'
+    created[str(next_id)] = fields
+    request.session[DEMO_CREATED_KEY] = created
+    request.session.modified = True
+    messages.success(request, 'Demo container added temporarily. It will disappear at logout.')
+    return redirect('order_tracker_demo_detail', pk=next_id)
+
+
+def _demo_api_lookup(request, container, source):
+    """One direct container lookup, with only sanitized display values saved in session.
+
+    No production sync service is called, because that service writes to source
+    OrderContainer and OrderContainerTrackingUpdate records.
+    """
+    from django.core.exceptions import PermissionDenied
+    from .services.jsoncargo_accounts import api_key_for_user
+    from .services.jsoncargo_order_tracker import (
+        _attempt_container_lookup, _jsoncargo_data, _extract_eta_city,
+        tracking_reference_for_jsoncargo,
+    )
+    if not (container.container_number or '').strip():
+        return False, 'This container has no tracking number.'
+    try:
+        api_key = api_key_for_user(source.owner)
+    except PermissionDenied:
+        return False, 'Source tracking credentials are unavailable.'
+    reference = tracking_reference_for_jsoncargo(container)
+    carrier = container.jsoncargo_shipping_line_param()
+    tracking, err, attempts = _attempt_container_lookup(
+        tracking_reference=reference, api_key=api_key, shipping_line=carrier,
+    )
+    if err:
+        result = {'kind': 'error', 'status': 'pending', 'eta': '', 'city': '',
+                  'message': 'JSONCargo could not retrieve a tracking update.', 'record_id': 0}
+    else:
+        data = _jsoncargo_data(tracking)
+        eta, city = _extract_eta_city(data)
+        result = {'kind': 'change', 'status': 'pending', 'eta': str(eta) if eta else '',
+                  'city': str(city or '')[:160], 'message': '', 'record_id': 0,
+                  'container_status': str(data.get('container_status') or '')[:120]}
+    snapshots = dict(request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}))
+    result['demo_only'] = True
+    snapshots[str(container.pk)] = result
+    request.session[DEMO_TRACKING_SNAPSHOT_KEY] = snapshots
+    request.session.modified = True
+    return True, result
 
 
 class _EmptyDemoTags:
@@ -332,9 +422,10 @@ def demo_order_detail(request, pk):
     source = _source_company()
     if source is None:
         raise Http404
-    original = get_object_or_404(OrderContainer, pk=pk, company=source)
+    original = _demo_container(request, pk, source)
     originals = list(OrderContainer.objects.filter(company=source))
-    alias = _safe_name_map(originals).get((original.customer_name or '').strip(), 'Customer')
+    alias = (original.customer_name if str(pk) in _session_created(request) else
+             demo_customer_aliases(source).get((original.customer_name or '').strip(), 'Customer'))
     overlay = request.session.get(SESSION_KEY, {})
     change = dict(overlay.get(str(pk), {}))
     demo_company = Company.objects.filter(owner=request.user).first()
@@ -406,9 +497,12 @@ def demo_order_detail(request, pk):
         'doc_formset': docs, 'tag_formset': tags, 'demo_mode': True,
         'tracker_is_retriever': False,
         'tracker_owner_options': owner_names(demo_company) if demo_company else [],
-        'pending_tracking_update': None, 'jsoncargo_data': {},
-        'jsoncargo_display_eta': '', 'jsoncargo_next_destination': '',
-        'jsoncargo_display_message': '',
+        'pending_tracking_update': (DemoTrackingDisplay(request.session[DEMO_TRACKING_SNAPSHOT_KEY][str(pk)])
+            if str(pk) in request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}) else None),
+        'jsoncargo_data': {'container_status': request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}).get(str(pk), {}).get('container_status', '')},
+        'jsoncargo_display_eta': request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}).get(str(pk), {}).get('eta', ''),
+        'jsoncargo_next_destination': request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}).get(str(pk), {}).get('city', ''),
+        'jsoncargo_display_message': request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}).get(str(pk), {}).get('message', ''),
     })
 
 
@@ -429,23 +523,18 @@ def demo_sync_container(request, pk):
     source = _source_company()
     if source is None:
         raise Http404
-    container = get_object_or_404(OrderContainer, pk=pk, company=source)
+    container = _demo_container(request, pk, source)
     if container.is_archived:
         messages.error(request, 'Archived containers cannot be tracked.')
         return redirect('order_tracker_demo_detail', pk=pk)
     try:
-        key = api_key_for_user(source.owner)
-    except PermissionDenied:
-        messages.error(request, 'Source tracking is currently unavailable.')
-        return redirect('order_tracker_demo_detail', pk=pk)
-    try:
-        outcome, _pending = sync_one_container(container, api_key=key)
-        if outcome == 'skipped_in_progress':
-            messages.info(request, 'Tracking is already running for this container; no second request was sent.')
+        succeeded, result = _demo_api_lookup(request, container, source)
+        if succeeded:
+            messages.success(request, 'JSONCargo result saved to this demo session only.')
         else:
-            messages.success(request, 'Tracking completed using the shared source account.')
+            messages.error(request, result)
     except Exception:
-        messages.error(request, 'Tracking could not be completed.')
+        messages.error(request, 'JSONCargo tracking could not be completed.')
     return redirect('order_tracker_demo_detail', pk=pk)
 
 
@@ -494,41 +583,24 @@ def demo_sync_bulk(request):
         if not customer:
             messages.error(request, 'Choose an available demo customer placeholder.')
             return redirect('order_tracker')
-    job_id = uuid.uuid4().hex
-    file = _jsoncargo_sync_status_path(job_id)
-    file.parent.mkdir(parents=True, exist_ok=True)
-    # Initialize progress before launching the subprocess. Otherwise the
-    # redirect may reach the progress view before its first status write.
-    file.write_text(json.dumps({
-        'state': 'queued',
-        'user_id': source.owner_id,
-        'label': 'Demo requested sync',
-        'message': 'JSONCargo sync is queued...',
-        'total': 0, 'checked': 0, 'created': 0,
-        'updated': 0, 'skipped': 0, 'errors': 0, 'current': '',
-    }), encoding='utf-8')
-    args = [sys.executable, 'manage.py', 'jsoncargo_sync_order_tracker',
-            '--user-id', str(source.owner_id), '--company-id', str(source.pk),
-            '--status-file', str(file), '--sync-scope', scope,
-            '--label', 'Demo requested sync', '--limit', os.getenv('JSONCARGO_WEB_SYNC_LIMIT', '500')]
-    if owner: args += ['--owner', owner]
-    if customer: args += ['--customer', customer]
-    if city: args += ['--city', city]
-    try:
-        with open(file.with_suffix('.log'), 'ab') as log_file:
-            subprocess.Popen(args, cwd=str(settings.BASE_DIR), stdout=log_file,
-                             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                             close_fds=True, start_new_session=True)
-    except OSError:
-        file.unlink(missing_ok=True)
-        messages.error(request, 'Could not start tracking.')
-        return redirect('order_tracker')
-    jobs = request.session.get('demo_sync_jobs_v1', [])[-9:]
-    jobs.append(job_id)
-    request.session['demo_sync_jobs_v1'] = jobs
-    return redirect('order_tracker_jsoncargo_sync_progress', job_id=job_id)
-
-
-
+    # Never launch the production management command from a demo request.
+    # It writes tracking results into the source company's records.
+    eligible = OrderContainer.objects.filter(company=source, is_archived=False).exclude(status__iexact='Delivered')
+    if owner:
+        eligible = eligible.filter(assigned_to__iexact=owner)
+    if customer:
+        eligible = eligible.filter(customer_name__iexact=customer)
+    if city:
+        eligible = eligible.filter(location_name__icontains=city)
+    eligible = eligible.exclude(container_number='')[:50]
+    count = 0
+    for c in eligible:
+        try:
+            success, _ = _demo_api_lookup(request, c, source)
+            count += bool(success)
+        except Exception:
+            pass
+    messages.info(request, f'Demo tracking results saved for {count} container(s) in this session.')
+    return redirect('order_tracker')
 
 
