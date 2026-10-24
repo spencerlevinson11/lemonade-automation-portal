@@ -184,3 +184,36 @@ class DemoTrackerSecurityTests(TestCase):
         self.assertEqual(OrderContainer.objects.filter(company=self.source_company).count(), 1)
         self.assertEqual(OrderContainer.objects.filter(company=self.demo_company).count(), 0)
 
+
+
+class DemoCheckboxSaveTests(TestCase):
+    def setUp(self):
+        users = get_user_model()
+        self.owner = users.objects.create_user(username='Retrieverpackaging', password='test')
+        self.demo = users.objects.create_user(username='LemonadeStandEx', password='test')
+        self.source = Company.objects.create(owner=self.owner, name='Source Company')
+        self.demo_company = Company.objects.create(owner=self.demo, name='Demo Company')
+        self.order = OrderContainer.objects.create(company=self.source, customer_name='Private Customer', status='In Transit')
+        self.client.force_login(self.demo)
+
+    def test_checkbox_persists_across_dashboard_loads_without_source_write(self):
+        from core.demo_tracker import SESSION_KEY
+        url = reverse('order_tracker_demo_checkbox')
+        response = self.client.post(url, {'container_id': str(self.order.pk), 'checked': '1'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'ok': True, 'checked': True})
+        self.assertTrue(self.client.session[SESSION_KEY][str(self.order.pk)]['checked'])
+        self.client.get(reverse('order_tracker'))
+        self.assertTrue(self.client.session[SESSION_KEY][str(self.order.pk)]['checked'])
+        self.order.refresh_from_db()
+        self.assertFalse(self.order.tracker_checked)
+        response = self.client.post(url, {'container_id': str(self.order.pk), 'checked': '0'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.json()['checked'], False)
+        self.order.refresh_from_db()
+        self.assertFalse(self.order.tracker_checked)
+
+    def test_invalid_id_rejected_as_json(self):
+        response = self.client.post(reverse('order_tracker_demo_checkbox'), {'container_id': 'bad', 'checked': '1'})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()['ok'])
+
