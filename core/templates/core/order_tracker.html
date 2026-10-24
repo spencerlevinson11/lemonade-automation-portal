@@ -185,6 +185,32 @@
       height: 100%;
       display: block;
     }
+    .shipment-map-zoom-controls {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .shipment-map-zoom-controls button {
+      min-width: 38px;
+      min-height: 36px;
+      padding: 5px 8px;
+      border: 1px solid #b7c9da;
+      border-radius: 7px;
+      background: rgba(255,255,255,.96);
+      color: #172b46;
+      font-weight: 800;
+      font-size: 18px;
+      cursor: pointer;
+      box-shadow: 0 1px 5px rgba(15,23,42,.15);
+    }
+    .shipment-map-zoom-controls button:disabled { opacity: .4; cursor: default; }
+    .shipment-map-zoom-controls button:last-child { font-size: 12px; }
+    #shipmentProgressMap svg { touch-action: none; cursor: grab; }
+    #shipmentProgressMap svg.is-panning { cursor: grabbing; }
     .map-legend {
       display:flex;
       gap:12px;
@@ -941,6 +967,82 @@
       svg.setAttribute('aria-label', 'Estimated shipment routes between selected origins and destinations');
       mapEl.insertBefore(svg, popupEl || null);
 
+      // Zooming changes only the SVG viewport: basemap, arcs and shipment markers
+      // stay in the same coordinate system and retain their original positions.
+      let viewport = { x: 0, y: 0, w: width, h: height };
+      const minScale = 1;
+      const maxScale = 8;
+      const limit = (n, a, b) => Math.max(a, Math.min(b, n));
+      const zoomControls = document.createElement('div');
+      zoomControls.className = 'shipment-map-zoom-controls';
+      zoomControls.setAttribute('role', 'group');
+      zoomControls.setAttribute('aria-label', 'Map zoom controls');
+      const makeZoomButton = (label, title) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.title = title;
+        button.setAttribute('aria-label', title);
+        zoomControls.appendChild(button);
+        return button;
+      };
+      const zoomInButton = makeZoomButton('+', 'Zoom in');
+      const zoomOutButton = makeZoomButton('−', 'Zoom out');
+      const resetZoomButton = makeZoomButton('Reset', 'Reset map zoom and position');
+      mapEl.appendChild(zoomControls);
+      const applyViewport = () => {
+        viewport.w = limit(viewport.w, width / maxScale, width / minScale);
+        viewport.h = viewport.w * height / width;
+        viewport.x = limit(viewport.x, 0, width - viewport.w);
+        viewport.y = limit(viewport.y, 0, height - viewport.h);
+        svg.setAttribute('viewBox', `${viewport.x} ${viewport.y} ${viewport.w} ${viewport.h}`);
+        zoomInButton.disabled = viewport.w <= width / maxScale + 0.01;
+        zoomOutButton.disabled = viewport.w >= width - 0.01;
+        resetZoomButton.disabled = viewport.w >= width - 0.01 && viewport.x === 0 && viewport.y === 0;
+      };
+      const zoomAt = (factor, fractionX = .5, fractionY = .5) => {
+        const nextW = limit(viewport.w / factor, width / maxScale, width);
+        const nextH = nextW * height / width;
+        viewport.x += fractionX * (viewport.w - nextW);
+        viewport.y += fractionY * (viewport.h - nextH);
+        viewport.w = nextW;
+        viewport.h = nextH;
+        applyViewport();
+      };
+      zoomInButton.addEventListener('click', () => zoomAt(1.5));
+      zoomOutButton.addEventListener('click', () => zoomAt(1 / 1.5));
+      resetZoomButton.addEventListener('click', () => {
+        viewport = { x: 0, y: 0, w: width, h: height };
+        applyViewport();
+      });
+      svg.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        const rect = svg.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        zoomAt(event.deltaY < 0 ? 1.2 : 1 / 1.2,
+          limit((event.clientX - rect.left) / rect.width, 0, 1),
+          limit((event.clientY - rect.top) / rect.height, 0, 1));
+      }, { passive: false });
+      let panStart = null;
+      svg.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 || viewport.w >= width) return;
+        panStart = { x: event.clientX, y: event.clientY, vx: viewport.x, vy: viewport.y };
+        svg.setPointerCapture(event.pointerId);
+        svg.classList.add('is-panning');
+      });
+      svg.addEventListener('pointermove', (event) => {
+        if (!panStart) return;
+        const rect = svg.getBoundingClientRect();
+        viewport.x = panStart.vx - (event.clientX - panStart.x) * viewport.w / rect.width;
+        viewport.y = panStart.vy - (event.clientY - panStart.y) * viewport.h / rect.height;
+        applyViewport();
+      });
+      const stopPan = () => { panStart = null; svg.classList.remove('is-panning'); };
+      svg.addEventListener('pointerup', stopPan);
+      svg.addEventListener('pointercancel', stopPan);
+      svg.addEventListener('lostpointercapture', stopPan);
+      applyViewport();
+
       const add = (tag, attrs = {}, parent = svg) => {
         const el = document.createElementNS(svgNS, tag);
         Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, String(value)));
@@ -1149,6 +1251,199 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
