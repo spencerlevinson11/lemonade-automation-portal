@@ -15,6 +15,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from xml.sax.saxutils import escape
 from .models import Automation, Company, OrderContainer, OrderContainerLine
 from .demo_tracker import is_demo_user, DEMO_CREATED_KEY, DEMO_ID_START
+from .services.tracker_customer_options import is_retriever_company
 
 FIELDS = ('customer_name', 'location_name', 'po_number', 'rpc_number', 'container_number',
           'booking_number', 'bill_of_lading_number', 'assigned_to', 'origin_country',
@@ -76,7 +77,7 @@ def _extract(post):
     return values, items, errors
 
 
-def _pdf(company_name, values, items):
+def _pdf(company_name, values, items, *, is_retriever=False):
     output = BytesIO()
     doc = SimpleDocTemplate(output, pagesize=letter, rightMargin=45, leftMargin=45, topMargin=48, bottomMargin=45)
     styles = getSampleStyleSheet()
@@ -84,7 +85,7 @@ def _pdf(company_name, values, items):
     safe = lambda v: escape(str(v or ''))
     story = [Paragraph('PURCHASE ORDER', styles['Title']), Spacer(1, 10), Paragraph(safe(company_name), styles['Heading2']), Spacer(1, 12)]
     pairs = [('Customer', values['customer_name']), ('Destination / Location', values['location_name']),
-             ('PO Number', values['po_number']), ('Order Reference / RPC', values['rpc_number']),
+             ('PO Number', values['po_number']), ('RPC#' if is_retriever else 'Order ID', values['rpc_number']),
              ('Container', values['container_number']), ('Booking', values['booking_number']),
              ('B/L', values['bill_of_lading_number']), ('Owner', values['assigned_to']),
              ('Origin', values['origin_country']), ('Status', values['status']),
@@ -113,10 +114,10 @@ def _pdf(company_name, values, items):
 def generate_new_order_view(request):
     company = _authorized_company(request)
     if request.method == 'GET':
-        return render(request, 'core/generate_new_order.html', {'company': company, 'demo_mode': is_demo_user(request.user)})
+        return render(request, 'core/generate_new_order.html', {'company': company, 'demo_mode': is_demo_user(request.user), 'tracker_is_retriever': is_retriever_company(company) and not is_demo_user(request.user)})
     values, items, errors = _extract(request.POST)
     if errors:
-        return render(request, 'core/generate_new_order.html', {'company':company, 'errors':errors,'values':values,'items':items,'demo_mode':is_demo_user(request.user)},status=400)
+        return render(request, 'core/generate_new_order.html', {'company':company, 'errors':errors,'values':values,'items':items,'demo_mode':is_demo_user(request.user), 'tracker_is_retriever': is_retriever_company(company) and not is_demo_user(request.user)},status=400)
     if is_demo_user(request.user):
         created = dict(request.session.get(DEMO_CREATED_KEY, {}))
         if len(created) >= 100:
@@ -135,7 +136,7 @@ def generate_new_order_view(request):
             order_fields['status'] = values['status'] or 'Booked'
             order = OrderContainer.objects.create(company=company, created_by=request.user, **order_fields, notes=values['notes'])
             OrderContainerLine.objects.bulk_create([OrderContainerLine(container=order,item_description=i['description'],pallets=i['pallets'],units_per_pallet=i['units_per_pallet'],total_units=i['quantity']) for i in items])
-    pdf = _pdf('Demo Company' if is_demo_user(request.user) else company.name, values, items)
+    pdf = _pdf('Demo Company' if is_demo_user(request.user) else company.name, values, items, is_retriever=is_retriever_company(company) and not is_demo_user(request.user))
     response=HttpResponse(pdf, content_type='application/pdf')
     filename = ''.join(ch for ch in (values['po_number'] or 'new-order') if ch.isalnum() or ch in '-_')[:65] or 'new-order'
     response['Content-Disposition'] = f'attachment; filename="{filename}.pdf"'
