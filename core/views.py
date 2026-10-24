@@ -5133,8 +5133,13 @@ def order_tracker_view(request):
         company = get_object_or_404(Company, owner=user)
         containers = OrderContainer.objects.filter(company=company).prefetch_related("tags")
 
-    # Archived containers should not appear on the main tracker.
-    containers = containers.filter(is_archived=False)
+    # Archived records appear only if this demo session explicitly restored them.
+    if demo_mode:
+        restored_ids = [int(pk) for pk, edit in request.session.get(SESSION_KEY, {}).items()
+                        if edit.get('archived') is False and str(pk).isdigit()]
+        containers = containers.filter(Q(is_archived=False) | Q(pk__in=restored_ids))
+    else:
+        containers = containers.filter(is_archived=False)
 
     q = (request.GET.get("q") or "").strip()
     status = (request.GET.get("status") or "").strip()
@@ -5213,6 +5218,8 @@ def order_tracker_view(request):
         active_containers, delivered_containers = make_demo_containers(
             request, active_containers, delivered_containers
         )
+        active_containers = [c for c in active_containers if not c.is_archived]
+        delivered_containers = [c for c in delivered_containers if not c.is_archived]
         # Session-only Quick Add containers are never inserted into the database.
         from core.demo_tracker import _session_created, _demo_container
         for demo_pk in _session_created(request):
@@ -5220,6 +5227,8 @@ def order_tracker_view(request):
             demo_row.latest_tracking_update = None
             demo_row.latest_pending_tracking_update = None
             demo_row.latest_jsoncargo_display_text = ''
+            if request.session.get(SESSION_KEY, {}).get(str(demo_pk), {}).get('archived', False):
+                continue
             if (demo_row.status or '').casefold() == 'delivered':
                 delivered_containers.append(demo_row)
             else:
@@ -7154,6 +7163,9 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
 
 
 
