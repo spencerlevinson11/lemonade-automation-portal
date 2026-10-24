@@ -1,5 +1,45 @@
-<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Generate New Order</title></head><body style='background:#f3f6fa;font:15px Arial,sans-serif;color:#17354e'>
-<style>.order-page{max-width:1000px;margin:24px auto;padding:26px;background:#fff;border:1px solid #dde5ed;border-radius:14px}.order-page input,.order-page textarea{width:100%;padding:9px;border:1px solid #c8d3df;border-radius:6px;box-sizing:border-box}.order-page label{display:block;font-weight:600;margin-bottom:6px}.order-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}.order-page table{width:100%;border-collapse:collapse}.order-page th,.order-page td{padding:5px;text-align:left}.order-page button{cursor:pointer;padding:10px 16px;border:0;border-radius:7px;background:#124a75;color:#fff}.order-page .secondary{background:#657688}.errors{color:#9c2626}</style>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Generate New Order | Lemonade Stand</title>
+<style>
+:root {color-scheme:dark;--bg-main:#020617;--bg-card:#0b1120;--accent:#facc15;--text-main:#e5e7eb;--text-muted:#9ca3af;--border-subtle:#263247;--input:rgba(2,6,23,.6);}
+*{box-sizing:border-box}
+body{margin:0;padding:20px 14px 50px;font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at top,rgba(250,204,21,.13),transparent 55%) var(--bg-main);color:var(--text-main);-webkit-font-smoothing:antialiased}
+a{color:#fde68a;text-decoration:none}a:hover{text-decoration:underline}
+.order-page{max-width:1120px;margin:10px auto;padding:clamp(18px,3vw,34px);background:rgba(11,17,32,.94);border:1px solid var(--border-subtle);border-radius:16px;box-shadow:0 22px 60px rgba(0,0,0,.3)}
+.order-page h1{font-size:clamp(24px,3vw,30px);line-height:1.2;letter-spacing:-.035em;margin:0 0 9px;font-weight:750}
+.order-page h2{font-size:17px;letter-spacing:-.02em;margin:30px 0 7px;padding-top:20px;border-top:1px solid var(--border-subtle)}
+.order-page p{color:var(--text-muted);margin:0 0 20px}
+.order-page p strong{color:#fde68a}
+.order-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:15px 18px;margin:22px 0}
+.order-page label{display:block;font-size:13px;font-weight:600;color:#cbd5e1;margin-bottom:0}
+.order-page input,.order-page textarea{display:block;width:100%;margin-top:6px;padding:10px 11px;min-height:40px;border:1px solid rgba(148,163,184,.28);border-radius:10px;box-sizing:border-box;background:var(--input);color:var(--text-main);font:inherit;outline:none;transition:border-color .14s,box-shadow .14s}
+.order-page input:focus,.order-page textarea:focus{border-color:#facc15;box-shadow:0 0 0 3px rgba(250,204,21,.11)}
+.order-page input[type=date]{color-scheme:dark}
+.order-page table{width:100%;border-collapse:collapse;min-width:760px}
+.order-page th,.order-page td{padding:10px 7px;text-align:left;border-bottom:1px solid rgba(148,163,184,.15);vertical-align:middle}
+.order-page th{color:var(--text-muted);font-size:12px;font-weight:700;white-space:nowrap}
+.order-page td input{min-width:78px;margin:0}
+.order-page button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;gap:6px;padding:8px 13px;border:1px solid rgba(250,204,21,.32);border-radius:9px;background:rgba(250,204,21,.075);color:#fde68a;font:inherit;font-size:13px;font-weight:600;line-height:1.25;cursor:pointer;transition:background-color .14s,border-color .14s,box-shadow .14s,transform .14s}
+.order-page button:hover{background:rgba(250,204,21,.15);border-color:rgba(250,204,21,.58);box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.order-page button:active{transform:translateY(1px)}
+.order-page button:focus-visible,.order-page a:focus-visible{outline:2px solid #facc15;outline-offset:3px}
+.order-page button.secondary{background:rgba(148,163,184,.06);border-color:rgba(148,163,184,.28);color:#cbd5e1}
+.order-page button.secondary:hover{background:rgba(148,163,184,.14);border-color:rgba(148,163,184,.5)}
+.order-page button[type=submit]{background:#facc15;color:#111827;border-color:#facc15;font-weight:750}
+.order-page button[type=submit]:hover{background:#fde047;border-color:#fde047}
+.order-page .errors{padding:12px 16px;border:1px solid rgba(249,115,115,.4);border-radius:10px;background:rgba(127,29,29,.18);color:#fecaca;margin:18px 0}
+.order-page .errors ul{margin:7px 0 0;padding-left:20px}
+.order-page p:has(>label){margin-top:23px}
+.order-page p:has(>label) label{margin-bottom:12px}
+@media(max-width:650px){body{padding:10px 8px 30px}.order-page{padding:18px}.order-grid{grid-template-columns:1fr}.order-page h1{font-size:24px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
+</style>
+</head>
+<body>
 <div class="order-page"><h1>Generate New Order</h1><p>Create a generic purchase order PDF and add its container to your Order Tracker. {% if demo_mode %}<strong>Demo mode: orders remain temporary until logout.</strong>{% endif %}</p>
 {% if errors %}<div class="errors"><strong>Check the following:</strong><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
 <form method="post" action="{% url 'generate_new_order' %}">{% csrf_token %}
