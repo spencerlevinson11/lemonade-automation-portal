@@ -129,6 +129,50 @@ def demo_customer_aliases(source):
     return _safe_name_map([type('NameOnly', (), {'customer_name': name})() for name in names])
 
 
+# Shared, deterministic demonstration-only product aliases. The map is based on
+# descriptions, not order position, so the same item uses the same color in the
+# editor and in exported recaps (including when dashboard filters change).
+DEMO_ITEM_COLORS = (
+    'Red', 'Blue', 'Green', 'Yellow', 'Orange', 'Purple', 'Pink',
+    'Turquoise', 'Violet', 'Indigo', 'Teal', 'Coral', 'Amber',
+    'Crimson', 'Lavender', 'Mint', 'Magenta', 'Cyan', 'Maroon',
+    'Olive', 'Navy', 'Gold', 'Silver', 'Burgundy', 'Lilac',
+    'Peach', 'Aqua', 'Rose', 'Sage', 'Copper', 'Bronze',
+    'Ivory', 'Charcoal', 'Scarlet', 'Emerald', 'Ruby',
+    'Sapphire', 'Jade', 'Plum', 'Mustard', 'Periwinkle',
+    'Fuchsia', 'Cerulean', 'Ochre', 'Mauve', 'Sand',
+)
+
+
+def demo_item_aliases(source):
+    """Map all source-company item descriptions to unique generic colors."""
+    from .models import OrderContainerLine
+    if source is None:
+        return {}
+    descriptions = (OrderContainerLine.objects.filter(container__company=source)
+                    .values_list('item_description', flat=True).distinct())
+    names = sorted({(name or '').strip() for name in descriptions if (name or '').strip()},
+                   key=lambda name: (name.casefold(), name))
+    return {name: (DEMO_ITEM_COLORS[i % len(DEMO_ITEM_COLORS)] +
+                   (f' {i // len(DEMO_ITEM_COLORS) + 1}' if i >= len(DEMO_ITEM_COLORS) else ''))
+            for i, name in enumerate(names)}
+
+
+def demo_item_alias(description, aliases):
+    """Cover new demo-only items too, without leaking a user's typed name."""
+    import hashlib
+    label = (description or '').strip()
+    if not label:
+        return ''
+    if label in aliases.values():
+        return label  # already anonymized in a temporary edit
+    if label in aliases:
+        return aliases[label]
+    # Stable fallback for new demo-only descriptions; no raw name is displayed.
+    digest = hashlib.sha256(label.casefold().encode('utf-8')).hexdigest()
+    return f'{DEMO_ITEM_COLORS[int(digest[:8], 16) % len(DEMO_ITEM_COLORS)]} {int(digest[8:12], 16):04X}'
+
+
 def _snapshot(request):
     source = _source_company()
     if source is None:
@@ -615,8 +659,9 @@ def demo_order_detail(request, pk):
                 change.pop(key, None)
             change['fields'] = stored
             # Store only the order line fields as harmless JSON-compatible values.
+            item_aliases = demo_item_aliases(source)
             change['lines'] = [
-                {'item_description': f.cleaned_data.get('item_description',''),
+                {'item_description': demo_item_alias(f.cleaned_data.get('item_description',''), item_aliases),
                  'pallets': f.cleaned_data.get('pallets') or 0,
                  'units_per_pallet': f.cleaned_data.get('units_per_pallet') or 0}
                 for f in lines.forms if f.cleaned_data and not f.cleaned_data.get('DELETE')
@@ -630,6 +675,12 @@ def demo_order_detail(request, pk):
     else:
         form = OrderContainerForm(instance=container, company=demo_company)
         lines = LineFormSet(instance=original, prefix='lines')
+        item_aliases = demo_item_aliases(source)
+        # Never let the real item descriptions into the HTML form values.
+        for line_form in lines.forms:
+            original_desc = line_form.initial.get('item_description')
+            if original_desc:
+                line_form.initial['item_description'] = demo_item_alias(original_desc, item_aliases)
         if 'lines' in change:
             # Display session-modified lines via an unbound formset's initial values.
             initial_lines = change['lines']
@@ -788,6 +839,7 @@ def demo_recap_containers(request):
 
     aliases = demo_customer_aliases(source)
     overrides = request.session.get(SESSION_KEY, {})
+    item_aliases = demo_item_aliases(source)
     rows = []
     originals = (OrderContainer.objects.filter(company=source, is_archived=False)
                  .prefetch_related('lines'))
@@ -804,6 +856,10 @@ def demo_recap_containers(request):
             ) for line in raw]
         else:
             line_rows = [copy(line) for line in original_lines]
+        # The recap is generated only from detached objects; replace all
+        # item descriptions before handing them to the regular DOCX renderer.
+        for line in line_rows:
+            line.item_description = demo_item_alias(line.item_description, item_aliases)
         # A prefetched line relation may use Django's relation descriptor;
         # assign a per-instance cached collection instead of touching the DB.
         clone._prefetched_objects_cache = {'lines': _DemoRecapLineCollection(line_rows)}
@@ -842,6 +898,7 @@ def demo_recap_containers(request):
         attach_lines(row, [], change)
         rows.append(row)
     return rows
+
 
 
 
