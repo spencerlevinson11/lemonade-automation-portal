@@ -149,7 +149,6 @@
         <a class="btn2" href="{% url 'order_tracker' %}">← Back</a>
 
         {% if container %}
-          {% if not demo_mode %}<a class="btn" href="{% url 'order_container_commercial_invoice' container.id %}">Commercial invoice</a>{% endif %}
 
           <form method="post" action="{% if demo_mode %}{% url 'order_tracker_demo_track' container.id %}{% else %}{% url 'order_container_sync_jsoncargo' container.id %}{% endif %}"
                 onsubmit="return confirm('Track only this container with JSONCargo?');"
@@ -858,6 +857,8 @@
   </div>
 </body>
 </html>
+
+
 
 
 
