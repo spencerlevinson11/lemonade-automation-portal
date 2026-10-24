@@ -21,29 +21,6 @@ class Command(BaseCommand):
         parser.add_argument('--status-file', required=True)
 
     def handle(self, *args, **options):
-        path = Path(options['status_file'])"""JSONCargo demo bulk sync worker: shares source tracking updates, never demo edits."""
-import json
-import os
-from pathlib import Path
-from django.core.management.base import BaseCommand
-from core.models import Company, OrderContainer
-from core.services.jsoncargo_accounts import api_key_for_user
-from core.services.jsoncargo_order_tracker import sync_one_container
-
-
-def save_status(path, data):
-    temp = path.with_suffix('.tmp')
-    temp.write_text(json.dumps(data), encoding='utf-8')
-    os.replace(temp, path)
-
-
-class Command(BaseCommand):
-    help = 'Sync demo-selected source containers through the shared Retriever JSONCargo tracking pipeline.'
-
-    def add_arguments(self, parser):
-        parser.add_argument('--status-file', required=True)
-
-    def handle(self, *args, **options):
         path = Path(options['status_file'])
         status = json.loads(path.read_text(encoding='utf-8'))
         if not status.get('demo_only'):
@@ -97,4 +74,5 @@ class Command(BaseCommand):
             status['state'] = 'error'
             status['message'] = 'Tracking currently unavailable'
         save_status(path, status)
+
 
