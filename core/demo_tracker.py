@@ -604,3 +604,82 @@ def demo_sync_bulk(request):
     return redirect('order_tracker')
 
 
+
+
+class _DemoRecapLineCollection:
+    """Supply line objects to the existing recap renderer without DB writes."""
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+def demo_recap_containers(request):
+    """Detached, anonymized orders including session edits and Quick Add/PDF orders."""
+    from copy import copy
+    from types import SimpleNamespace
+
+    if not is_demo_user(request.user):
+        raise Http404
+    source = _source_company()
+    if source is None:
+        return []
+
+    aliases = demo_customer_aliases(source)
+    overrides = request.session.get(SESSION_KEY, {})
+    rows = []
+    originals = (OrderContainer.objects.filter(company=source, is_archived=False)
+                 .prefetch_related('lines'))
+
+    def attach_lines(clone, original_lines, change):
+        if 'lines' in change:
+            raw = change['lines']
+            line_rows = [SimpleNamespace(
+                item_description=str(line.get('item_description') or ''),
+                pallets=int(line.get('pallets') or 0),
+                units_per_pallet=int(line.get('units_per_pallet') or 0),
+                total_units=int(line.get('total_units') or
+                                (int(line.get('pallets') or 0) * int(line.get('units_per_pallet') or 0)))
+            ) for line in raw]
+        else:
+            line_rows = [copy(line) for line in original_lines]
+        # A prefetched line relation may use Django's relation descriptor;
+        # assign a per-instance cached collection instead of touching the DB.
+        clone._prefetched_objects_cache = {'lines': _DemoRecapLineCollection(line_rows)}
+
+    for original in originals:
+        row = copy(original)
+        row.customer_name = aliases.get((original.customer_name or '').strip(), 'Customer')
+        row.notes = ''
+        change = overrides.get(str(original.pk), {})
+        for field, value in change.get('fields', {}).items():
+            if field in DEMO_EDITABLE_FIELDS and field != 'customer_name':
+                setattr(row, field, _field_value(field, value))
+        for key, attr in (('owner', 'assigned_to'), ('origin', 'origin_country'),
+                          ('status', 'status'), ('eta', 'eta'),
+                          ('eta_city', 'eta_city'),
+                          ('estimated_delivery_date', 'estimated_delivery_date')):
+            if key in change:
+                setattr(row, attr, _field_value(attr, change[key]))
+        attach_lines(row, list(original.lines.all()), change)
+        rows.append(row)
+
+    for pk, data in _session_created(request).items():
+        row = OrderContainer(pk=int(pk), company=source)
+        for field in DEMO_EDITABLE_FIELDS:
+            if field in data:
+                setattr(row, field, _field_value(field, data[field]))
+        change = overrides.get(str(pk), {})
+        for field, value in change.get('fields', {}).items():
+            if field in DEMO_EDITABLE_FIELDS:
+                setattr(row, field, _field_value(field, value))
+        for key, attr in (('owner', 'assigned_to'), ('origin', 'origin_country'),
+                          ('status', 'status'), ('eta', 'eta'),
+                          ('estimated_delivery_date', 'estimated_delivery_date')):
+            if key in change:
+                setattr(row, attr, _field_value(attr, change[key]))
+        attach_lines(row, [], change)
+        rows.append(row)
+    return rows
+
