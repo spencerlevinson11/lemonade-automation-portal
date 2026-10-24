@@ -130,7 +130,7 @@
           </div>
           <div style="display:flex; gap:10px;">
             <button class="btn" type="submit">Filter</button>
-            <a class="btn" href="{% url 'order_tracker_archived' %}">Reset</a>
+            <a class="btn" href="{% if demo_mode %}{% url 'order_tracker_demo_archived' %}{% else %}{% url 'order_tracker_archived' %}{% endif %}">Reset</a>
           </div>
         </div>
       </form>
@@ -172,11 +172,11 @@
             <tr>
               <td>
                 <div style="font-weight:800;">
-                  <a href="{% url 'order_container_edit' container_id=c.id %}">
+                  <a href="{% if demo_mode %}{% url 'order_tracker_demo_detail' c.id %}{% else %}{% url 'order_container_edit' container_id=c.id %}{% endif %}">
                     {{ c.customer_name }}{% if c.location_name %} • {{ c.location_name }}{% endif %}
                   </a>
                 </div>
-                {% if c.tags.all %}
+                {% if not demo_mode and c.tags.all %}
                   <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
                     {% for tag in c.tags.all %}
                       <span class="badge" style="background: {{ tag.color }}; border-color: {{ tag.color }}; color: #fff;">{{ tag.name }}</span>
@@ -216,14 +216,14 @@
               <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
               <td class="muted" style="font-size:0.85rem;">{% if c.archived_at %}{{ c.archived_at|date:"Y-m-d" }}{% else %}—{% endif %}</td>
               <td>
-                <form method="post" action="{% url 'order_container_unarchive' c.id %}" style="display:inline;">
+                {% if demo_mode %}<form method="post" action="{% url 'order_tracker_demo_archive' c.id %}" style="display:inline;"><input type="hidden" name="action" value="unarchive">{% else %}<form method="post" action="{% url 'order_container_unarchive' c.id %}" style="display:inline;">{% endif %}
                   {% csrf_token %}
                   <button class="btn" type="submit" onclick="return confirm('Unarchive this order and return it to the tracker?');">Unarchive</button>
                 </form>
-                <form method="post" action="{% url 'order_container_delete' c.id %}" style="display:inline; margin-left:8px;">
+                {% if not demo_mode %}<form method="post" action="{% url 'order_container_delete' c.id %}" style="display:inline; margin-left:8px;">
                   {% csrf_token %}
                   <button class="btn btn-danger" type="submit" onclick="return confirm('Permanently delete this archived order? This cannot be undone.');">Delete</button>
-                </form>
+                </form>{% endif %}
               </td>
             </tr>
           {% empty %}
