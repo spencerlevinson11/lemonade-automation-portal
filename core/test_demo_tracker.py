@@ -36,7 +36,7 @@ class DemoTrackerSecurityTests(TestCase):
     def test_demo_cannot_invoke_production_tracking_or_export(self):
         self.assertEqual(self.client.post(reverse('order_tracker_jsoncargo_sync')).status_code, 403)
         self.assertEqual(self.client.post(reverse('order_container_sync_jsoncargo', args=[self.order.pk])).status_code, 403)
-        self.assertEqual(self.client.get(reverse('order_tracker_recap_docx')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('order_tracker_recap_docx')).status_code, 200)
 
     def test_matching_dashboard_and_demo_edits_are_isolated(self):
         response = self.client.get(reverse('order_tracker'))
@@ -117,3 +117,39 @@ class DemoTrackerSecurityTests(TestCase):
             args = process.call_args.args[0]
             self.assertEqual(args[args.index('--customer') + 1], 'Private Customer')
             self.assertEqual(args[args.index('--sync-scope') + 1], 'customer_city')
+
+    def test_demo_recap_uses_session_edits_and_never_updates_source(self):
+        from io import BytesIO
+        from docx import Document
+        from core.demo_tracker import DEMO_CREATED_KEY, SESSION_KEY
+        self.client.post(reverse('order_tracker_demo_action'), {
+            'action': 'edit', 'container_id': str(self.order.pk),
+            'owner': 'Demo Owner', 'status': 'Demo Status',
+        })
+        session = self.client.session
+        edits = session.get(SESSION_KEY, {})
+        edits[str(self.order.pk)]['lines'] = [
+            {'item_description': 'Demo-only contents', 'pallets': 2,
+             'units_per_pallet': 10, 'total_units': 20}
+        ]
+        session[SESSION_KEY] = edits
+        session[DEMO_CREATED_KEY] = {
+            '2000000000': {'customer_name': 'Test Demo Customer',
+                           'location_name': 'Demoville', 'po_number': 'DEMO-100',
+                           'rpc_number': 'DEMO-RPC', 'status': 'Booked'}
+        }
+        session.save()
+        response = self.client.get(reverse('order_tracker_recap_docx'))
+        self.assertEqual(response.status_code, 200)
+        content = b''.join(response.streaming_content)
+        doc = Document(BytesIO(content))
+        text = '\n'.join(p.text for p in doc.paragraphs)
+        self.assertIn('Demo Status', text)
+        self.assertIn('Demo-only contents', text)
+        self.assertIn('DEMO-100', text)
+        self.assertIn('Demoville', text)
+        self.assertNotIn('Private Customer', text)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'In Transit')
+        self.assertEqual(OrderContainer.objects.filter(company=self.source_company).count(), 1)
+        self.assertEqual(OrderContainer.objects.filter(company=self.demo_company).count(), 0)
