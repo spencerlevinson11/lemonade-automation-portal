@@ -20,6 +20,7 @@ class DemoTrackerIsolationMiddleware:
                     path == '/automations/orders/demo/create/' or
                     path == '/automations/orders/demo/reset/' or
                     path == '/automations/orders/demo/sync/' or
+                    path == '/automations/orders/recap.docx' or
                     path.startswith('/automations/orders/demo/track/') or
                     (path.startswith('/automations/orders/sync-jsoncargo/') and
                      path.split('/')[4] in request.session.get('demo_sync_jobs_v1', []))
