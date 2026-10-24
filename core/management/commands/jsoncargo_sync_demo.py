@@ -1,14 +1,11 @@
-"""JSONCargo demo bulk sync worker: writes ONLY to a temporary status file."""
+"""JSONCargo demo bulk sync worker: shares source tracking updates, never demo edits."""
 import json
 import os
 from pathlib import Path
 from django.core.management.base import BaseCommand
 from core.models import Company, OrderContainer
 from core.services.jsoncargo_accounts import api_key_for_user
-from core.services.jsoncargo_order_tracker import (
-    _attempt_container_lookup, _jsoncargo_data, _extract_eta_city,
-    tracking_reference_for_jsoncargo,
-)
+from core.services.jsoncargo_order_tracker import sync_one_container
 
 
 def save_status(path, data):
@@ -18,7 +15,7 @@ def save_status(path, data):
 
 
 class Command(BaseCommand):
-    help = 'Track demo containers without writing to production order/tracking tables.'
+    help = 'Sync demo-selected source containers through the shared Retriever JSONCargo tracking pipeline.'
 
     def add_arguments(self, parser):
         parser.add_argument('--status-file', required=True)
@@ -44,23 +41,27 @@ class Command(BaseCommand):
                     else:
                         status['current'] = container.container_number
                         save_status(path, status)
-                        tracking, err, _ = _attempt_container_lookup(
-                            tracking_reference=tracking_reference_for_jsoncargo(container),
-                            api_key=api_key,
-                            shipping_line=container.jsoncargo_shipping_line_param(),
-                        )
-                        if err:
-                            result = {'kind': 'error', 'status': 'pending', 'eta': '', 'city': '',
-                                      'message': 'Tracking lookup returned an error.', 'record_id': 0}
+                        # Same source object, credentials, retry/fallback rules,
+                        # persistence and per-container advisory lock as Retriever.
+                        outcome, update = sync_one_container(container, api_key=api_key)
+                        if outcome == 'skipped_in_progress':
+                            status['skipped'] += 1
+                            continue
+                        if update is None:
+                            status['skipped'] += 1
+                            continue
+                        if update.kind == 'error':
                             status['errors'] += 1
+                        elif outcome in ('skipped_no_data',):
+                            status['skipped'] += 1
                         else:
-                            eta, city = _extract_eta_city(_jsoncargo_data(tracking))
-                            result = {'kind': 'change', 'status': 'pending',
-                                      'eta': str(eta) if eta else '', 'city': str(city or '')[:160],
-                                      'message': '', 'record_id': 0,
-                                      'container_status': str(_jsoncargo_data(tracking).get('container_status') or '')[:120]}
                             status['updated'] += 1
-                        result['demo_only'] = True
+                        result = {
+                            'kind': update.kind, 'status': update.status,
+                            'eta': str(update.proposed_eta or ''),
+                            'city': str(update.proposed_eta_city or '')[:160],
+                            'message': '', 'record_id': update.pk,
+                        }
                         status['results'][str(pk)] = result
                 except Exception:
                     status['errors'] += 1
@@ -73,3 +74,4 @@ class Command(BaseCommand):
             status['state'] = 'error'
             status['message'] = 'Demo tracking failed. Check the background job log.'
         save_status(path, status)
+
