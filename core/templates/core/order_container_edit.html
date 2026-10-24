@@ -249,7 +249,7 @@
           <div class="field"><label>Shipment origin country</label>{{ form.origin_country }}{{ form.origin_country.errors }}<div class="muted tiny">Set a country for each shipment. The map supports common shipping origins.</div></div>
           {% else %}{{ form.origin_country }}{% endif %}
           <div class="field">
-            <label>RPC#</label>
+            <label>{% if tracker_is_retriever %}RPC#{% else %}Order ID{% endif %}</label>
             {{ form.rpc_number }}
             {{ form.rpc_number.errors }}
           </div>
@@ -857,6 +857,8 @@
   </div>
 </body>
 </html>
+
+
 
 
 
