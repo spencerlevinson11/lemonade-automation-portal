@@ -15,6 +15,36 @@ class DemoTrackerSecurityTests(TestCase):
         self.order = OrderContainer.objects.create(company=self.source_company, customer_name='Private Customer', status='In Transit', origin_country='Netherlands')
         self.client.force_login(self.demo)
 
+    def test_demo_archived_view_redacts_and_temporary_unarchive(self):
+        self.order.is_archived = True
+        self.order.status = 'Delivered'
+        self.order.save(update_fields=['is_archived', 'status'])
+        url = reverse('order_tracker_demo_archived')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Customer')
+        self.assertNotContains(response, 'Private Customer')
+        self.assertContains(response, 'Unarchive')
+        response = self.client.post(reverse('order_tracker_demo_archive', args=[self.order.pk]),
+                                    {'action': 'unarchive'})
+        self.assertEqual(response.status_code, 302)
+        self.order.refresh_from_db()
+        self.assertTrue(self.order.is_archived)
+        self.assertContains(self.client.get(reverse('order_tracker')), 'Customer')
+        self.assertNotContains(self.client.get(reverse('order_tracker_demo_archived')), 'Private Customer')
+
+    def test_demo_archive_is_session_only(self):
+        self.order.status = 'Delivered'
+        self.order.save(update_fields=['status'])
+        self.client.post(reverse('order_tracker_demo_archive', args=[self.order.pk]), {'action': 'archive'})
+        self.order.refresh_from_db()
+        self.assertFalse(self.order.is_archived)
+        self.assertNotContains(self.client.get(reverse('order_tracker')), 'Private Customer')
+        self.assertContains(self.client.get(reverse('order_tracker_demo_archived')), 'Customer')
+        self.client.post(reverse('order_tracker_demo_reset'))
+        self.assertNotContains(self.client.get(reverse('order_tracker_demo_archived')), 'Private Customer')
+        self.assertEqual(OrderContainer.objects.get(pk=self.order.pk).is_archived, False)
+
     def test_snapshot_redacts_customer_and_does_not_write(self):
         response = self.client.get(reverse('order_tracker'))
         self.assertEqual(response.status_code, 200)
@@ -153,3 +183,4 @@ class DemoTrackerSecurityTests(TestCase):
         self.assertEqual(self.order.status, 'In Transit')
         self.assertEqual(OrderContainer.objects.filter(company=self.source_company).count(), 1)
         self.assertEqual(OrderContainer.objects.filter(company=self.demo_company).count(), 0)
+
