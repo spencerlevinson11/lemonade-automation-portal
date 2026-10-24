@@ -80,6 +80,7 @@ from .models import (
     CustomerInventoryItem,
 )
 
+from .recap_locations import recap_city
 from .rpc_generation import PER_PALLET, generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
@@ -6070,12 +6071,12 @@ def order_tracker_recap_docx_view(request):
 
         return (3, dt.date.max, "")
 
-    # Location is the outer grouping key. Within each location, requested dates
-    # run soonest-to-latest; ties are ordered by PO#.
+    # Normalize location to the stated city only (ignore state and ZIP).
+    # Within each city, requested dates run soonest-to-latest; ties use PO#.
     containers = sorted(
         list(containers),
         key=lambda c: (
-            (getattr(c, "location_name", "") or "").strip().lower(),
+            recap_city(getattr(c, "location_name", "")).casefold(),
             _requested_date_sort_key(c),
             _natural_text_sort_key(getattr(c, "po_number", None)),
             (getattr(c, "customer_name", "") or "").strip().lower(),
@@ -6112,8 +6113,8 @@ def order_tracker_recap_docx_view(request):
 
     current_location_key = None
     for idx, c in enumerate(containers):
-        location_label = (c.location_name or "").strip() or "Unspecified Location"
-        location_key = location_label.lower()
+        location_label = recap_city(c.location_name)
+        location_key = location_label.casefold()
         if location_key != current_location_key:
             if current_location_key is not None:
                 doc.add_paragraph("")
@@ -7153,6 +7154,13 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
 
 
 
