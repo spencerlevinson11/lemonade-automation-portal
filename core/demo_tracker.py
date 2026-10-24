@@ -690,6 +690,18 @@ def demo_order_detail(request, pk):
                         if field in line_form.fields:
                             line_form.initial[field] = value
 
+    # Shared JSONCargo updates are read from the source tracking table, while
+    # manual demo fields and added containers remain session-only.
+    tracking_snapshot = request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}).get(str(pk))
+    if str(pk) not in _session_created(request) and not request.session.get(DEMO_CLEARED_TRACKING_KEY):
+        latest = OrderContainerTrackingUpdate.objects.filter(container_id=pk).order_by('-created_at', '-id').first()
+        if latest is not None and not (tracking_snapshot and tracking_snapshot.get('demo_only')):
+            tracking_snapshot = {
+                'kind': latest.kind, 'status': latest.status,
+                'eta': str(latest.proposed_eta or ''),
+                'city': str(latest.proposed_eta_city or ''),
+                'message': '', 'record_id': latest.pk,
+            }
     # Never expose raw tags, uploaded documents, or customer-specific API payloads.
     tags = TagFormSet(instance=original, prefix='tags', queryset=OrderContainerTag.objects.none())
     docs = DocFormSet(instance=original, prefix='docs', queryset=OrderContainerDocument.objects.none())
@@ -699,12 +711,11 @@ def demo_order_detail(request, pk):
         'doc_formset': docs, 'tag_formset': tags, 'demo_mode': True,
         'tracker_is_retriever': False,
         'tracker_owner_options': owner_names(demo_company) if demo_company else [],
-        'pending_tracking_update': (DemoTrackingDisplay(request.session[DEMO_TRACKING_SNAPSHOT_KEY][str(pk)])
-            if str(pk) in request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}) else None),
-        'jsoncargo_data': {'container_status': request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}).get(str(pk), {}).get('container_status', '')},
-        'jsoncargo_display_eta': request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}).get(str(pk), {}).get('eta', ''),
-        'jsoncargo_next_destination': request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}).get(str(pk), {}).get('city', ''),
-        'jsoncargo_display_message': request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}).get(str(pk), {}).get('message', ''),
+        'pending_tracking_update': DemoTrackingDisplay(tracking_snapshot) if tracking_snapshot else None,
+        'jsoncargo_data': {'container_status': (tracking_snapshot or {}).get('container_status', '')},
+        'jsoncargo_display_eta': (tracking_snapshot or {}).get('eta', ''),
+        'jsoncargo_next_destination': (tracking_snapshot or {}).get('city', ''),
+        'jsoncargo_display_message': (tracking_snapshot or {}).get('message', ''),
     })
 
 
@@ -730,12 +741,33 @@ def demo_sync_container(request, pk):
         messages.error(request, 'Archived containers cannot be tracked.')
         return redirect('order_tracker_demo_detail', pk=pk)
     try:
-        succeeded, result = _demo_api_lookup(request, container, source)
-        if succeeded:
-            messages.success(request, 'JSONCargo result saved to this demo session only.')
+        if str(pk) in _session_created(request):
+            # Session-only containers have no persisted source record.
+            succeeded, result = _demo_api_lookup(request, container, source)
+            if succeeded:
+                messages.success(request, 'JSONCargo result saved to this demo session only.')
+            else:
+                messages.error(request, result)
         else:
-            messages.error(request, result)
+            # Use the exact production pipeline on the ORIGINAL database object.
+            # Never pass the demo's session-modified container into that pipeline.
+            original = get_object_or_404(OrderContainer, pk=pk, company=source)
+            api_key = api_key_for_user(source.owner)
+            result, update = sync_one_container(original, api_key=api_key)
+            snapshots = dict(request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}))
+            snapshots.pop(str(pk), None)  # Read the new shared result from the DB.
+            request.session[DEMO_TRACKING_SNAPSHOT_KEY] = snapshots
+            request.session.pop(DEMO_CLEARED_TRACKING_KEY, None)
+            request.session.modified = True
+            if result == 'skipped_in_progress':
+                messages.info(request, 'This container is already being tracked in another request.')
+            elif update is not None and update.kind == 'error':
+                messages.warning(request, 'JSONCargo returned an error. Review the tracking card.')
+            else:
+                messages.success(request, 'JSONCargo tracking updated in both accounts.')
     except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Demo shared tracking failed for container %s', pk)
         messages.error(request, 'JSONCargo tracking could not be completed.')
     return redirect('order_tracker_demo_detail', pk=pk)
 
@@ -914,6 +946,7 @@ def demo_recap_containers(request):
         attach_lines(row, [], change)
         rows.append(row)
     return rows
+
 
 
 
