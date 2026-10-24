@@ -973,6 +973,15 @@
       const minScale = 1;
       const maxScale = 8;
       const limit = (n, a, b) => Math.max(a, Math.min(b, n));
+      // Keep shipment dots a fixed, compact screen size while zooming.
+      const shipmentMarkers = [];
+      const updateShipmentMarkerSizes = () => {
+        const zoomScale = width / viewport.w;
+        shipmentMarkers.forEach(marker => {
+          marker.setAttribute('r', String(4.5 / zoomScale));
+          marker.setAttribute('stroke-width', String(1.25 / zoomScale));
+        });
+      };
       const zoomControls = document.createElement('div');
       zoomControls.className = 'shipment-map-zoom-controls';
       zoomControls.setAttribute('role', 'group');
@@ -996,6 +1005,7 @@
         viewport.x = limit(viewport.x, 0, width - viewport.w);
         viewport.y = limit(viewport.y, 0, height - viewport.h);
         svg.setAttribute('viewBox', `${viewport.x} ${viewport.y} ${viewport.w} ${viewport.h}`);
+        updateShipmentMarkerSizes();
         zoomInButton.disabled = viewport.w <= width / maxScale + 0.01;
         zoomOutButton.disabled = viewport.w >= width - 0.01;
         resetZoomButton.disabled = viewport.w >= width - 0.01 && viewport.x === 0 && viewport.y === 0;
@@ -1221,12 +1231,13 @@
           });
 
           const marker = add('circle', {
-            cx: sx, cy: sy, r: 8,
+            cx: sx, cy: sy, r: 4.5,
             fill: '#facc15',
             stroke: 'rgba(15,23,42,0.55)',
-            'stroke-width': 2,
+            'stroke-width': 1.25,
             style: 'cursor:pointer;'
           });
+          shipmentMarkers.push(marker);
           marker.addEventListener('mouseenter', (evt) => showPopup(evt, p));
           marker.addEventListener('mousemove', (evt) => showPopup(evt, p));
           marker.addEventListener('click', (evt) => showPopup(evt, p));
@@ -1238,6 +1249,7 @@
         add('circle', { cx: nx, cy: ny, r: 6, fill: '#16a34a', stroke: 'white', 'stroke-width': 2 });
         {% endif %}
       }
+      applyViewport();
     })();
   </script>
 
@@ -1251,6 +1263,11 @@
 
 </body>
 </html>
+
+
+
+
+
 
 
 
