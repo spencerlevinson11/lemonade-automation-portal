@@ -743,12 +743,13 @@ def demo_sync_container(request, pk):
 @login_required
 @require_http_methods(['POST'])
 def demo_sync_bulk(request):
-    """Launch standard source-company JSONCargo sync under the source key.
+    """Queue demo-only tracking outside Gunicorn's request lifecycle.
 
-    The job is recorded in the demo's session, not as a second customer/key.
+    The worker writes sanitized results into a short-lived job file, never to
+    OrderContainer or OrderContainerTrackingUpdate. Polling imports them into
+    this logged-in user's Django session.
     """
     import json
-    import os
     import subprocess
     import sys
     import uuid
@@ -756,6 +757,7 @@ def demo_sync_bulk(request):
     from django.core.exceptions import PermissionDenied
     from .services.jsoncargo_accounts import api_key_for_user
     from .views import _jsoncargo_sync_status_path
+
     if not is_demo_user(request.user):
         raise Http404
     source = _source_company()
@@ -764,8 +766,9 @@ def demo_sync_bulk(request):
     try:
         api_key_for_user(source.owner)
     except PermissionDenied:
-        messages.error(request, 'Source tracking is currently unavailable.')
+        messages.error(request, 'Source tracking credentials are unavailable.')
         return redirect('order_tracker')
+
     scope = request.POST.get('sync_scope', 'all')
     if scope not in ('all', 'owner', 'customer_city'):
         raise Http404
@@ -776,35 +779,48 @@ def demo_sync_bulk(request):
         messages.error(request, 'Choose an owner first.')
         return redirect('order_tracker')
     if scope == 'customer_city' and not (customer or city):
-        messages.error(request, 'Enter a customer placeholder or city first.')
+        messages.error(request, 'Choose a demo customer alias or city.')
         return redirect('order_tracker')
     if customer:
-        alias_map = demo_customer_aliases(source)
-        reverse = {alias.casefold(): real for real, alias in alias_map.items()}
-        customer = reverse.get(customer.casefold(), '')
+        aliases = demo_customer_aliases(source)
+        customer = {alias.casefold(): real for real, alias in aliases.items()}.get(customer.casefold(), '')
         if not customer:
-            messages.error(request, 'Choose an available demo customer placeholder.')
+            messages.error(request, 'Choose an available demo customer alias.')
             return redirect('order_tracker')
-    # Never launch the production management command from a demo request.
-    # It writes tracking results into the source company's records.
-    eligible = OrderContainer.objects.filter(company=source, is_archived=False).exclude(status__iexact='Delivered')
+
+    eligible = (OrderContainer.objects.filter(company=source, is_archived=False)
+                .exclude(status__iexact='Delivered'))
     if owner:
         eligible = eligible.filter(assigned_to__iexact=owner)
     if customer:
         eligible = eligible.filter(customer_name__iexact=customer)
     if city:
         eligible = eligible.filter(location_name__icontains=city)
-    eligible = eligible.exclude(container_number='')[:50]
-    count = 0
-    for c in eligible:
-        try:
-            success, _ = _demo_api_lookup(request, c, source)
-            count += bool(success)
-        except Exception:
-            pass
-    messages.info(request, f'Demo tracking results saved for {count} container(s) in this session.')
-    return redirect('order_tracker')
-
+    ids = list(eligible.exclude(container_number='').values_list('pk', flat=True)[:50])
+    label = {'all': 'all active demo shipments', 'owner': 'selected owner',
+             'customer_city': 'selected customer/city'}[scope]
+    job_id = uuid.uuid4().hex
+    path = _jsoncargo_sync_status_path(job_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {'state': 'queued', 'demo_only': True, 'user_id': request.user.pk,
+               'source_company_id': source.pk, 'label': label, 'message': 'Queued...',
+               'total': len(ids), 'checked': 0, 'created': 0, 'updated': 0,
+               'skipped': 0, 'errors': 0, 'current': '', 'results': {}, 'container_ids': ids}
+    path.write_text(json.dumps(payload), encoding='utf-8')
+    jobs = list(request.session.get('demo_sync_jobs_v1', []))
+    request.session['demo_sync_jobs_v1'] = (jobs + [job_id])[-20:]
+    request.session.modified = True
+    args = [sys.executable, 'manage.py', 'jsoncargo_sync_demo', '--status-file', str(path)]
+    try:
+        with open(path.with_suffix('.log'), 'ab') as logs:
+            subprocess.Popen(args, cwd=str(settings.BASE_DIR), stdout=logs,
+                             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                             close_fds=True, start_new_session=True)
+    except OSError:
+        payload['state'] = 'error'
+        payload['message'] = 'Could not start tracking worker.'
+        path.write_text(json.dumps(payload), encoding='utf-8')
+    return redirect('order_tracker_jsoncargo_sync_progress', job_id=job_id)
 
 
 
@@ -898,6 +914,9 @@ def demo_recap_containers(request):
         attach_lines(row, [], change)
         rows.append(row)
     return rows
+
+
+
 
 
 
