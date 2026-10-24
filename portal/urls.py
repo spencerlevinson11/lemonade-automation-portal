@@ -20,6 +20,8 @@ from core.generate_new_order import generate_new_order_view
 
 urlpatterns = [
     path('automations/generate-new-order/', generate_new_order_view, name='generate_new_order'),
+    path('automations/orders/demo/archived/', __import__('core.demo_tracker', fromlist=['demo_archived_orders']).demo_archived_orders, name='order_tracker_demo_archived'),
+    path('automations/orders/demo/archive/<int:pk>/', __import__('core.demo_tracker', fromlist=['demo_archive_action']).demo_archive_action, name='order_tracker_demo_archive'),
     path('automations/orders/demo/action/', demo_action, name='order_tracker_demo_action'),
     path('automations/orders/demo/create/', __import__('core.demo_tracker', fromlist=['demo_create_container']).demo_create_container, name='order_tracker_demo_create'),
     path('automations/orders/demo/track/<int:pk>/', __import__('core.demo_tracker', fromlist=['demo_sync_container']).demo_sync_container, name='order_tracker_demo_track'),
@@ -252,27 +254,6 @@ if hasattr(core_views, "bucket_projections_view") and hasattr(core_views, "bucke
             name="bucket_adjustments_export",
         ),
     ]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
