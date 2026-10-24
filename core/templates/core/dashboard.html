@@ -61,6 +61,37 @@
         @media(max-width:780px) { .grid { grid-template-columns:1fr; } .top-inner,main { padding-left:18px; padding-right:18px; } .hero { display:block; } .account .user-label { display:none; } }
         @media(max-width:460px) { .top-inner { gap:10px; } .brand-sub { display:none; } .account { gap:8px; } .automation { padding:18px; } .card-bottom { align-items:flex-start; } .created { font-size:11px; } .run { padding:10px 12px; } }
         @media(prefers-reduced-motion:reduce) { * { transition:none!important; } }
+
+        /* Shared Order Tracker visual language - presentation only. */
+        :root { color-scheme:dark; --canvas:#020617; --white:#0b1120; --ink:#e5e7eb; --muted:#9ca3af; --line:#263247; --accent:#facc15; --accent-dark:#eab308; --green:#4ade80; }
+        body { background:radial-gradient(circle at top,rgba(250,204,21,.12),transparent 56%) var(--canvas);color:var(--ink); }
+        a { color:#fde68a; }
+        .top { background:rgba(11,17,32,.94);border-bottom-color:var(--line); }
+        .brand-icon {background:rgba(250,204,21,.12);border:1px solid rgba(250,204,21,.3);color:#facc15;border-radius:10px;}
+        .brand-sub,.account,.intro,.section-heading p,.tool-company,.created,.footer {color:var(--muted);}
+        .account strong {color:var(--ink);}
+        .avatar {background:#182238;border-color:var(--line);color:#fde68a;}
+        .logout {background:rgba(250,204,21,.075);border:1px solid rgba(250,204,21,.3);color:#fde68a;border-radius:9px;font-weight:600;transition:background-color .14s,border-color .14s;}
+        .logout:hover {background:rgba(250,204,21,.15);border-color:rgba(250,204,21,.55);}
+        .kicker {color:#facc15;}
+        .workspace,.automation {background:rgba(11,17,32,.92);border:1px solid var(--line);box-shadow:0 14px 36px rgba(0,0,0,.2);border-radius:16px;}
+        .workspace-icon,.tool-icon {background:rgba(250,204,21,.09);border:1px solid rgba(250,204,21,.22);color:#fde68a;}
+        .workspace.warning {background:#2b1c16;border-color:#86552d;}
+        .workspace.warning .workspace-icon {background:#442b1c;color:#fdba74;}
+        .section-label {background:rgba(250,204,21,.08);color:#fde68a;border:1px solid rgba(250,204,21,.18);}
+        .automation:hover {border-color:rgba(250,204,21,.42);box-shadow:0 18px 40px rgba(0,0,0,.32);}
+        .status {background:rgba(74,222,128,.09);color:#86efac;}
+        .status.off {background:#202b3b;color:#a1aab8;}
+        .card-bottom {border-top-color:var(--line);}
+        .created span {color:#cbd5e1;}
+        .run {min-height:36px;padding:8px 13px;border-radius:9px;border:1px solid rgba(250,204,21,.32);background:rgba(250,204,21,.075);color:#fde68a;font-size:13px;font-weight:600;line-height:1.25;transition:background-color .14s,border-color .14s,box-shadow .14s,transform .14s;}
+        .run:hover {background:rgba(250,204,21,.15);border-color:rgba(250,204,21,.58);box-shadow:0 2px 8px rgba(0,0,0,.18);text-decoration:none;}
+        .run:active {transform:translateY(1px);}
+        .run:focus-visible,.logout:focus-visible {outline:2px solid #facc15;outline-offset:3px;}
+        .empty {background:rgba(11,17,32,.9);border-color:var(--line);}
+        .empty strong {color:var(--ink);}
+        .footer {border-top-color:var(--line);}
+        .message {background:#112d24;color:#bbf7d0;border-color:#21684b;}
     </style>
 </head>
 <body>
@@ -125,5 +156,7 @@
 </main>
 </body>
 </html>
+
+
 
 
