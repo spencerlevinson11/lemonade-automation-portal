@@ -612,7 +612,16 @@ class _DemoRecapLineCollection:
         self._rows = rows
 
     def all(self):
-        return self._rows
+        return self
+
+    def __iter__(self):
+        return iter(self._rows)
+
+    def __len__(self):
+        return len(self._rows)
+
+    def __getitem__(self, index):
+        return self._rows[index]
 
 
 def demo_recap_containers(request):
@@ -682,4 +691,5 @@ def demo_recap_containers(request):
         attach_lines(row, [], change)
         rows.append(row)
     return rows
+
 
