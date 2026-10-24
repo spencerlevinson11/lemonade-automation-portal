@@ -5833,7 +5833,7 @@ def order_tracker_jsoncargo_sync_progress_view(request, job_id: str):
     from core.demo_tracker import is_demo_user, _source_company
     if is_demo_user(request.user):
         source = _source_company()
-        allowed = job_id in request.session.get('demo_sync_jobs_v1', []) and source and job.get('user_id') == source.owner_id
+        allowed = job_id in request.session.get('demo_sync_jobs_v1', []) and source and job.get('demo_only') is True and job.get('user_id') == request.user.pk and job.get('source_company_id') == source.pk
     else:
         allowed = job.get('user_id') == request.user.pk
     if not allowed:
@@ -5854,11 +5854,25 @@ def order_tracker_jsoncargo_sync_status_view(request, job_id: str):
     from core.demo_tracker import is_demo_user, _source_company
     if is_demo_user(request.user):
         source = _source_company()
-        allowed = job_id in request.session.get('demo_sync_jobs_v1', []) and source and data.get('user_id') == source.owner_id
+        allowed = job_id in request.session.get('demo_sync_jobs_v1', []) and source and data.get('demo_only') is True and data.get('user_id') == request.user.pk and data.get('source_company_id') == source.pk
     else:
         allowed = data.get('user_id') == request.user.pk
     if not allowed:
         raise Http404("Sync job not found")
+    if is_demo_user(request.user) and data.get('demo_only') is True:
+        # Copy sanitized provider results into this user's current demo session.
+        # The worker cannot access or update browser sessions directly.
+        from core.demo_tracker import DEMO_TRACKING_SNAPSHOT_KEY, DEMO_CLEARED_TRACKING_KEY
+        snapshot = dict(request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}))
+        for pk, result in data.get('results', {}).items():
+            snapshot[str(pk)] = result
+        if data.get('results'):
+            request.session[DEMO_TRACKING_SNAPSHOT_KEY] = snapshot
+            request.session.pop(DEMO_CLEARED_TRACKING_KEY, None)
+            request.session.modified = True
+        # Do not transmit the whole result cache through the progress JSON.
+        data.pop('results', None)
+        data.pop('container_ids', None)
     return JsonResponse(data)
 
 @require_POST
@@ -7164,6 +7178,14 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
 
 
 
