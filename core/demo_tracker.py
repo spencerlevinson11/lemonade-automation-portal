@@ -262,6 +262,8 @@ def make_demo_containers(request, active, delivered):
         r.latest_pending_tracking_update = None
         return r
     clones = [clone(c) for c in originals]
+    for r in clones:
+        r.is_archived = overrides.get(str(r.pk), {}).get('archived', r.is_archived)
     return ([r for r in clones if (r.status or '').casefold() != 'delivered'],
             [r for r in clones if (r.status or '').casefold() == 'delivered'])
 
@@ -407,6 +409,81 @@ def demo_action(request):
         return JsonResponse({'checked': change.get('checked', False)})
     return redirect('order_tracker')
 
+
+
+@login_required
+def demo_archived_orders(request):
+    """Anonymized archived list from detached records and session overrides."""
+    from copy import copy
+    from .services.tracker_customer_options import owner_names
+    if not is_demo_user(request.user):
+        raise Http404
+    source = _source_company()
+    if source is None:
+        raise Http404
+    edits = request.session.get(SESSION_KEY, {})
+    originals = list(OrderContainer.objects.filter(company=source).order_by('-updated_at', '-created_at'))
+    selected = [c for c in originals if edits.get(str(c.pk), {}).get('archived', c.is_archived)]
+    # Reuse the dashboard's anonymization and session field overrides.
+    first, second = make_demo_containers(request, selected, [])
+    rows = first + second
+    for key in _session_created(request):
+        if edits.get(str(key), {}).get('archived', False):
+            record = _demo_container(request, int(key), source)
+            clone_a, clone_b = make_demo_containers(request, [record], [])
+            rows.extend(clone_a + clone_b)
+    for row in rows:
+        row.is_archived = True
+        row.archived_at = None if str(row.pk) in edits and 'archived' in edits[str(row.pk)] else row.archived_at
+    q = (request.GET.get('q') or '').strip().casefold()
+    status = (request.GET.get('status') or '').strip().casefold()
+    owner = (request.GET.get('assigned_to') or '').strip().casefold()
+    if q:
+        rows = [r for r in rows if any(q in str(getattr(r, field, '') or '').casefold()
+                for field in ('customer_name', 'location_name', 'po_number', 'rpc_number', 'container_number', 'carrier', 'booking_number', 'bill_of_lading_number'))]
+    if status:
+        rows = [r for r in rows if status in (r.status or '').casefold()]
+    if owner:
+        rows = [r for r in rows if owner == (r.assigned_to or '').casefold()]
+    sort = request.GET.get('sort', '')
+    direction = request.GET.get('dir', 'desc')
+    sort_fields = {'customer': 'customer_name', 'location': 'location_name', 'requested': 'requested_date',
+                   'eta': 'eta', 'est_delivery': 'estimated_delivery_date',
+                   'loading': 'loading_date', 'assigned_to': 'assigned_to'}
+    if sort in sort_fields:
+        field = sort_fields[sort]
+        rows.sort(key=lambda r: (getattr(r, field, None) is None, str(getattr(r, field, '') or '').casefold()),
+                  reverse=direction != 'asc')
+    return render(request, 'core/order_tracker_archived.html', {
+        'automation_name': 'Order Tracker', 'company_display': 'Demo Workspace',
+        'demo_mode': True, 'containers': rows,
+        'archive_owner_options': sorted({r.assigned_to for r in rows if r.assigned_to}, key=str.casefold),
+        'q': request.GET.get('q', ''), 'status': request.GET.get('status', ''),
+        'assigned_to': request.GET.get('assigned_to', ''), 'sort': sort, 'dir': direction,
+    })
+
+
+@login_required
+@require_http_methods(['POST'])
+def demo_archive_action(request, pk):
+    """Archive and restore only in the login session; never touch the database."""
+    if not is_demo_user(request.user):
+        raise Http404
+    source = _source_company()
+    if source is None:
+        raise Http404
+    _demo_container(request, pk, source)  # Enforces source scope for real orders.
+    edits = dict(request.session.get(SESSION_KEY, {}))
+    change = dict(edits.get(str(pk), {}))
+    action = request.POST.get('action')
+    if action not in ('archive', 'unarchive'):
+        raise Http404
+    change['archived'] = action == 'archive'
+    edits[str(pk)] = change
+    request.session[SESSION_KEY] = edits
+    request.session.modified = True
+    messages.success(request, 'Order archived temporarily.' if action == 'archive' else 'Order restored temporarily.')
+    return redirect('order_tracker_demo_archived' if action == 'archive' else 'order_tracker')
 
 
 @login_required
@@ -691,5 +768,6 @@ def demo_recap_containers(request):
         attach_lines(row, [], change)
         rows.append(row)
     return rows
+
 
 
