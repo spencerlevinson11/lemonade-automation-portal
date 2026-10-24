@@ -384,6 +384,34 @@ class _EmptyDemoTags:
 
 @login_required
 @require_http_methods(['POST'])
+def demo_set_checkbox(request):
+    """Save a demo checkbox without ever writing to an OrderContainer row."""
+    from django.http import JsonResponse
+    if not is_demo_user(request.user):
+        raise Http404
+    source = _source_company()
+    if source is None:
+        return JsonResponse({'ok': False, 'error': 'Demo source unavailable'}, status=404)
+    try:
+        pk = int(request.POST.get('container_id', ''))
+    except (TypeError, ValueError):
+        return JsonResponse({'ok': False, 'error': 'Missing container ID'}, status=400)
+    if request.POST.get('checked') not in ('0', '1'):
+        return JsonResponse({'ok': False, 'error': 'Invalid checkbox value'}, status=400)
+    if str(pk) not in _session_created(request) and not OrderContainer.objects.filter(pk=pk, company=source).exists():
+        return JsonResponse({'ok': False, 'error': 'Order not available in demo'}, status=404)
+    checked = request.POST['checked'] == '1'
+    overlays = dict(request.session.get(SESSION_KEY, {}))
+    change = dict(overlays.get(str(pk), {}))
+    change['checked'] = checked
+    overlays[str(pk)] = change
+    request.session[SESSION_KEY] = overlays
+    request.session.modified = True
+    return JsonResponse({'ok': True, 'checked': checked})
+
+
+@login_required
+@require_http_methods(['POST'])
 def demo_action(request):
     """Allow on-screen demo edits without database writes or API calls."""
     from django.http import JsonResponse
