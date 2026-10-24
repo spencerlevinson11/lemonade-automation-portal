@@ -84,7 +84,7 @@ def preserve_demo_tracking_results(request, containers):
                 container.latest_pending_tracking_update = display if display.status == 'pending' else None
             container.latest_jsoncargo_display_text = (
                 ' '.join(v for v in (saved.get('eta', ''), saved.get('city', '')) if v)
-                or ('No ETA returned' if display.kind != 'error' else '')
+                or 'Tracking currently unavailable'
             )
     if changed:
         request.session[DEMO_TRACKING_SNAPSHOT_KEY] = snapshots
@@ -405,7 +405,7 @@ def _demo_api_lookup(request, container, source):
     )
     if err:
         result = {'kind': 'error', 'status': 'pending', 'eta': '', 'city': '',
-                  'message': 'JSONCargo could not retrieve a tracking update.', 'record_id': 0}
+                  'message': 'Tracking currently unavailable', 'record_id': 0}
     else:
         data = _jsoncargo_data(tracking)
         eta, city = _extract_eta_city(data)
@@ -762,13 +762,13 @@ def demo_sync_container(request, pk):
             if result == 'skipped_in_progress':
                 messages.info(request, 'This container is already being tracked in another request.')
             elif update is not None and update.kind == 'error':
-                messages.warning(request, 'JSONCargo returned an error. Review the tracking card.')
+                messages.warning(request, 'Tracking currently unavailable')
             else:
                 messages.success(request, 'JSONCargo tracking updated in both accounts.')
     except Exception:
         import logging
         logging.getLogger(__name__).exception('Demo shared tracking failed for container %s', pk)
-        messages.error(request, 'JSONCargo tracking could not be completed.')
+        messages.error(request, 'Tracking currently unavailable')
     return redirect('order_tracker_demo_detail', pk=pk)
 
 
@@ -946,6 +946,10 @@ def demo_recap_containers(request):
         attach_lines(row, [], change)
         rows.append(row)
     return rows
+
+
+
+
 
 
 
