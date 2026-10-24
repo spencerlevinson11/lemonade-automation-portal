@@ -5974,8 +5974,15 @@ def order_tracker_recap_docx_view(request):
     """
     user = request.user
 
-    # Superusers see ALL containers across companies.
-    if user.is_superuser:
+    from core.demo_tracker import is_demo_user
+    demo_mode = is_demo_user(user)
+
+    # Demo recaps must use detached, session-overlaid records. Never write to
+    # source orders or reveal their real customer names in this download.
+    if demo_mode:
+        from core.demo_tracker import demo_recap_containers
+        containers = demo_recap_containers(request)
+    elif user.is_superuser:
         containers = OrderContainer.objects.filter(is_archived=False)
     else:
         company = get_object_or_404(Company, owner=user)
@@ -5986,24 +5993,36 @@ def order_tracker_recap_docx_view(request):
     status = (request.GET.get("status") or "").strip()
     assigned_to = (request.GET.get("assigned_to") or "").strip()
 
-    if q:
-        containers = containers.filter(
-            Q(customer_name__icontains=q)
-            | Q(location_name__icontains=q)
-            | Q(po_number__icontains=q)
-            | Q(rpc_number__icontains=q)
-            | Q(booking_number__icontains=q)
-            | Q(bill_of_lading_number__icontains=q)
-            | Q(container_number__icontains=q)
-            | Q(carrier__icontains=q)
-        )
-    if status:
-        containers = containers.filter(status__icontains=status)
-    if assigned_to:
-        containers = containers.filter(assigned_to__iexact=assigned_to)
-
-    # Prefetch content lines before the Python-side location/date/PO sort.
-    containers = containers.prefetch_related("lines")
+    if demo_mode:
+        # Filter the anonymized, session-overlaid snapshot rather than querying
+        # real customer names (which the demo user must never see).
+        if q:
+            fields = ('customer_name', 'location_name', 'po_number', 'rpc_number',
+                      'booking_number', 'bill_of_lading_number', 'container_number', 'carrier')
+            containers = [c for c in containers if any(
+                q.casefold() in str(getattr(c, field, '') or '').casefold()
+                for field in fields)]
+        if status:
+            containers = [c for c in containers if status.casefold() in (c.status or '').casefold()]
+        if assigned_to:
+            containers = [c for c in containers if assigned_to.casefold() == (c.assigned_to or '').casefold()]
+    else:
+        if q:
+            containers = containers.filter(
+                Q(customer_name__icontains=q)
+                | Q(location_name__icontains=q)
+                | Q(po_number__icontains=q)
+                | Q(rpc_number__icontains=q)
+                | Q(booking_number__icontains=q)
+                | Q(bill_of_lading_number__icontains=q)
+                | Q(container_number__icontains=q)
+                | Q(carrier__icontains=q)
+            )
+        if status:
+            containers = containers.filter(status__icontains=status)
+        if assigned_to:
+            containers = containers.filter(assigned_to__iexact=assigned_to)
+        containers = containers.prefetch_related("lines")
 
     def _natural_text_sort_key(raw: str | None):
         """Case-insensitive natural sort so PO 20 comes before PO 100."""
@@ -7134,294 +7153,6 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
