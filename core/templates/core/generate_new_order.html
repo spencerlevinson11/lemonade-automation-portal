@@ -47,7 +47,7 @@ a{color:#fde68a;text-decoration:none}a:hover{text-decoration:underline}
 <label>Customer *<input name="customer_name" required maxlength="255" value="{{ values.customer_name|default:'' }}"></label>
 <label>Destination / Location<input name="location_name" value="{{ values.location_name|default:'' }}"></label>
 <label>PO number<input name="po_number" value="{{ values.po_number|default:'' }}"></label>
-<label>Order reference / RPC number<input name="rpc_number" value="{{ values.rpc_number|default:'' }}"></label>
+<label>{% if tracker_is_retriever %}RPC#{% else %}Order ID{% endif %}<input name="rpc_number" value="{{ values.rpc_number|default:'' }}"></label>
 <label>Container number<input name="container_number" value="{{ values.container_number|default:'' }}"></label>
 <label>Booking number<input name="booking_number" value="{{ values.booking_number|default:'' }}"></label>
 <label>Bill of lading<input name="bill_of_lading_number" value="{{ values.bill_of_lading_number|default:'' }}"></label>
