@@ -17,6 +17,7 @@ SOURCE_USERNAME = 'retrieverpackaging'
 SESSION_KEY = 'demo_order_tracker_overrides_v1'
 DEMO_TRACKING_SNAPSHOT_KEY = 'demo_tracker_tracking_snapshot_v1'
 DEMO_CREATED_KEY = 'demo_created_containers_v1'
+DEMO_CLEARED_TRACKING_KEY = 'demo_cleared_tracking_v1'
 DEMO_ID_START = 2000000000
 
 DEMO_EDITABLE_FIELDS = ('customer_name','location_name','po_number','requested_date','requested_date_text','requested_asap','status','assigned_to','origin_country','rpc_number','loading_date','etd','eta','eta_city','estimated_delivery_date','booking_number','bill_of_lading_number','container_number','shipping_line_id','vessel_name','vessel_mmsi','vessel_imo','notes')
@@ -48,6 +49,12 @@ def preserve_demo_tracking_results(request, containers):
     The snapshot contains no real customer names or raw provider payloads.
     """
     if not is_demo_user(request.user):
+        return
+    if request.session.get(DEMO_CLEARED_TRACKING_KEY):
+        for container in containers:
+            container.latest_tracking_update = None
+            container.latest_pending_tracking_update = None
+            container.latest_jsoncargo_display_text = ''
         return
     snapshots = dict(request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}))
     changed = False
@@ -206,6 +213,7 @@ def reset(request):
     request.session.pop(SESSION_KEY, None)
     request.session.pop(DEMO_CREATED_KEY, None)
     request.session.pop(DEMO_TRACKING_SNAPSHOT_KEY, None)
+    request.session.pop(DEMO_CLEARED_TRACKING_KEY, None)
     request.session.modified = True
     return redirect('order_tracker')
 
@@ -287,6 +295,23 @@ def _demo_container(request, pk, source):
 
 
 @login_required
+@require_http_methods(['GET'])
+def demo_new_full_editor(request):
+    """Open the regular full editor on an unsaved, temporary demo draft."""
+    if not is_demo_user(request.user):
+        raise Http404
+    created = dict(_session_created(request))
+    if len(created) >= 100:
+        messages.error(request, 'Demo session container limit reached.')
+        return redirect('order_tracker')
+    pk = max([DEMO_ID_START - 1] + [int(x) for x in created]) + 1
+    created[str(pk)] = {'customer_name': 'New Demo Customer', 'status': 'Booked'}
+    request.session[DEMO_CREATED_KEY] = created
+    request.session.modified = True
+    return redirect('order_tracker_demo_detail', pk=pk)
+
+
+@login_required
 @require_http_methods(['POST'])
 def demo_create_container(request):
     """Quick Add: no OrderContainer is inserted into the database."""
@@ -344,6 +369,7 @@ def _demo_api_lookup(request, container, source):
                   'city': str(city or '')[:160], 'message': '', 'record_id': 0,
                   'container_status': str(data.get('container_status') or '')[:120]}
     snapshots = dict(request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}))
+    request.session.pop(DEMO_CLEARED_TRACKING_KEY, None)
     result['demo_only'] = True
     snapshots[str(container.pk)] = result
     request.session[DEMO_TRACKING_SNAPSHOT_KEY] = snapshots
@@ -369,6 +395,26 @@ def demo_action(request):
     action = request.POST.get('action', '')
     overlays = request.session.get(SESSION_KEY, {})
     ids = request.POST.getlist('container_ids')
+    if action == 'reset_checks':
+        # Set every visible source and demo-created order to unchecked, without a DB write.
+        for pk in OrderContainer.objects.filter(company=source).values_list('pk', flat=True):
+            change = dict(overlays.get(str(pk), {}))
+            change['checked'] = False
+            overlays[str(pk)] = change
+        for pk in _session_created(request):
+            change = dict(overlays.get(str(pk), {}))
+            change['checked'] = False
+            overlays[str(pk)] = change
+        request.session[SESSION_KEY] = overlays
+        request.session.modified = True
+        messages.success(request, 'All demo checkboxes reset for this session.')
+        return redirect('order_tracker')
+    if action == 'clear_tracking':
+        request.session[DEMO_TRACKING_SNAPSHOT_KEY] = {}
+        request.session[DEMO_CLEARED_TRACKING_KEY] = True
+        request.session.modified = True
+        messages.success(request, 'Demo JSONCargo updates cleared until you track again or log out.')
+        return redirect('order_tracker')
     if action in ('refresh', 'reset'):
         if action == 'reset': overlays = {}
         request.session[SESSION_KEY] = overlays
@@ -381,7 +427,7 @@ def demo_action(request):
     for raw in ids:
         try: pk = int(raw)
         except (TypeError, ValueError): continue
-        if not OrderContainer.objects.filter(pk=pk, company=source).exists():
+        if str(pk) not in _session_created(request) and not OrderContainer.objects.filter(pk=pk, company=source).exists():
             continue
         change = dict(overlays.get(str(pk), {}))
         if action == 'bulk_eta':
@@ -406,7 +452,7 @@ def demo_action(request):
     request.session[SESSION_KEY] = overlays
     request.session.modified = True
     if action == 'checked' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        return JsonResponse({'checked': change.get('checked', False)})
+        return JsonResponse({'ok': True, 'checked': change.get('checked', False)})
     return redirect('order_tracker')
 
 
@@ -768,6 +814,7 @@ def demo_recap_containers(request):
         attach_lines(row, [], change)
         rows.append(row)
     return rows
+
 
 
 
