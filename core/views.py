@@ -5865,7 +5865,9 @@ def order_tracker_jsoncargo_sync_status_view(request, job_id: str):
         from core.demo_tracker import DEMO_TRACKING_SNAPSHOT_KEY, DEMO_CLEARED_TRACKING_KEY
         snapshot = dict(request.session.get(DEMO_TRACKING_SNAPSHOT_KEY, {}))
         for pk, result in data.get('results', {}).items():
-            snapshot[str(pk)] = result
+            existing = snapshot.get(str(pk), {})
+            if int(result.get('record_id') or 0) >= int(existing.get('record_id') or 0) or existing.get('demo_only'):
+                snapshot[str(pk)] = result
         if data.get('results'):
             request.session[DEMO_TRACKING_SNAPSHOT_KEY] = snapshot
             request.session.pop(DEMO_CLEARED_TRACKING_KEY, None)
@@ -7178,6 +7180,12 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
 
 
 
