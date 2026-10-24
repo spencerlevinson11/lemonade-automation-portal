@@ -896,7 +896,7 @@
           if (csrfInput) body.set('csrfmiddlewaretoken', csrfInput.value);
 
           try {
-            const response = await fetch(form.action, {
+            const response = await fetch(form.getAttribute('action'), {
               method: 'POST',
               body,
               headers: { 'X-Requested-With': 'XMLHttpRequest' },
@@ -1273,6 +1273,11 @@
 
 </body>
 </html>
+
+
+
+
+
 
 
 
