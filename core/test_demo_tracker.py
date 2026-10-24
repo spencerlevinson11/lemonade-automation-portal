@@ -1,6 +1,6 @@
 from unittest.mock import patch
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, SimpleTestCase
 from django.urls import reverse
 from core.models import Company, OrderContainer
 
@@ -216,4 +216,16 @@ class DemoCheckboxSaveTests(TestCase):
         response = self.client.post(reverse('order_tracker_demo_checkbox'), {'container_id': 'bad', 'checked': '1'})
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.json()['ok'])
+
+
+class DemoContentAliasPureTests(SimpleTestCase):
+    """Demo content replacement must never change quantities or expose item text."""
+
+    def test_alias_is_stable_and_does_not_reveal_source_description(self):
+        from core.demo_tracker import demo_item_alias
+        mapping = {'10 Wide Standard Classic': 'Blue', '5-liter bucket lid': 'Red'}
+        self.assertEqual(demo_item_alias('10 Wide Standard Classic', mapping), 'Blue')
+        self.assertEqual(demo_item_alias('10 Wide Standard Classic', mapping), 'Blue')
+        self.assertEqual(demo_item_alias('Blue', mapping), 'Blue')
+        self.assertNotIn('bucket', demo_item_alias('Demo-only bucket variant', mapping).lower())
 
