@@ -5622,7 +5622,7 @@ def order_tracker_archived_view(request):
     else:
         containers = containers.order_by("-updated_at", "-created_at")
 
-    from .services.tracker_customer_options import owner_names
+    from .services.tracker_customer_options import owner_names, is_retriever_company
     return render(
         request,
         "core/order_tracker_archived.html",
@@ -5631,6 +5631,7 @@ def order_tracker_archived_view(request):
             "company": company,
             "company_display": (company.name if company else "All Companies"),
             "containers": containers,
+            "tracker_is_retriever": is_retriever_company(company),
             "archive_owner_options": owner_names(company) if company else sorted(set(OrderContainer.objects.exclude(assigned_to="").values_list("assigned_to", flat=True)), key=str.casefold),
             "q": q,
             "status": status,
@@ -6153,7 +6154,7 @@ def order_tracker_recap_docx_view(request):
         p2 = doc.add_paragraph()
         # IMPORTANT: the RPC string already includes the city (ex: "6066 Miami"),
         # so do NOT append the location name.
-        _add_run(p2, f"RPC# {rpc} ", COLOR_BLUE, bold=True)
+        _add_run(p2, f"{'RPC#' if user.username.casefold() == 'retrieverpackaging' else 'Order ID'} {rpc} ", COLOR_BLUE, bold=True)
 
         # Line 3: Loading Date (green, bold)
         p3 = doc.add_paragraph()
@@ -7163,6 +7164,251 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
