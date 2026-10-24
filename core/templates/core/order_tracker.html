@@ -306,6 +306,7 @@
         <p class="muted">{{ company_display }} • Track sea containers by customer + location</p>
       </div>
       <div class="actions">
+        {% if demo_mode %}<a class="btn" href="{% url 'order_tracker_demo_archived' %}">Archived orders</a>{% endif %}
         {% if not demo_mode %}
         <!-- Keep your existing "full edit page" flow available -->
         <a class="btn" href="{% url 'order_container_new' %}">Open full editor</a>
@@ -841,7 +842,8 @@
                 <td>{% if c.estimated_delivery_date %}{{ c.estimated_delivery_date }}{% else %}<span class="muted">—</span>{% endif %}</td>
                 <td class="muted" style="font-size:0.85rem;">{{ c.updated_at|date:"Y-m-d" }}</td>
                 <td>
-                  {% if demo_mode %}<form method="post" action="{% url 'order_tracker_demo_action' %}">{% csrf_token %}<input type="hidden" name="action" value="delivered"><input type="hidden" name="container_id" value="{{ c.id }}"><button class="btn" type="submit">Reopen (demo)</button></form>{% else %}
+                  {% if demo_mode %}<form method="post" action="{% url 'order_tracker_demo_action' %}">{% csrf_token %}<input type="hidden" name="action" value="delivered"><input type="hidden" name="container_id" value="{{ c.id }}"><button class="btn" type="submit">Reopen (demo)</button></form>
+                  <form method="post" action="{% url 'order_tracker_demo_archive' c.id %}" style="display:inline; margin-left:8px;">{% csrf_token %}<input type="hidden" name="action" value="archive"><button class="btn btn-danger" type="submit">Archive (demo)</button></form>{% else %}
                   <a class="btn" href="{% url 'order_container_commercial_invoice' c.id %}" style="margin-bottom:8px;">Invoice</a>
                   <form method="post" action="{% url 'order_container_toggle_delivered' c.id %}" style="display:inline;">
                     {% csrf_token %}
@@ -1263,6 +1265,16 @@
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
 
 
 
