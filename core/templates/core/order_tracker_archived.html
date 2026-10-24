@@ -184,7 +184,7 @@
                   </div>
                 {% endif %}
                 <div class="muted" style="font-size:0.85rem; margin-top:2px;">
-                  {% if c.rpc_number %}RPC#: {{ c.rpc_number }} • {% endif %}
+                  {% if c.rpc_number %}{% if tracker_is_retriever %}RPC#{% else %}Order ID{% endif %}: {{ c.rpc_number }} • {% endif %}
                   {% if c.container_number %}Container: {{ c.container_number }}{% if c.carrier %} ({{ c.carrier }}){% endif %} • {% endif %}
                   {% if c.booking_number %}Booking: {{ c.booking_number }} • {% endif %}
                   {% if c.bill_of_lading_number %}BOL: {{ c.bill_of_lading_number }}{% endif %}
@@ -241,3 +241,4 @@
   </div>
 </body>
 </html>
+
