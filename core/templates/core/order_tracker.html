@@ -991,7 +991,7 @@
       const updateShipmentMarkerSizes = () => {
         const zoomScale = width / viewport.w;
         shipmentMarkers.forEach(marker => {
-          marker.setAttribute('r', String(4.5 / zoomScale));
+          marker.setAttribute('r', String(6 / zoomScale));
           marker.setAttribute('stroke-width', String(1.25 / zoomScale));
         });
       };
@@ -1244,7 +1244,7 @@
           });
 
           const marker = add('circle', {
-            cx: sx, cy: sy, r: 4.5,
+            cx: sx, cy: sy, r: 6,
             fill: '#facc15',
             stroke: 'rgba(15,23,42,0.55)',
             'stroke-width': 1.25,
