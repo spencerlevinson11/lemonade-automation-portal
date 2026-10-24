@@ -306,7 +306,7 @@
         <p class="muted">{{ company_display }} • Track sea containers by customer + location</p>
       </div>
       <div class="actions">
-        {% if demo_mode %}<a class="btn" href="{% url 'order_tracker_demo_archived' %}">Archived orders</a>{% endif %}
+        {% if demo_mode %}<a class="btn" href="{% url 'order_tracker_demo_new_full_editor' %}">Open full editor</a><a class="btn" href="{% url 'order_tracker_demo_archived' %}">Archived orders</a>{% endif %}
         {% if not demo_mode %}
         <!-- Keep your existing "full edit page" flow available -->
         <a class="btn" href="{% url 'order_container_new' %}">Open full editor</a>
@@ -321,6 +321,12 @@
         </form>
         {% endif %}
 {% endif %}
+        {% if demo_mode %}
+        <form method="post" action="{% url 'order_tracker_demo_action' %}" style="display:inline;">
+          {% csrf_token %}<input type="hidden" name="action" value="clear_tracking">
+          <button class="btn btn-danger" type="submit" onclick="return confirm('Clear JSONCargo updates for this demo session only?');">Clear JSONCargo updates</button>
+        </form>
+        {% endif %}
         <!-- Same recap format for live and demonstration accounts. -->
         <a class="btn" href="{% url 'order_tracker_recap_docx' %}?q={{ q|urlencode }}&status={{ status|urlencode }}&assigned_to={{ assigned_to|urlencode }}">Download order recap</a>
       </div>
@@ -580,10 +586,11 @@
           <div class="muted tiny">Use “Mark delivered” once an order has arrived — it will move to the Delivered section below. Edit manual ETAs and estimated delivery dates directly here, then save all at once. The Latest JSONCargo ETA column shows the most recent API result, even after you acknowledge an update.</div>
         </div>
         <div class="actions">
-          {% if not demo_mode %}<form method="post" action="{% url 'order_tracker_reset_checks' %}" style="display:inline;">
+          <form method="post" action="{% if demo_mode %}{% url 'order_tracker_demo_action' %}{% else %}{% url 'order_tracker_reset_checks' %}{% endif %}" style="display:inline;">
+            {% if demo_mode %}<input type="hidden" name="action" value="reset_checks">{% endif %}
             {% csrf_token %}
             <button class="btn btn-danger" type="submit" onclick="return confirm('Reset all order tracker checkboxes?');">Reset all checkboxes</button>
-          </form>{% endif %}
+          </form>
           <button class="btn" type="submit" form="bulkEtaForm">Save ETA / delivery edits</button>
         </div>
       </div>
@@ -885,6 +892,7 @@
           const csrfInput = form.querySelector('input[name="csrfmiddlewaretoken"]');
           const body = new URLSearchParams();
           body.set('checked', desiredState ? '1' : '0');
+          form.querySelectorAll('input[type=hidden]').forEach(field => { if (field.name && field.name !== 'csrfmiddlewaretoken') body.set(field.name, field.value); });
           if (csrfInput) body.set('csrfmiddlewaretoken', csrfInput.value);
 
           try {
@@ -1265,27 +1273,6 @@
 
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
