@@ -677,7 +677,7 @@ def demo_order_detail(request, pk):
             overlay[str(pk)] = change
             request.session[SESSION_KEY] = overlay
             request.session.modified = True
-            messages.success(request, 'Demo changes applied temporarily. Retriever Packaging was not modified.')
+            messages.success(request, 'Demo changes saved for this session only. They will be cleared when you sign out.')
             return redirect('order_tracker_demo_detail', pk=pk)
         messages.error(request, 'Please correct the highlighted fields.')
     else:
@@ -954,6 +954,11 @@ def demo_recap_containers(request):
         attach_lines(row, [], change)
         rows.append(row)
     return rows
+
+
+
+
+
 
 
 
