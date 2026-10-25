@@ -289,9 +289,9 @@ def make_demo_containers(request, active, delivered):
         r.eta_city = c.eta_city
         r.assigned_to = c.assigned_to
         r.origin_country = c.origin_country or 'Netherlands'
-        # Prevent rendering tags whose labels might contain client information.
-        # Tag relations are suppressed in the shared dashboard template.
+        # Demo tags are session-only. Never read the source company's tag relation.
         changes = overrides.get(str(c.pk), {})
+        r.demo_tags = changes.get('tags', [])
         if 'owner' in changes: r.assigned_to = changes['owner']
         for field, value in changes.get('fields', {}).items():
             if field in DEMO_EDITABLE_FIELDS:
@@ -639,15 +639,16 @@ def demo_order_detail(request, pk):
     if 'estimated_delivery_date' in change: container.estimated_delivery_date = _field_value('estimated_delivery_date', change['estimated_delivery_date'])
 
     LineFormSet = inlineformset_factory(OrderContainer, OrderContainerLine, form=OrderContainerLineForm, extra=3, can_delete=True)
-    TagFormSet = inlineformset_factory(OrderContainer, OrderContainerTag, form=OrderContainerTagForm, extra=2, can_delete=True)
+    saved_demo_tags = change.get('tags', [])
+    TagFormSet = inlineformset_factory(OrderContainer, OrderContainerTag, form=OrderContainerTagForm, extra=max(2, len(saved_demo_tags) + 2), can_delete=True)
     DocFormSet = inlineformset_factory(OrderContainer, OrderContainerDocument, form=OrderContainerDocumentForm, extra=1, can_delete=True)
 
     if request.method == 'POST':
         # Never call ModelForm.save(), formset.save() or any tracking API.
         form = OrderContainerForm(request.POST, instance=container, company=demo_company)
         lines = LineFormSet(request.POST, instance=original, prefix='lines')
-        # Tags and documents are disabled in demo to avoid identifying information.
-        if form.is_valid() and lines.is_valid():
+        tags = TagFormSet(request.POST, instance=original, prefix='tags', queryset=OrderContainerTag.objects.none())
+        if form.is_valid() and lines.is_valid() and tags.is_valid():
             stored = {}
             for key in DEMO_EDITABLE_FIELDS:
                 if key not in form.cleaned_data: continue
@@ -666,6 +667,13 @@ def demo_order_detail(request, pk):
                  'units_per_pallet': f.cleaned_data.get('units_per_pallet') or 0}
                 for f in lines.forms if f.cleaned_data and not f.cleaned_data.get('DELETE')
             ]
+            # Save only sanitized tag values in the current user's session.
+            # No OrderContainerTag records are written, and source tags are never loaded.
+            change['tags'] = [
+                {'name': f.cleaned_data['name'], 'color': f.cleaned_data.get('color') or '#2563eb'}
+                for f in tags.forms
+                if f.cleaned_data and not f.cleaned_data.get('DELETE') and f.cleaned_data.get('name')
+            ]
             overlay[str(pk)] = change
             request.session[SESSION_KEY] = overlay
             request.session.modified = True
@@ -675,6 +683,7 @@ def demo_order_detail(request, pk):
     else:
         form = OrderContainerForm(instance=container, company=demo_company)
         lines = LineFormSet(instance=original, prefix='lines')
+        tags = TagFormSet(instance=original, prefix='tags', queryset=OrderContainerTag.objects.none(), initial=saved_demo_tags)
         item_aliases = demo_item_aliases(source)
         # Never let the real item descriptions into the HTML form values.
         for line_form in lines.forms:
@@ -702,8 +711,7 @@ def demo_order_detail(request, pk):
                 'city': str(latest.proposed_eta_city or ''),
                 'message': '', 'record_id': latest.pk,
             }
-    # Never expose raw tags, uploaded documents, or customer-specific API payloads.
-    tags = TagFormSet(instance=original, prefix='tags', queryset=OrderContainerTag.objects.none())
+    # Never expose source tags, uploaded documents, or customer-specific API payloads.
     docs = DocFormSet(instance=original, prefix='docs', queryset=OrderContainerDocument.objects.none())
     return render(request, 'core/order_container_edit.html', {
         'automation_name': 'Order Tracker', 'company': demo_company or source,
@@ -946,6 +954,11 @@ def demo_recap_containers(request):
         attach_lines(row, [], change)
         rows.append(row)
     return rows
+
+
+
+
+
 
 
 
