@@ -320,6 +320,14 @@ class RpcOrderForm(forms.Form):
             attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
         ),
     )
+    b_maxima_black_buckets_x_1000 = forms.IntegerField(
+        label="Maxima Black Buckets x 1000",
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
+        ),
+    )
     b_maxima_green_lids = forms.IntegerField(
         label="Maxima Green Lids",
         required=False,
@@ -344,6 +352,8 @@ class RpcOrderForm(forms.Form):
             attrs={"class": "input", "placeholder": "0", "inputmode": "numeric"}
         ),
     )
+
+
 
 
 
