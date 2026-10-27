@@ -17,6 +17,7 @@ STACKABLE_PAIRS = [
     ("Amalia White Buckets", "Amalia White Lids"),
     ("Amalia Black Buckets", "Amalia Black Lids"),
     ("Maxima Black Buckets", "Maxima Black Lids"),
+    ("Maxima Black Buckets x 1000", "Maxima Black Lids"),
     ("Maxima Buckets White", "Maxima Lids White"),
     ("Maxima Green Buckets", "Maxima Green Lids"),
 ]
@@ -50,6 +51,7 @@ PER_PALLET = {
     "Maxima Green Buckets":     720,
     "Maxima Buckets White":     720,
     "Maxima Black Buckets":     720,
+    "Maxima Black Buckets x 1000": 1000,
     "Maxima Green Lids":        720,
     "Maxima Lids White":        720,
     "Maxima Black Lids":        720,
@@ -86,6 +88,7 @@ ARTICLE_MAP = {
     "Maxima Buckets White":      500350,
     "Maxima Lids White":         500360,
     "Maxima Black Buckets":      500351,
+    "Maxima Black Buckets x 1000": 500351,
     "Maxima Black Lids":         500361,
     "Maxima Green Buckets":      500390,
     "Maxima Green Lids":         500391,
@@ -135,6 +138,7 @@ BUCKET_FIELD_MAP = {
     "b_maxima_green_buckets": "Maxima Green Buckets",
     "b_maxima_buckets_white": "Maxima Buckets White",
     "b_maxima_black_buckets": "Maxima Black Buckets",
+    "b_maxima_black_buckets_x_1000": "Maxima Black Buckets x 1000",
     "b_maxima_green_lids": "Maxima Green Lids",
     "b_maxima_lids_white": "Maxima Lids White",
     "b_maxima_black_lids": "Maxima Black Lids",
@@ -435,7 +439,6 @@ Bensenville, IL, 60106<br>
     email_status = " ".join(status_parts) if status_parts else "No email was sent."
 
     return files, email_status
-
 
 
 
