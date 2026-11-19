@@ -85,6 +85,7 @@ from .rpc_generation import PER_PALLET, generate_rpc_from_form
 from .rpcforms import RpcOrderForm
 from .services.pricing_import import parse_pricing_matrix_csv
 from .services.order_tracker import upsert_container_from_rpc_order
+from .services.status_filter import filter_by_status, normalize_status
 from .context_processors import get_portal_theme
 from .services.rpc_master_formatter import parse_rpc_order_xlsx, build_master_format_workbook
 from .services.ms_graph_excel import (
@@ -5181,8 +5182,7 @@ def order_tracker_view(request):
         )
 
     if status:
-        # status is free text; treat filter as "contains" so you can search partial statuses
-        containers = containers.filter(status__icontains=status)
+        containers = filter_by_status(containers, status)
 
     if assigned_to:
         containers = containers.filter(assigned_to__iexact=assigned_to)
@@ -5600,7 +5600,7 @@ def order_tracker_archived_view(request):
             | Q(bill_of_lading_number__icontains=q)
         )
     if status:
-        containers = containers.filter(status__icontains=status)
+        containers = filter_by_status(containers, status)
     if assigned_to:
         containers = containers.filter(assigned_to__iexact=assigned_to)
 
@@ -6031,7 +6031,7 @@ def order_tracker_recap_docx_view(request):
                 q.casefold() in str(getattr(c, field, '') or '').casefold()
                 for field in fields)]
         if status:
-            containers = [c for c in containers if status.casefold() in (c.status or '').casefold()]
+            containers = [c for c in containers if normalize_status(status) in normalize_status(c.status)]
         if assigned_to:
             containers = [c for c in containers if assigned_to.casefold() == (c.assigned_to or '').casefold()]
     else:
@@ -6047,7 +6047,7 @@ def order_tracker_recap_docx_view(request):
                 | Q(carrier__icontains=q)
             )
         if status:
-            containers = containers.filter(status__icontains=status)
+            containers = filter_by_status(containers, status)
         if assigned_to:
             containers = containers.filter(assigned_to__iexact=assigned_to)
         containers = containers.prefetch_related("lines")
@@ -7181,6 +7181,10 @@ def schedule_activity_toggle_done_view(request, pk):
     if back_d:
         return redirect(f"/automations/schedule/?d={back_d}&view={back_view}")
     return redirect("schedule_dashboard")
+
+
+
+
 
 
 
